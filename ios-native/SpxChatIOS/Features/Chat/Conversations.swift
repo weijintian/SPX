@@ -348,12 +348,15 @@ struct ConversationView: View {
             }
         }
     }
-    var body: some View {
+    private var navigationContent: some View {
         conversationContent.navigationTitle(title).navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { NavigationLink { ConversationSettingsView(item: item, isGroup: isGroup) } label: { Image(systemName: "ellipsis") } } }
             .spxPage().errorAlert($error)
             .overlay(alignment: .top) { if let mentionNotice { Text(mentionNotice).font(.subheadline.weight(.medium)).padding(.horizontal, 18).padding(.vertical, 11).background(.regularMaterial, in: Capsule()).padding(.top, 10).allowsHitTesting(false) } }
             .task(id: mentionNotice) { guard mentionNotice != nil else { return }; do { try await Task.sleep(for: .seconds(2)); mentionNotice = nil } catch { } }
+    }
+    private var realtimeContent: some View {
+        navigationContent
             .onChange(of: text) { old, value in
                 guard isGroup, !insertingMention, !mentioning, value.count == old.count + 1 else { return }
                 let prefix = zip(old, value).prefix { $0.0 == $0.1 }.count
@@ -365,6 +368,9 @@ struct ConversationView: View {
             .onReceive(NotificationCenter.default.publisher(for: .spxConversationRemoved)) { event in if let value = event.object as? Record, value["target"].int == item.id, value["group"].flag == isGroup { dismiss() } }
             .onReceive(NotificationCenter.default.publisher(for: .spxConversationCleared)) { event in if let value = event.object as? Record, value["target"].int == item.id, value["group"].flag == isGroup { model.clear() } }
             .onReceive(NotificationCenter.default.publisher(for: .spxConversationUpdated)) { _ in Task { let saved: String? = await LocalStore.shared.read("chat-background-\(isGroup ? "g" : "c")-\(item.id)", userID: userID); backgroundURL = saved ?? ""; await refreshGroup() } }
+    }
+    private var draftContent: some View {
+        realtimeContent
             .task {
                 if !restoredDraft {
                     let saved: Record? = await LocalStore.shared.read(draftKey, userID: userID)
@@ -382,6 +388,9 @@ struct ConversationView: View {
                 guard restoredDraft else { return }
                 do { try await Task.sleep(for: .milliseconds(350)); await LocalStore.shared.write(draftSnapshot, key: draftKey, userID: userID) } catch { }
             }
+    }
+    private var messageEditorContent: some View {
+        draftContent
             .alert("编辑消息", isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) {
                 TextField("消息内容", text: $editText)
                 Button("保存") { if let editing { Task { do { try await model.edit(editing, content: editText) } catch { self.error = error.localizedDescription } } }; editing = nil }
@@ -390,6 +399,9 @@ struct ConversationView: View {
             .confirmationDialog("为所有人删除这条消息？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
                 Button("确认删除", role: .destructive) { if let deleting { Task { do { try await model.delete(deleting) } catch { self.error = error.localizedDescription } } }; deleting = nil }
             }
+    }
+    private var recordingContent: some View {
+        messageEditorContent
             .task(id: String(describing: phase) + String(visible)) { if phase == .active && visible { await model.run() } else { stopRecording(cancel: true) } }
             .onAppear { visible = true; if isGroup { ChatSoundEffects.shared.readGroup(item.id) } }
             .onDisappear { visible = false; stopRecording(cancel: true); let snapshot = draftSnapshot; Task { await LocalStore.shared.write(snapshot, key: draftKey, userID: userID) } }
@@ -401,6 +413,9 @@ struct ConversationView: View {
                       AVAudioSession.InterruptionType(rawValue: raw) == .began, recorder.recording || recordingGesture else { return }
                 stopRecording(cancel: true); error = "系统音频被打断，录音已取消"
             }
+    }
+    private var attachmentContent: some View {
+        recordingContent
             .onChange(of: photos) { _, items in Task { await sendPhotos(items) } }
             .fileImporter(isPresented: $documents, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
                 Task { do { for source in try result.get() { try await queue(file: MediaFiles.keep(source, userID: userID), kind: "file", name: source.lastPathComponent) } } catch { self.error = error.localizedDescription } }
@@ -410,12 +425,18 @@ struct ConversationView: View {
                 Task { do { if let video { try await queue(file: MediaFiles.keep(video, userID: userID), kind: "video", name: "视频") } else if let image { try await queue(file: MediaFiles.jpeg(image, userID: userID), kind: "image", name: "图片") } } catch { self.error = error.localizedDescription } }
             }.ignoresSafeArea() }
             .fullScreenCover(item: $selectedMedia) { selected in MediaPreview(messages: media, initialID: selected.id) }
+    }
+    private var messageSheetsContent: some View {
+        attachmentContent
             .sheet(item: $forward) { ForwardMessageView(message: $0) }
             .sheet(item: $contextMessage) { message in NavigationStack { MessageContextView(targetID: item.id, group: isGroup, messageID: message.id) } }
             .sheet(isPresented: $forwardingSelected, onDismiss: { selecting = false; selectedMessages = [] }) { ForwardMessageView(messages: model.messages.filter { selectedMessages.contains($0.id) }) }
             .sheet(isPresented: $announcement, onDismiss: { let version = announcementVersion; Task { await LocalStore.shared.write(version, key: "group-announcement-\(item.id)", userID: userID) } }) { NavigationStack { ScrollView { Text(groupInfo["announcement"].string).frame(maxWidth: .infinity, alignment: .leading).padding(24).textSelection(.enabled) }.navigationTitle("群公告").toolbar { ToolbarItem(placement: .confirmationAction) { Button("我知道了") { announcement = false } } } } }
             .navigationDestination(item: $sharedProduct) { ProductDetailView(product: $0) }
             .sheet(isPresented: $sharedGroup) { NavigationStack { GroupJoinView(initialCode: sharedGroupCode).toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { sharedGroup = false } } } } }
+    }
+    var body: some View {
+        messageSheetsContent
             .sheet(isPresented: $mentioning, onDismiss: { mentionTrigger = nil; composerFocused = true }) { MemberMentionPicker(members: members, excluding: userID, groupID: item.id) { member in insertMention(id: member["user_id"].int > 0 ? member["user_id"].int : member.id, name: member.name); mentioning = false } }
             .sheet(isPresented: $packet) { RedPacketSendView(scope: isGroup ? "group" : "chat", targetID: item.id) }
             .sheet(isPresented: $schedule) { ScheduledMessageView(scope: isGroup ? "group" : "chat", targetID: item.id) }

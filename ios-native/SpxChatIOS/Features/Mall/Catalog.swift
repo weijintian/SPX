@@ -16,22 +16,40 @@ struct MallHomeView: View {
     @State private var usd = ""
     @State private var visible = false
     @Environment(\.scenePhase) private var phase
-    var body: some View {
+    private var catalogHeader: some View {
+        VStack(alignment: .leading, spacing: 18) {
+        HStack { Text("发现心仪好物").font(.title2.bold()); Spacer(); NavigationLink { OrdersView() } label: { Image(systemName: "shippingbox").font(.title3) } }
+        Picker("商品类型", selection: $kind) { Text("全部").tag("all"); Text("实物").tag("physical"); Text("数字").tag("digital"); Text("本地").tag("local") }.pickerStyle(.segmented)
+        ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 10) { categoryButton("全部", value: ""); ForEach(categories, id: \.self) { categoryButton($0, value: $0) } } }
+        }
+    }
+    private var productGrid: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
+            ForEach(products) { product in NavigationLink { ProductDetailView(product: product) } label: { ProductCard(product: product, usd: usd) }.buttonStyle(.plain) }
+        }
+    }
+    @ViewBuilder private var catalogStatus: some View {
+        if more { Button(busy ? "正在加载…" : "加载更多") { Task { await load(reset: false) } }.frame(maxWidth: .infinity).disabled(busy) }
+        if !busy && products.isEmpty { EmptyState(title: "暂无商品", description: "试试其他分类或关键词", icon: "bag") }
+        if let error { ErrorBanner(message: error) }
+    }
+    private var catalogContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                HStack { Text("发现心仪好物").font(.title2.bold()); Spacer(); NavigationLink { OrdersView() } label: { Image(systemName: "shippingbox").font(.title3) } }
-                Picker("商品类型", selection: $kind) { Text("全部").tag("all"); Text("实物").tag("physical"); Text("数字").tag("digital"); Text("本地").tag("local") }.pickerStyle(.segmented)
-                ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 10) { categoryButton("全部", value: ""); ForEach(categories, id: \.self) { categoryButton($0, value: $0) } } }
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
-                    ForEach(products) { product in NavigationLink { ProductDetailView(product: product) } label: { ProductCard(product: product, usd: usd) }.buttonStyle(.plain) }
-                }
-                if more { Button(busy ? "正在加载…" : "加载更多") { Task { await load(reset: false) } }.frame(maxWidth: .infinity).disabled(busy) }
-                if !busy && products.isEmpty { EmptyState(title: "暂无商品", description: "试试其他分类或关键词", icon: "bag") }
-                if let error { ErrorBanner(message: error) }
+                catalogHeader
+                productGrid
+                catalogStatus
             }.padding(16)
-        }.navigationTitle(merchantID > 0 ? "店铺商品" : "商城").searchable(text: $search, prompt: "搜索商品")
+        }
+    }
+    private var navigatedCatalog: some View {
+        catalogContent.navigationTitle(merchantID > 0 ? "店铺商品" : "商城").searchable(text: $search, prompt: "搜索商品")
             .toolbar { ToolbarItem(placement: .topBarTrailing) { NavigationLink { ShopsView() } label: { Image(systemName: "storefront") } } }
             .spxPage().refreshable { await load(reset: true) }
+
+    }
+    var body: some View {
+        navigatedCatalog
             .task { if let config = try? await APIClient.shared.get("mall.config") { categories = config["categories"].array.map(\.string) }; await load(reset: true) }
             .task(id: search + "|" + category + "|" + kind) { do { try await Task.sleep(for: .milliseconds(350)); await load(reset: true) } catch { } }
             .onAppear { visible = true }.onDisappear { visible = false }
