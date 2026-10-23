@@ -128,34 +128,46 @@ struct BenefitsView: View {
 }
 
 struct UpdateHistoryView: View {
-    @State private var rows: [Record] = []
-    @State private var loaded = false
-    @State private var error: String?
+    private var version: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.1" }
+    private var build: String { Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "" }
     var body: some View {
-        ScrollView {
-            VStack(spacing: 12) {
-                Text("以下为平台 Android 版本记录。iOS 已安装版本请在设置中查看，新版本请通过官方发布渠道重新下载安装。")
-                    .font(.footnote).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
-                if !loaded { ProgressView().padding(30) }
-                ForEach(rows, id: \.fields) { release in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack { Text("Android \(release["version_name"].string)").font(.headline); Spacer(); Text(release["created_at"].string).font(.caption).foregroundStyle(.secondary) }
-                        Text(release["release_notes"].string).font(.subheadline).foregroundStyle(.secondary).textSelection(.enabled)
-                    }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 16))
-                }
-                if loaded, rows.isEmpty, error == nil { EmptyState(title: "暂无更新记录", icon: "clock.arrow.circlepath") }
-                if let error { ErrorBanner(message: error); Button("重试") { Task { await load() } } }
-            }.padding(16)
-        }.background(SPXColor.surface).navigationTitle("平台更新历史").task { await load() }
+        List {
+            Section("当前安装版本") {
+                InfoRow(title: "iOS", value: "\(version) (\(build))")
+                Text("新版本请通过官方发布渠道重新下载安装。").font(.footnote).foregroundStyle(.secondary)
+            }
+            Section("1.0.1 · 2026-10-24") {
+                Label("使用系统公信 HTTPS 校验登录连接", systemImage: "lock.shield")
+                Label("提现与质押支持原申请结果恢复和安全重试", systemImage: "arrow.clockwise")
+                Label("交易、红包、收藏和商家草稿支持加载更多", systemImage: "list.bullet")
+                Label("优化历史定价、经营记录与报价到期提示", systemImage: "bag")
+            }
+        }.navigationTitle("iOS 版本记录")
     }
-    private func load() async { do { rows = try await APIClient.shared.get("app.update.history").list; error = nil; loaded = true } catch { self.error = error.localizedDescription; loaded = true } }
 }
 
 struct FavoritesView: View {
-    @State private var rows: [Record] = []
+    @StateObject private var state = PageState()
     @State private var error: String?
-    var body: some View { List { ForEach(rows) { product in NavigationLink { ProductDetailView(product: product) } label: { HStack { CachedImage(source: product.image).frame(width: 64, height: 64); VStack(alignment: .leading) { Text(product.name); Text("¥\(product["cny_price"].string)").foregroundStyle(SPXColor.primary) } } } }; if rows.isEmpty { EmptyState(title: "还没有收藏商品", icon: "heart") } }.navigationTitle("收藏商品").task { await load() }.refreshable { await load() }.errorAlert($error) }
-    private func load() async { do { rows = try await APIClient.shared.get("favorites").list } catch { self.error = error.localizedDescription } }
+    var body: some View {
+        List {
+            ForEach(state.rows) { product in
+                NavigationLink { ProductDetailView(product: product) } label: {
+                    HStack { CachedImage(source: product.image).frame(width: 64, height: 64)
+                        VStack(alignment: .leading, spacing: 6) { Text(product.name); PriceLabel(cny: product["cny_price"].string, estimate: nil, legacy: product["spx_price"].string) }
+                    }
+                }
+            }
+            if state.busy { ProgressView().frame(maxWidth: .infinity) }
+            if state.more { Button("加载更多") { Task { await load(reset: false) } }.disabled(state.busy) }
+            if state.page > 0, state.rows.isEmpty { EmptyState(title: "还没有收藏商品", icon: "heart") }
+            if let error { ErrorBanner(message: error); Button("重试") { Task { await load(reset: state.page == 0) } } }
+        }.navigationTitle("收藏商品").task { await load(reset: true) }.refreshable { await load(reset: true) }
+    }
+    private func load(reset: Bool) async {
+        do { try await state.load(reset: reset) { next in try await APIClient.shared.get("favorites", ["page": String(next), "page_size": "30"]).list }; error = nil }
+        catch { self.error = error.localizedDescription }
+    }
 }
 
 struct RecordsView: View {
@@ -164,17 +176,52 @@ struct RecordsView: View {
     var query: [String: String] = [:]
     @StateObject private var state = PageState()
     @State private var error: String?
+    private var finance: Bool { action == "merchant.finance" }
     var body: some View {
-        List { ForEach(Array(state.rows.enumerated()), id: \.offset) { _, row in DisclosureGroup { ForEach(row.fields.keys.sorted(), id: \.self) { key in if !row[key].string.isEmpty { InfoRow(title: key, value: row[key].string) } } } label: { VStack(alignment: .leading, spacing: 6) { Text(row.text("title", "subject", "action", "type", "greeting", "name", "id")).font(.headline); Text(row.text("amount", "total_amount", "status", "created_at")).font(.caption).foregroundStyle(.secondary) } } }; if state.more { Button("加载更多") { Task { await load(reset: false) } }.disabled(state.busy) }; if state.rows.isEmpty { EmptyState(title: "暂无记录") } }.navigationTitle(title).task { await load(reset: true) }.refreshable { await load(reset: true) }.errorAlert($error)
+        List {
+            ForEach(state.rows) { row in
+                DisclosureGroup {
+                    InfoRow(title: "记录编号", value: row["id"].string)
+                    InfoRow(title: "时间", value: row["created_at"].string)
+                    if finance {
+                        InfoRow(title: "处理状态", value: DisplayLabels.transactionStatus(row["status"].string))
+                        if row["mall_order_id"].int > 0 { InfoRow(title: "关联订单", value: "#" + row["mall_order_id"].string) }
+                        if let stakeable = row["stakeable_amount"].decimal, stakeable > 0 { InfoRow(title: "其中可质押数量", value: Money.format(stakeable, scale: 8) + " SPX001") }
+                    } else {
+                        if row["target_id"].int > 0 { InfoRow(title: "关联业务编号", value: "#" + row["target_id"].string) }
+                        let metadata = metadata(row)
+                        if !metadata["amount"].string.isEmpty { InfoRow(title: "数量", value: metadata["amount"].string + " SPX001") }
+                        if !metadata["version"].string.isEmpty { InfoRow(title: "商品版本", value: metadata["version"].string) }
+                        if !metadata["ids"].array.isEmpty { InfoRow(title: "涉及商品", value: metadata["ids"].array.map(\.string).joined(separator: "、")) }
+                    }
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: finance ? "arrow.left.arrow.right.circle" : "clock.arrow.circlepath").foregroundStyle(SPXColor.primary)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(finance ? DisplayLabels.transaction(row["type"].string) : DisplayLabels.merchantAction(row["action"].string)).font(.subheadline.weight(.medium))
+                            Text(row["created_at"].string).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if finance { Text(row["amount"].string + " " + row["symbol"].string).font(.caption.weight(.semibold)).multilineTextAlignment(.trailing) }
+                    }
+                }
+            }
+            if state.busy { ProgressView().frame(maxWidth: .infinity) }
+            if state.more { Button("加载更多") { Task { await load(reset: false) } }.disabled(state.busy) }
+            if state.page > 0, state.rows.isEmpty { EmptyState(title: "暂无记录") }
+            if let error { ErrorBanner(message: error); Button("重试") { Task { await load(reset: state.page == 0) } } }
+        }.navigationTitle(title).task { await load(reset: true) }.refreshable { await load(reset: true) }
+    }
+    private func metadata(_ row: Record) -> JSON {
+        guard let data = row["metadata"].string.data(using: .utf8) else { return .null }
+        return (try? JSONDecoder().decode(JSON.self, from: data)) ?? .null
     }
     private func load(reset: Bool) async {
         do {
-            try await state.load(reset: reset, paginated: action.hasPrefix("merchant.")) { next in
-            var params = query
-            params["page"] = String(next)
-            params["page_size"] = "30"
+            try await state.load(reset: reset) { next in
+                var params = query; params["page"] = String(next); params["page_size"] = "30"
                 return try await APIClient.shared.get(action, params).list
-            }
+            }; error = nil
         } catch { self.error = error.localizedDescription }
     }
 }

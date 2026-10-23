@@ -15,6 +15,7 @@ struct CheckoutView: View {
     @State private var addresses: [Record] = []
     @State private var note = ""
     @State private var quote: JSON = .null
+    @State private var quoteExpiresAt: Date?
     @State private var pending: PendingCheckout?
     @State private var orderID = 0
     @State private var busy = false
@@ -46,7 +47,13 @@ struct CheckoutView: View {
                     InfoRow(title: "运费", value: quote["shipping_fee"].string + " SPX001")
                     InfoRow(title: "合计", value: quote["total_spx"].string + " SPX001")
                     InfoRow(title: "可用余额", value: quote["balance"].string + " SPX001")
-                    Text("报价有效期十分钟。价格、库存和地址由服务器再次核对。").font(.caption).foregroundStyle(.secondary)
+                    if let quoteExpiresAt {
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            let remaining = max(0, Int(quoteExpiresAt.timeIntervalSince(context.date)))
+                            Text(remaining > 0 ? String(format: "报价剩余 %02d:%02d，最终金额以服务器核对为准。", remaining / 60, remaining % 60) : "报价已到期，请重新核对后支付。")
+                                .font(.caption).foregroundStyle(remaining > 0 ? Color.secondary : Color.orange)
+                        }
+                    }
                 }
             }
             if let error { Section { ErrorBanner(message: error) } }
@@ -66,10 +73,11 @@ struct CheckoutView: View {
     private func loadAddresses() async { guard physical else { return }; do { addresses = try await APIClient.shared.get("wallet.address").list; if addressID == 0 { addressID = addresses.first(where: { $0["is_default"].flag })?.id ?? addresses.first?.id ?? 0 } } catch { self.error = error.localizedDescription } }
     private func prepare() {
         busy = true; error = nil
-        Task { defer { busy = false }; do { quote = try await APIClient.shared.post("checkout.quote", ["product_id": .number(Decimal(product.id)), "variant_id": .string(variantID), "quantity": .number(Decimal(quantity)), "address_id": .number(Decimal(addressID)), "buyer_note": .string(note)]); guard quote["quote_id"].string.count == 32 else { throw APIError.invalidResponse }; confirm = true } catch { self.error = error.localizedDescription } }
+        Task { defer { busy = false }; do { let quoteStarted = Date(); quote = try await APIClient.shared.post("checkout.quote", ["product_id": .number(Decimal(product.id)), "variant_id": .string(variantID), "quantity": .number(Decimal(quantity)), "address_id": .number(Decimal(addressID)), "buyer_note": .string(note)]); guard quote["quote_id"].string.count == 32 else { throw APIError.invalidResponse }; quoteExpiresAt = quoteStarted.addingTimeInterval(TimeInterval(quote["expires_in"].int)); confirm = true } catch { self.error = error.localizedDescription } }
     }
     private func pay() {
         guard !busy, pending == nil, let owner = session.user?.id, owner > 0 else { return }
+        guard let quoteExpiresAt, quoteExpiresAt > Date() else { quote = .null; error = "报价已到期，请重新核对后支付。"; return }
         let transaction = PendingCheckout(quoteID: quote["quote_id"].string, requestID: UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())
         pending = transaction; busy = true
         Task {

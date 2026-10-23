@@ -61,6 +61,7 @@ struct WalletTransferView: View {
     @State private var uncertain = false
     @State private var error: String?
     @State private var unlock = false
+    @State private var pending: Record?
     var body: some View {
         Form {
             Section("资产") {
@@ -83,10 +84,13 @@ struct WalletTransferView: View {
             Section {
                 Text(withdrawal ? "手续费按当前服务器规则收取，提交后可在交易记录查看审核状态。" : "请使用绑定钱包在 BSC 网络转入对应资产，填写真实交易哈希，到账以链上确认与服务器核验为准。").font(.footnote).foregroundStyle(.secondary)
                 if uncertain {
-                    Text("上次提交结果尚未确认，重新进入页面仍会保留保护。请核对交易记录，勿重复提现。").font(.footnote).foregroundStyle(.secondary)
+                    Text("上次申请结果待核对。安全重试会使用原申请编号，不会重复创建提现。").font(.footnote).foregroundStyle(.secondary)
                     NavigationLink("查看交易记录并核对结果") { WalletTransactionsView() }
                     Button("重新读取最新状态") { Task { await load() } }
-                    Button("我已核对记录，解除提交保护") { unlock = true }
+                    if let pending, !pending["client_request_id"].string.isEmpty {
+                        Button("安全重试原申请") { recover(close: false) }.disabled(busy)
+                        Button("核对并结束上次申请") { recover(close: true) }.disabled(busy)
+                    } else { Button("我已核对旧版记录，解除保护") { unlock = true } }
                 }
                 else { Button(busy ? "正在提交…" : withdrawal ? "提交提现" : "提交充值核验") { confirmation = true }.disabled(busy || !Money.positive(amount, scale: 18) || info["bound_address"].string.isEmpty || (!withdrawal && hash.count != 66)) }
             }
@@ -96,9 +100,43 @@ struct WalletTransferView: View {
             .confirmationDialog("请确认已在交易记录核实结果；解除后再次提交会创建新申请", isPresented: $unlock, titleVisibility: .visible) { Button("已核实，解除保护") { Task { await LocalStore.shared.remove("withdraw-pending", userID: session.user?.id ?? 0); uncertain = false; amount = "" } } }
     }
     private func load() async {
-        let owner = session.user?.id ?? 0
-        if withdrawal, let saved: Record = await LocalStore.shared.read("withdraw-pending", userID: owner) { uncertain = true; amount = saved["amount"].string; symbol = saved["symbol"].string }
-        do { info = try await APIClient.shared.get(withdrawal ? "wallet.binding" : "wallet.deposit.info") } catch { self.error = error.localizedDescription }
+        guard let owner = session.user?.id, owner > 0 else { return }
+        if withdrawal {
+            let saved: Record? = await LocalStore.shared.read("withdraw-pending", userID: owner)
+            guard session.user?.id == owner else { return }
+            pending = saved; uncertain = saved != nil
+            if let saved { amount = saved["amount"].string; symbol = saved["symbol"].string }
+        }
+        do {
+            let result = try await APIClient.shared.get(withdrawal ? "wallet.binding" : "wallet.deposit.info")
+            guard session.user?.id == owner else { return }; info = result
+            if withdrawal, let saved = pending, !saved["client_request_id"].string.isEmpty {
+                let status = try await APIClient.shared.get("financial.request", ["operation": "wallet.withdraw", "client_request_id": saved["client_request_id"].string])
+                if status["exists"].flag { await finish(status["result"], owner: owner) }
+            }
+        } catch { if session.user?.id == owner { self.error = error.localizedDescription } }
+    }
+    private func finish(_ result: JSON, owner: Int) async {
+        guard result["cancelled"].flag || result["transaction_id"].int > 0 else { return }
+        await LocalStore.shared.remove("withdraw-pending", userID: owner)
+        guard session.user?.id == owner else { return }
+        pending = nil; uncertain = false; amount = ""
+        error = result["cancelled"].flag ? "已确认上次申请未提交，可重新填写。" : "提现已提交，请在交易记录查看处理状态。"
+    }
+    private func recover(close: Bool) {
+        guard !busy, let saved = pending, !saved["client_request_id"].string.isEmpty,
+              let owner = session.user?.id, owner > 0 else { return }
+        busy = true
+        Task { defer { busy = false }
+            do {
+                let result: JSON
+                if close {
+                    var body = saved.fields; body["operation"] = "wallet.withdraw"
+                    result = try await APIClient.shared.post("financial.resolve", body)
+                } else { result = try await APIClient.shared.post("wallet.withdraw", saved.fields) }
+                await finish(result, owner: owner)
+            } catch { if session.user?.id == owner { self.error = "原申请仍受保护：" + error.localizedDescription } }
+        }
     }
     private func submit() {
         guard !busy, !uncertain, let owner = session.user?.id, owner > 0 else { return }
@@ -108,18 +146,21 @@ struct WalletTransferView: View {
         Task {
             defer { busy = false }
             if withdrawal {
-                do { try await LocalStore.shared.save(Record(body), key: "withdraw-pending", userID: owner) }
-                catch { self.error = "无法保存提现恢复记录，请检查设备存储后重试"; return }
+                do {
+                    let saved = try await LocalStore.shared.reserveFinancial(Record(body), key: "withdraw-pending", userID: owner)
+                    guard session.user?.id == owner else { return }
+                    pending = saved; uncertain = true; body = saved.fields
+                } catch { self.error = error.localizedDescription; await load(); return }
             }
             do {
                 guard session.user?.id == owner else { throw APIError.staleSession }
-                try await APIClient.shared.post(withdrawal ? "wallet.withdraw" : "wallet.deposit.submit", body)
-                if withdrawal { await LocalStore.shared.remove("withdraw-pending", userID: owner) }
-                amount = ""; hash = ""; error = "已提交，请在交易记录查看处理状态"
+                let result = try await APIClient.shared.post(withdrawal ? "wallet.withdraw" : "wallet.deposit.submit", body)
+                if withdrawal { await finish(result, owner: owner) }
+                else if session.user?.id == owner { amount = ""; hash = ""; error = "已提交，请在交易记录查看处理状态" }
             } catch {
-                if withdrawal, (error as? APIError)?.definitiveRejection == true { await LocalStore.shared.remove("withdraw-pending", userID: owner) }
-                else if withdrawal { uncertain = true }
-                self.error = uncertain ? "提交结果未确认，请先在交易记录核对，避免重复申请。" : error.localizedDescription
+                if session.user?.id == owner { self.error = error.localizedDescription }
+                // Keep the same request on every ambiguous or rejected response. Server-side
+                // resolution serializes with a delayed request before allowing a new one.
             }
         }
     }
@@ -166,24 +207,31 @@ struct ExchangeView: View {
 }
 
 struct WalletTransactionsView: View {
-    @State private var rows: [Record] = []
+    @StateObject private var state = PageState()
     @State private var filter = "all"
     @State private var error: String?
     @State private var cancel: Record?
     var body: some View {
         List {
             Picker("资产", selection: $filter) { Text("全部").tag("all"); Text("SPX001").tag("SPX001"); Text("USDT").tag("USDT") }
-            ForEach(rows.filter { filter == "all" || $0["symbol"].string == filter }) { row in
+            ForEach(state.rows) { row in
                 DisclosureGroup {
                     ForEach(["id", "chain", "address", "tx_hash", "fee_amount", "created_at"], id: \.self) { key in if !row[key].string.isEmpty { InfoRow(title: ["id": "流水号", "chain": "网络", "address": "钱包地址", "tx_hash": "交易哈希", "fee_amount": "手续费", "created_at": "创建时间"][key] ?? key, value: row[key].string) } }
                     if row["type"].string == "withdraw", row["status"].string == "pending" { Button("取消提现", role: .destructive) { cancel = row } }
                 } label: { HStack { VStack(alignment: .leading, spacing: 5) { Text(DisplayLabels.transaction(row["type"].string)).font(.subheadline.weight(.medium)); Text(DisplayLabels.transactionStatus(row["status"].string)).font(.caption).foregroundStyle(.secondary) }; Spacer(); Text("\(row["amount"].string) \(row["symbol"].string)").font(.subheadline.weight(.semibold)) } }
             }
-            if rows.isEmpty { EmptyState(title: "暂无交易记录") }
-        }.navigationTitle("交易记录").task { await load() }.refreshable { await load() }.errorAlert($error)
-            .confirmationDialog("确认取消这笔待处理提现？", isPresented: Binding(get: { cancel != nil }, set: { if !$0 { cancel = nil } }), titleVisibility: .visible) { Button("取消提现", role: .destructive) { if let cancel { Task { do { try await APIClient.shared.post("wallet.withdraw.cancel", ["transaction_id": cancel["id"]]); await load() } catch { self.error = error.localizedDescription } }; self.cancel = nil } } }
+            if state.busy { ProgressView().frame(maxWidth: .infinity) }
+            if state.more { Button("加载更多") { Task { await load(reset: false) } }.disabled(state.busy) }
+            if let error { ErrorBanner(message: error); Button("重试") { Task { await load(reset: state.page == 0) } } }
+            if state.page > 0, state.rows.isEmpty { EmptyState(title: "暂无交易记录") }
+        }.navigationTitle("交易记录").task(id: filter) { await load(reset: true) }.refreshable { await load(reset: true) }.errorAlert($error)
+            .confirmationDialog("确认取消这笔待处理提现？", isPresented: Binding(get: { cancel != nil }, set: { if !$0 { cancel = nil } }), titleVisibility: .visible) { Button("取消提现", role: .destructive) { if let cancel { Task { do { try await APIClient.shared.post("wallet.withdraw.cancel", ["transaction_id": cancel["id"]]); await load(reset: true) } catch { self.error = error.localizedDescription } }; self.cancel = nil } } }
     }
-    private func load() async { do { rows = try await APIClient.shared.get("wallet.transactions").list } catch { self.error = error.localizedDescription } }
+    private func load(reset: Bool) async {
+        let selected = filter
+        do { try await state.load(reset: reset) { next in try await APIClient.shared.get("wallet.transactions", ["symbol": selected, "page": String(next), "page_size": "30"]).list }; error = nil }
+        catch { self.error = error.localizedDescription }
+    }
 }
 
 struct StakingView: View {
@@ -204,10 +252,13 @@ struct StakingView: View {
         Form {
             if uncertain {
                 Section("提交结果待核对") {
-                    Text("上次质押申请结果未确认，请先核对我的质押与交易记录，再决定是否发起新申请。")
+                    Text("上次质押申请结果待核对。安全重试沿用原申请编号，避免重复质押。")
                     NavigationLink("交易记录") { WalletTransactionsView() }
                     Button("重新核对质押记录") { Task { await load() } }
-                    Button("已核实记录，解除保护") { unlock = true }
+                    if let pending, !pending["client_request_id"].string.isEmpty {
+                        Button("安全重试原申请") { recover(close: false) }
+                        Button("核对并结束上次申请") { recover(close: true) }
+                    } else { Button("已核实旧版记录，解除保护") { unlock = true } }
                 }
             }
             Section("当前方案") {
@@ -225,29 +276,65 @@ struct StakingView: View {
             .confirmationDialog("解除后可创建新的质押，请确认已经核实上次申请", isPresented: $unlock, titleVisibility: .visible) { Button("确认已核实") { Task { await LocalStore.shared.remove("staking-pending", userID: session.user?.id ?? 0); uncertain = false } } }
     }
     private func load() async {
-        let pending: Record? = await LocalStore.shared.read("staking-pending", userID: session.user?.id ?? 0)
-        uncertain = pending != nil
-        do { let data = try await APIClient.shared.get("staking.plans"); plans = data["plans"].list; phase = data["phase"]; records = try await APIClient.shared.get("staking").list; assets = try await APIClient.shared.get("wallet").list } catch { self.error = error.localizedDescription }
+        guard let owner = session.user?.id, owner > 0 else { return }
+        let saved: Record? = await LocalStore.shared.read("staking-pending", userID: owner)
+        guard session.user?.id == owner else { return }
+        pending = saved; uncertain = saved != nil
+        if let saved { selected = saved["plan_id"].int; amount = saved["amount"].string }
+        do {
+            if let saved, !saved["client_request_id"].string.isEmpty {
+                let status = try await APIClient.shared.get("financial.request", ["operation": "staking.create", "client_request_id": saved["client_request_id"].string])
+                if status["exists"].flag { await finish(status["result"], owner: owner) }
+            }
+            let data = try await APIClient.shared.get("staking.plans")
+            let updatedRecords = try await APIClient.shared.get("staking").list
+            let updatedAssets = try await APIClient.shared.get("wallet").list
+            guard session.user?.id == owner else { return }
+            plans = data["plans"].list; phase = data["phase"]; records = updatedRecords; assets = updatedAssets
+        } catch { if session.user?.id == owner { self.error = error.localizedDescription } }
+    }
+    private func finish(_ result: JSON, owner: Int) async {
+        guard result["cancelled"].flag || result["id"].int > 0 else { return }
+        await LocalStore.shared.remove("staking-pending", userID: owner)
+        guard session.user?.id == owner else { return }
+        pending = nil; uncertain = false
+        error = result["cancelled"].flag ? "已确认上次申请未提交，可重新选择方案。" : "质押申请已完成。"
+    }
+    private func recover(close: Bool) {
+        guard !busy, let saved = pending, !saved["client_request_id"].string.isEmpty,
+              let owner = session.user?.id, owner > 0 else { return }
+        busy = true
+        Task { defer { busy = false }
+            do {
+                let result: JSON
+                if close {
+                    var body = saved.fields; body["operation"] = "staking.create"
+                    result = try await APIClient.shared.post("financial.resolve", body)
+                } else { result = try await APIClient.shared.post("staking.create", saved.fields) }
+                await finish(result, owner: owner)
+                if session.user?.id == owner { await load() }
+            } catch { if session.user?.id == owner { self.error = "原申请仍受保护：" + error.localizedDescription } }
+        }
     }
     private func submit(create: Bool) {
         guard !busy, !create || !uncertain, let owner = session.user?.id, owner > 0 else { return }
-        let body: [String: JSON] = create ? ["plan_id": .number(Decimal(selected)), "amount": .string(amount)] : ["id": .number(Decimal(redeemID))]
+        var body: [String: JSON] = create ? ["plan_id": .number(Decimal(selected)), "amount": .string(amount)] : ["id": .number(Decimal(redeemID))]
         busy = true
         Task {
             defer { busy = false }
             if create {
-                do { try await LocalStore.shared.save(Record(body), key: "staking-pending", userID: owner) }
-                catch { self.error = "无法保存质押恢复记录，请检查设备存储"; return }
+                do {
+                    let saved = try await LocalStore.shared.reserveFinancial(Record(body), key: "staking-pending", userID: owner)
+                    guard session.user?.id == owner else { return }
+                    pending = saved; uncertain = true; body = saved.fields
+                } catch { self.error = error.localizedDescription; await load(); return }
             }
             do {
                 guard session.user?.id == owner else { throw APIError.staleSession }
-                try await APIClient.shared.post(create ? "staking.create" : "staking.redeem", body)
-                if create { await LocalStore.shared.remove("staking-pending", userID: owner) }
-                await load()
-            } catch {
-                if create, (error as? APIError)?.definitiveRejection == true { await LocalStore.shared.remove("staking-pending", userID: owner) }
-                self.error = error.localizedDescription; await load()
-            }
+                let result = try await APIClient.shared.post(create ? "staking.create" : "staking.redeem", body)
+                if create { await finish(result, owner: owner) }
+                if session.user?.id == owner { await load() }
+            } catch { if session.user?.id == owner { self.error = error.localizedDescription } }
         }
     }
 }

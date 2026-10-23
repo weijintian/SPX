@@ -24,7 +24,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.spx.chat.ios
         INFOPLIST_FILE: SpxChatIOS/Info.plist
-        CURRENT_PROJECT_VERSION: 2026102401
+        CURRENT_PROJECT_VERSION: 2
         MARKETING_VERSION: 1.0.1
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: YES
@@ -50,3 +50,5 @@ schemes:
       targets:
         - SpxChatIOSTests
       gatherCoverageData: true
+      environmentVariables:
+        SPX_RUN_LIVE_TLS_PROBE: "1"

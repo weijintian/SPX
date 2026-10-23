@@ -2,18 +2,13 @@ import SwiftUI
 
 struct RedPacketHistoryView: View {
     @EnvironmentObject private var session: SessionStore
-    @State private var rows: [Record] = []
+    @StateObject private var state = PageState()
     @State private var filter = "all"
-    @State private var loaded = false
-    @State private var loadID = UUID()
     @State private var error: String?
-    private var filtered: [Record] {
-        rows.filter { filter == "all" || (filter == "sent" ? $0["sender_id"].int == session.user?.id : !$0["my_amount"].string.isEmpty) }
-    }
     var body: some View {
         List {
             Section { Picker("红包记录", selection: $filter) { Text("全部").tag("all"); Text("收到").tag("received"); Text("发出").tag("sent") }.pickerStyle(.segmented) }
-            ForEach(filtered, id: \.fields) { packet in
+            ForEach(state.rows, id: \.fields) { packet in
                 Button {
                     NotificationCenter.default.post(name: .spxOpenPacket, object: packet["id"].string)
                 } label: {
@@ -32,11 +27,12 @@ struct RedPacketHistoryView: View {
                     }.padding(.vertical, 5)
                 }.buttonStyle(.plain)
             }
-            if !loaded { ProgressView().frame(maxWidth: .infinity) }
-            else if filtered.isEmpty, error == nil { EmptyState(title: "暂无红包记录", icon: "gift") }
-            if let error { ErrorBanner(message: error); Button("重新加载") { Task { await load() } } }
-            Section { Text("显示最近 100 条红包记录。点击可查看领取情况，金额与退款以服务器记录为准。").font(.footnote).foregroundStyle(.secondary) }
-        }.navigationTitle("红包记录").spxPage().task { await load() }.refreshable { await load() }
+            if state.busy { ProgressView().frame(maxWidth: .infinity) }
+            else if state.page > 0, state.rows.isEmpty, error == nil { EmptyState(title: "暂无红包记录", icon: "gift") }
+            if let error { ErrorBanner(message: error); Button("重新加载") { Task { await load(reset: state.page == 0) } } }
+            if state.more { Button("加载更多") { Task { await load(reset: false) } }.disabled(state.busy) }
+            Section { Text("向下加载可查看更早的红包记录。点击可查看领取情况，金额与退款以服务器记录为准。").font(.footnote).foregroundStyle(.secondary) }
+        }.navigationTitle("红包记录").spxPage().task(id: filter) { await load(reset: true) }.refreshable { await load(reset: true) }
     }
     private func detail(_ packet: Record) -> String {
         let direction = packet["sender_id"].int == session.user?.id ? "我发出的" : "来自 " + packet["sender_name"].string
@@ -46,13 +42,9 @@ struct RedPacketHistoryView: View {
         if packet["status"].string == "active" { return "已领 \(packet["claimed_count"].int)/\(packet["total_count"].int)" }
         return ["expired": "已过期", "completed": "已领完", "exhausted": "已领完", "refunded": "剩余已退回"][packet["status"].string] ?? "已结束"
     }
-    private func load() async {
-        let id = UUID(); loadID = id
-        do {
-            let list = try await APIClient.shared.get("redpackets.mine").list
-            guard loadID == id, !Task.isCancelled else { return }
-            rows = list; loaded = true; error = nil
-        } catch is CancellationError { }
-        catch { if loadID == id { self.error = error.localizedDescription; loaded = true } }
+    private func load(reset: Bool) async {
+        let selected = filter
+        do { try await state.load(reset: reset) { next in try await APIClient.shared.get("redpackets.mine", ["filter": selected, "page": String(next), "page_size": "30"]).list }; error = nil }
+        catch { self.error = error.localizedDescription }
     }
 }

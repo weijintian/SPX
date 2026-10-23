@@ -21,6 +21,15 @@ actor LocalStore {
         try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
         try JSONEncoder().encode(value).write(to: target, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
+    /// Atomically prevent two open pages from overwriting the same pending operation.
+    func reserveFinancial(_ body: Record, key: String, userID: Int) throws -> Record {
+        let existing: Record? = read(key, userID: userID)
+        guard existing == nil else { throw APIError.server(409, "还有一笔结果待核对的申请，请重新读取状态") }
+        var pending = body
+        pending["client_request_id"] = .string(UUID().uuidString.lowercased())
+        try save(pending, key: key, userID: userID)
+        return pending
+    }
     func remove(_ key:String,userID:Int) {try? FileManager.default.removeItem(at:url(key,userID:userID))}
     func updateGroupContactRemark(peerID: Int, remark: String, userID: Int) {
         guard userID > 0, peerID > 0 else { return }

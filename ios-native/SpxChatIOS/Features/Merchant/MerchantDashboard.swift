@@ -80,7 +80,7 @@ struct MerchantProductsView: View {
             ForEach(products) { product in
                 VStack(alignment: .leading, spacing: 10) {
                     if selecting { Button { toggle(product.id) } label: { Label(selected.contains(product.id) ? "已选择" : "选择商品", systemImage: selected.contains(product.id) ? "checkmark.circle.fill" : "circle") }.disabled(submitting) }
-                    HStack { CachedImage(source: product.image).frame(width: 66, height: 66); VStack(alignment: .leading) { Text(product.name).font(.headline); Text("¥\(product["cny_price"].string) · 库存 \(product["stock"].string)").font(.caption); Text(DisplayLabels.review(product["review_status"].string)).font(.caption).foregroundStyle(.secondary) } }
+                    HStack { CachedImage(source: product.image).frame(width: 66, height: 66); VStack(alignment: .leading) { Text(product.name).font(.headline); PriceLabel(cny: product["cny_price"].string, estimate: nil, legacy: product["spx_price"].string); Text("库存 \(product["stock"].string)").font(.caption); Text(DisplayLabels.review(product["review_status"].string)).font(.caption).foregroundStyle(.secondary) } }
                     if !selecting { HStack { NavigationLink("编辑商品") { PublishProductView(product: product) }; NavigationLink("调整库存") { InventoryEditor(product: product) }; Spacer(); Button("下架", role: .destructive) { offline = product } }.font(.caption) }
                 }.padding(.vertical, 8)
             }
@@ -127,10 +127,31 @@ struct MerchantProductsView: View {
 }
 
 struct MerchantDraftsView: View {
-    @State private var rows: [Record] = []
+    @StateObject private var state = PageState()
     @State private var error: String?
-    var body: some View { List { ForEach(rows) { draft in NavigationLink(draft.name) { DraftLoader(id: draft.id) }.swipeActions { Button("删除", role: .destructive) { Task { do { try await APIClient.shared.post("merchant.draft.delete", ["id": draft["id"]]); await load() } catch { self.error = error.localizedDescription } } } } } }.navigationTitle("商品草稿").task { await load() }.refreshable { await load() }.errorAlert($error).onReceive(NotificationCenter.default.publisher(for: .spxMerchantProductsUpdated)) { _ in Task { await load() } } }
-    private func load() async { do { rows = try await APIClient.shared.get("merchant.drafts").list } catch { self.error = error.localizedDescription } }
+    @State private var deleting = false
+    var body: some View {
+        List {
+            ForEach(state.rows) { draft in
+                NavigationLink { DraftLoader(id: draft.id) } label: {
+                    VStack(alignment: .leading, spacing: 6) { Text(draft["title"].string.isEmpty ? "未命名商品" : draft["title"].string); Text(draft["updated_at"].string).font(.caption).foregroundStyle(.secondary) }
+                }.swipeActions { Button("删除", role: .destructive) { remove(draft) }.disabled(deleting) }
+            }
+            if state.busy { ProgressView().frame(maxWidth: .infinity) }
+            if state.more { Button("加载更多") { Task { await load(reset: false) } }.disabled(state.busy) }
+            if state.page > 0, state.rows.isEmpty { EmptyState(title: "暂无草稿", icon: "doc") }
+            if let error { ErrorBanner(message: error); Button("重试") { Task { await load(reset: state.page == 0) } } }
+        }.navigationTitle("商品草稿").task { await load(reset: true) }.refreshable { await load(reset: true) }
+            .onReceive(NotificationCenter.default.publisher(for: .spxMerchantProductsUpdated)) { _ in Task { await load(reset: true) } }
+    }
+    private func remove(_ draft: Record) {
+        guard !deleting else { return }; deleting = true
+        Task { defer { deleting = false }; do { try await APIClient.shared.post("merchant.draft.delete", ["id": draft["id"]]); await load(reset: true) } catch { self.error = error.localizedDescription } }
+    }
+    private func load(reset: Bool) async {
+        do { try await state.load(reset: reset) { next in try await APIClient.shared.get("merchant.drafts", ["page": String(next), "page_size": "30"]).list }; error = nil }
+        catch { self.error = error.localizedDescription }
+    }
 }
 struct DraftLoader: View {
     let id: Int

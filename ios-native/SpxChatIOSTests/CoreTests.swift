@@ -213,4 +213,23 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(state.rows.filter { $0["action"].string == "apply" }.count, 3)
         XCTAssertEqual(state.rows.filter { $0["id"].string.count == 32 }.count, 2)
     }
+    func testFinancialReservationSurvivesReopenAndRejectsDuplicatePage() async throws {
+        let userID = 2_147_479_997
+        let key = "test-financial-" + UUID().uuidString
+        let store = LocalStore()
+        let body = Record(["symbol": "SPX001", "amount": "100", "chain": "BSC"])
+        let reserved = try await store.reserveFinancial(body, key: key, userID: userID)
+        XCTAssertFalse(reserved["client_request_id"].string.isEmpty)
+        let reopened = LocalStore()
+        let persisted: Record? = await reopened.read(key, userID: userID)
+        XCTAssertEqual(reserved, persisted)
+        do {
+            _ = try await store.reserveFinancial(body, key: key, userID: userID)
+            XCTFail("A second page must not replace a pending request ID")
+        } catch { }
+        let otherAccount: Record? = await store.read(key, userID: userID - 1)
+        XCTAssertNil(otherAccount)
+        await store.remove(key, userID: userID)
+    }
+
 }
