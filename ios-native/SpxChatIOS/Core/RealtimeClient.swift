@@ -31,7 +31,7 @@ extension Notification.Name { static let spxRealtime = Notification.Name("spx.re
                     guard generation == epoch, !Task.isCancelled else { connection.cancel(with: .goingAway, reason: nil); return }
                     heartbeat = Task {
                         while !Task.isCancelled {
-                            do { try await Task.sleep(for: .seconds(20)); try await connection.sendPing() } catch { connection.cancel(with: .goingAway, reason: nil); return }
+                            do { try await Task.sleep(for: .seconds(20)); try await ping(connection) } catch { connection.cancel(with: .goingAway, reason: nil); return }
                         }
                     }
                     while !Task.isCancelled, generation == epoch {
@@ -62,6 +62,14 @@ extension Notification.Name { static let spxRealtime = Notification.Name("spx.re
                 heartbeat?.cancel(); heartbeat = nil; socket?.cancel(with: .goingAway, reason: nil)
                 attempt += 1
                 do { try await Task.sleep(for: .seconds(min(30, pow(2, Double(min(attempt, 5)))) + Double.random(in: 0...1))) } catch { return }
+            }
+        }
+    }
+    private func ping(_ connection: URLSessionWebSocketTask) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            connection.sendPing { error in
+                if let error { continuation.resume(throwing: error) }
+                else { continuation.resume() }
             }
         }
     }

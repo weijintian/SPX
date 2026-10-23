@@ -278,78 +278,92 @@ struct MediaPage: View {
     @State private var videoLoader: RemoteVideoResourceLoader?
     @State private var videoObservation: NSKeyValueObservation?
     @State private var videoLoadID = UUID()
+    private var loadKey: String {
+        [String(message.id), String(retry), String(active)].joined(separator: ":")
+    }
     var body: some View {
-        Group {
-            if message["message_type"].string == "video" {
-                if let player { VideoPlayer(player: player) }
-                else if let error { VStack(spacing: 14) { Text(error).font(.footnote).multilineTextAlignment(.center); Button("重新加载", systemImage: "arrow.clockwise") { retry += 1 } }.padding(24).foregroundStyle(.white) }
-                else { ProgressView().tint(.white) }
-            } else {
-                CachedImage(source: message["media_url"].string)
-                    .scaleEffect(scale)
-                    .offset(imageOffset)
-                    .gesture(MagnifyGesture()
-                        .onChanged { scale = min(4, max(1, $0.magnification)) }
-                        .onEnded { _ in if scale <= 1 { resetImageTransform() } })
-                    .simultaneousGesture(DragGesture()
-                        .onChanged { value in
-                            guard scale > 1 else { return }
-                            imageOffset = CGSize(width: dragOrigin.width + value.translation.width, height: dragOrigin.height + value.translation.height)
-                        }
-                        .onEnded { _ in dragOrigin = imageOffset })
-                    .onTapGesture(count: 2) {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            if scale > 1 { resetImageTransform() }
-                            else { scale = 2.5 }
-                        }
-                    }
-            }
-        }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            .task(id: String(message.id) + ":" + String(retry) + ":" + String(active)) {
-                guard message["message_type"].string == "video" else { return }
-                guard active else { player?.pause(); return }
-                let loadID = UUID()
-                videoLoadID = loadID
-                player?.pause(); player = nil
-                videoObservation = nil
-                videoLoader?.cancelAllRequests(); videoLoader = nil
-                error = nil
-                do {
-                    let item: AVPlayerItem
-                    if let local = try await MediaCache.shared.cachedFile(message["media_url"].string, userID: session.user?.id ?? 0) {
-                        item = AVPlayerItem(url: local)
-                    } else {
-                        let endpoint = try await APIClient.shared.endpoint()
-                        guard let remote = URL(string: message["media_url"].string, relativeTo: endpoint)?.absoluteURL,
-                              remote.scheme == "https", remote.host == endpoint.host else { throw APIError.invalidURL }
-                        let loader = RemoteVideoResourceLoader(sourceURL: remote)
-                        item = AVPlayerItem(asset: try loader.makeAsset())
-                        videoLoader = loader
-                    }
-                    try Task.checkCancellation()
-                    guard videoLoadID == loadID else { return }
-                    videoObservation = item.observe(\.status, options: [.initial, .new]) { observed, _ in
-                        guard observed.status == .failed else { return }
-                        let reason = observed.error?.localizedDescription ?? "视频加载失败，请检查网络后重试"
-                        Task { @MainActor in
-                            guard videoLoadID == loadID else { return }
-                            error = reason
-                            player?.pause(); player = nil
-                            videoLoader?.cancelAllRequests(); videoLoader = nil
-                            videoObservation = nil
-                        }
-                    }
-                    player = AVPlayer(playerItem: item)
-                }
-                catch is CancellationError { }
-                catch { self.error = error.localizedDescription }
-            }.onChange(of: active) { _, value in if !value { player?.pause() } }
+        pageContent
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .task(id: loadKey) { await loadVideo() }
+            .onChange(of: active) { _, value in if !value { player?.pause() } }
             .onChange(of: message.id) { _, _ in resetImageTransform() }
             .onDisappear {
                 videoLoadID = UUID()
                 player?.pause(); player = nil; videoObservation = nil
                 videoLoader?.cancelAllRequests(); videoLoader = nil
             }
+    }
+    @ViewBuilder private var pageContent: some View {
+        if message["message_type"].string == "video" { videoContent }
+        else { imageContent }
+    }
+    @ViewBuilder private var videoContent: some View {
+        if let player { VideoPlayer(player: player) }
+        else if let error {
+            VStack(spacing: 14) {
+                Text(error).font(.footnote).multilineTextAlignment(.center)
+                Button { retry += 1 } label: { Label("重新加载", systemImage: "arrow.clockwise") }
+            }.padding(24).foregroundStyle(.white)
+        } else { ProgressView().tint(.white) }
+    }
+    private var imageContent: some View {
+        CachedImage(source: message["media_url"].string)
+            .scaleEffect(scale)
+            .offset(imageOffset)
+            .gesture(MagnifyGesture()
+                .onChanged { scale = min(4, max(1, $0.magnification)) }
+                .onEnded { _ in if scale <= 1 { resetImageTransform() } })
+            .simultaneousGesture(DragGesture()
+                .onChanged { value in
+                    guard scale > 1 else { return }
+                    imageOffset = CGSize(width: dragOrigin.width + value.translation.width, height: dragOrigin.height + value.translation.height)
+                }
+                .onEnded { _ in dragOrigin = imageOffset })
+            .onTapGesture(count: 2) {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if scale > 1 { resetImageTransform() }
+                    else { scale = 2.5 }
+                }
+            }
+    }
+    @MainActor private func loadVideo() async {
+        guard message["message_type"].string == "video" else { return }
+        guard active else { player?.pause(); return }
+        let loadID = UUID()
+        videoLoadID = loadID
+        player?.pause(); player = nil
+        videoObservation = nil
+        videoLoader?.cancelAllRequests(); videoLoader = nil
+        error = nil
+        do {
+            let item: AVPlayerItem
+            if let local = try await MediaCache.shared.cachedFile(message["media_url"].string, userID: session.user?.id ?? 0) {
+                item = AVPlayerItem(url: local)
+            } else {
+                let endpoint = try await APIClient.shared.endpoint()
+                guard let remote = URL(string: message["media_url"].string, relativeTo: endpoint)?.absoluteURL,
+                      remote.scheme == "https", remote.host == endpoint.host else { throw APIError.invalidURL }
+                let loader = RemoteVideoResourceLoader(sourceURL: remote)
+                item = AVPlayerItem(asset: try loader.makeAsset())
+                videoLoader = loader
+            }
+            try Task.checkCancellation()
+            guard videoLoadID == loadID else { return }
+            videoObservation = item.observe(\.status, options: [.initial, .new]) { observed, _ in
+                guard observed.status == .failed else { return }
+                let reason = observed.error?.localizedDescription ?? "视频加载失败，请检查网络后重试"
+                Task { @MainActor in
+                    guard videoLoadID == loadID else { return }
+                    error = reason
+                    player?.pause(); player = nil
+                    videoLoader?.cancelAllRequests(); videoLoader = nil
+                    videoObservation = nil
+                }
+            }
+            player = AVPlayer(playerItem: item)
+        }
+        catch is CancellationError { }
+        catch { self.error = error.localizedDescription }
     }
     private func resetImageTransform() {
         scale = 1

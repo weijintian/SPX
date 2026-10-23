@@ -49,49 +49,7 @@ struct PublishProductView: View {
     }
     private var editing: Bool { product.id > 0 }
     var body: some View {
-        Form {
-            Section {
-                Picker("商品类型", selection: $type) { Text("实物商品").tag("physical"); Text("数字商品").tag("digital"); Text("本地服务").tag("local") }.disabled(editing)
-                field("name", "商品名称（最多 150 字）")
-                field("description", "商品简介", multiline: true)
-                Picker("分类", selection: bind("category")) { ForEach(categories, id: \.self) { Text($0).tag($0) } }
-                field("cny_price", "人民币价格 CNY", keyboard: .decimalPad)
-                if let estimate = Money.estimate(cny: values["cny_price"] ?? "", usd: usd) { Text("参考约 \(estimate) SPX001").font(.caption).foregroundStyle(.secondary) }
-                field("stock", "总库存", keyboard: .numberPad).disabled(editing)
-                field("consultation_group_code", "咨询群号（六位）")
-            } header: { Text("基本信息") } footer: { Text("人民币售价固定，SPX001 数量按实时行情换算。已发布商品库存请通过库存管理调整。") }
-            Section {
-                PhotosPicker(selection: $mainPicker, maxSelectionCount: max(1, 8 - images.count), matching: .images) { Label("批量选择主图", systemImage: "photo.on.rectangle.angled") }.disabled(images.count >= 8)
-                imageStrip($images)
-            } header: { Text("商品主图 \(images.count)/8") } footer: { Text("第一张为主图。点击缩略图菜单可设为主图或移除，图片保持完整居中。") }
-            Section("规格与库存") {
-                ForEach($variants) { $variant in
-                    VStack(alignment: .leading, spacing: 10) {
-                        TextField("规格名称，例如 黑色 / L", text: $variant.name)
-                        TextField("CNY 售价", text: $variant.cny).keyboardType(.decimalPad)
-                        TextField("库存", text: $variant.stock).keyboardType(.numberPad).disabled(editing)
-                        Toggle("启用该规格", isOn: $variant.enabled)
-                    }.padding(.vertical, 6)
-                }.onDelete { index in if !editing { variants.remove(atOffsets: index) } }
-                if variants.count < 50, !editing || !product["variants"].array.isEmpty { Button("添加规格", systemImage: "plus.circle") { variants.append(ProductVariant()) } }
-            }
-            Section("详情与服务") {
-                field("detail_text", "详细介绍", multiline: true)
-                PhotosPicker(selection: $detailPicker, maxSelectionCount: max(1, 20 - detailImages.count), matching: .images) { Label("批量添加详情图", systemImage: "photo.stack") }.disabled(detailImages.count >= 20)
-                imageStrip($detailImages)
-                field("video_url", "商品视频 URL（选填）")
-                PhotosPicker(selection: $videoPicker, matching: .videos) { Label("从相册选择商品视频", systemImage: "video.badge.plus") }
-                if !(values["video_url"] ?? "").isEmpty { Button("移除商品视频", role: .destructive) { values["video_url"] = "" } }
-                field("parameters", "商品参数", multiline: true)
-                field("service_terms", "售后与服务条款", multiline: true)
-                field("delivery_note", "交付说明", multiline: true)
-                if type == "physical" { field("shipping_fee", "运费（SPX001）", keyboard: .decimalPad); field("delivery_days", "预计发货天数", keyboard: .numberPad) }
-                if type == "local" { field("service_valid_days", "服务有效期（天）", keyboard: .numberPad); Toggle("需预约", isOn: $appointment) }
-            }
-            if !progress.isEmpty { Section { HStack { ProgressView(); Text(progress).font(.subheadline) } } }
-            if let error { Section { ErrorBanner(message: error) } }
-            Section { Button("保存草稿") { save(publishing: false) }; Button(editing ? "保存商品修改" : "提交发布") { publish = true }.fontWeight(.semibold) }.disabled(busy)
-        }.navigationTitle(editing ? "编辑商品" : "发布商品").navigationBarTitleDisplayMode(.inline).disabled(busy).interactiveDismissDisabled(busy)
+        editorForm            .navigationTitle(editing ? "编辑商品" : "发布商品").navigationBarTitleDisplayMode(.inline).disabled(busy).interactiveDismissDisabled(busy)
             .navigationBarBackButtonHidden()
             .toolbar { ToolbarItem(placement: .topBarLeading) { Button { if snapshot != savedFingerprint { leaving = true } else { dismiss() } } label: { Label("返回", systemImage: "chevron.left") }.disabled(busy) } }
             .task {
@@ -120,6 +78,70 @@ struct PublishProductView: View {
             .onChange(of: videoPicker) { _, item in if let item { Task { await uploadVideo(item) } } }
             .confirmationDialog("确认提交商品资料？", isPresented: $publish, titleVisibility: .visible) { Button("确认提交") { save(publishing: true) } }
     }
+    private var editorForm: some View {
+        Form {
+            basicSection
+            mainImageSection
+            variantSection
+            detailSection
+            statusSections
+            saveSection
+        }
+    }
+    private var basicSection: some View {
+        Section {
+            Picker("商品类型", selection: $type) { Text("实物商品").tag("physical"); Text("数字商品").tag("digital"); Text("本地服务").tag("local") }.disabled(editing)
+            field("name", "商品名称（最多 150 字）")
+            field("description", "商品简介", multiline: true)
+            Picker("分类", selection: bind("category")) { ForEach(categories, id: \.self) { Text($0).tag($0) } }
+            field("cny_price", "人民币价格 CNY", keyboard: .decimalPad)
+            if let estimate = Money.estimate(cny: values["cny_price"] ?? "", usd: usd) { Text("参考约 \(estimate) SPX001").font(.caption).foregroundStyle(.secondary) }
+            field("stock", "总库存", keyboard: .numberPad).disabled(editing)
+            field("consultation_group_code", "咨询群号（六位）")
+        } header: { Text("基本信息") } footer: { Text("人民币售价固定，SPX001 数量按实时行情换算。已发布商品库存请通过库存管理调整。") }
+    }
+    private var mainImageSection: some View {
+        Section {
+            PhotosPicker(selection: $mainPicker, maxSelectionCount: max(1, 8 - images.count), matching: .images) { Label("批量选择主图", systemImage: "photo.on.rectangle.angled") }.disabled(images.count >= 8)
+            imageStrip($images)
+        } header: { Text("商品主图 \(images.count)/8") } footer: { Text("第一张为主图。点击缩略图菜单可设为主图或移除，图片保持完整居中。") }
+    }
+    private var variantSection: some View {
+        Section("规格与库存") {
+            ForEach($variants) { $variant in
+                VStack(alignment: .leading, spacing: 10) {
+                    TextField("规格名称，例如 黑色 / L", text: $variant.name)
+                    TextField("CNY 售价", text: $variant.cny).keyboardType(.decimalPad)
+                    TextField("库存", text: $variant.stock).keyboardType(.numberPad).disabled(editing)
+                    Toggle("启用该规格", isOn: $variant.enabled)
+                }.padding(.vertical, 6)
+            }.onDelete { index in if !editing { variants.remove(atOffsets: index) } }
+            if variants.count < 50, !editing || !product["variants"].array.isEmpty { Button("添加规格", systemImage: "plus.circle") { variants.append(ProductVariant()) } }
+        }
+    }
+    private var detailSection: some View {
+        Section("详情与服务") {
+            field("detail_text", "详细介绍", multiline: true)
+            PhotosPicker(selection: $detailPicker, maxSelectionCount: max(1, 20 - detailImages.count), matching: .images) { Label("批量添加详情图", systemImage: "photo.stack") }.disabled(detailImages.count >= 20)
+            imageStrip($detailImages)
+            field("video_url", "商品视频 URL（选填）")
+            PhotosPicker(selection: $videoPicker, matching: .videos) { Label("从相册选择商品视频", systemImage: "video.badge.plus") }
+            if !(values["video_url"] ?? "").isEmpty { Button("移除商品视频", role: .destructive) { values["video_url"] = "" } }
+            field("parameters", "商品参数", multiline: true)
+            field("service_terms", "售后与服务条款", multiline: true)
+            field("delivery_note", "交付说明", multiline: true)
+            if type == "physical" { field("shipping_fee", "运费（SPX001）", keyboard: .decimalPad); field("delivery_days", "预计发货天数", keyboard: .numberPad) }
+            if type == "local" { field("service_valid_days", "服务有效期（天）", keyboard: .numberPad); Toggle("需预约", isOn: $appointment) }
+        }
+    }
+    @ViewBuilder private var statusSections: some View {
+        if !progress.isEmpty { Section { HStack { ProgressView(); Text(progress).font(.subheadline) } } }
+        if let error { Section { ErrorBanner(message: error) } }
+    }
+    private var saveSection: some View {
+        Section { Button("保存草稿") { save(publishing: false) }; Button(editing ? "保存商品修改" : "提交发布") { publish = true }.fontWeight(.semibold) }.disabled(busy)
+    }
+
     private func bind(_ key: String) -> Binding<String> { Binding(get: { values[key] ?? "" }, set: { values[key] = $0 }) }
     private func field(_ key: String, _ title: String, keyboard: UIKeyboardType = .default, multiline: Bool = false) -> some View { TextField(title, text: bind(key), axis: multiline ? .vertical : .horizontal).lineLimit(multiline ? 3...10 : 1...1).keyboardType(keyboard) }
     private func imageStrip(_ urls: Binding<[String]>) -> some View {
