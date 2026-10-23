@@ -20,7 +20,7 @@ final class ServerTrustDelegate: NSObject, URLSessionDelegate {
             logger.error("Custom anchor configuration failed: \(status)")
             completionHandler(.performDefaultHandling, nil); return
         }
-        SecTrustSetAnchorCertificatesOnly(trust, false)
+        SecTrustSetAnchorCertificatesOnly(trust, true)
         var error: CFError?
         if SecTrustEvaluateWithError(trust, &error) { completionHandler(.useCredential, URLCredential(trust: trust)) }
         else {
