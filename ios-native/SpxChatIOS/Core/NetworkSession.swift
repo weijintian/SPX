@@ -2,7 +2,12 @@ import Foundation
 import Security
 import OSLog
 
-/// Same explicit server certificate as Android. Hostname and validity are still evaluated.
+/// Pins the active server leaf certificate while URLSession evaluates hostname and validity.
+private enum ServerCertificatePin {
+    static let leafDER = Data(base64Encoded: "MIIDgDCCAmigAwIBAgIQZdIbhko8YKx3HUVdCKJnDzANBgkqhkiG9w0BAQsFADBWMQswCQYDVQQGEwJDTjEOMAwGA1UECAwFU3RhdGUxDTALBgNVBAcMBENpdHkxEDAOBgNVBAoMB1NQWENoYXQxFjAUBgNVBAMMDTcwLjM5LjIwMS4xOTEwHhcNMjYxMDIzMDUxOTU0WhcNMjcxMTI0MDUxOTU0WjAYMRYwFAYDVQQDDA03MC4zOS4yMDEuMTkxMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAn6sVF1bkJGNRq7okhoI/g9Itub6mix8aZfSHx7XsvcXjec2uZT/NLnoGsV2qiPSZwPs5K87WRj3UWHpSS8YSlggY370KtJrM4Tu1x1eM4RI257WrmNjTBX1Unaa9qBFdSzTYLFQmaT7IbH0CMVIJoOm1HqEbdumnQmw2LqrHGbCw2PfoNzWWx5cxSqPv3Re9rwL2typZwaXCQuB5loS1XsjM32qYw2wcseD9aP/nKtES2elJs1SSH0EXNUTlswnRSpk5JQg+ttiO3Gea/6/CyZXecKXHsTjgoW0wk3xM/kymwLlAmDgl2ezxQk0kUMrEap7NLqdA+BextTqAgReijQIDAQABo4GHMIGEMAwGA1UdEwEB/wQCMAAwDgYDVR0PAQH/BAQDAgWgMBMGA1UdJQQMMAoGCCsGAQUFBwMBMA8GA1UdEQQIMAaHBEYnyb8wHQYDVR0OBBYEFNlQQQA8jNu/kC6a5UlVWXHRp+YLMB8GA1UdIwQYMBaAFNlQQQA8jNu/kC6a5UlVWXHRp+YLMA0GCSqGSIb3DQEBCwUAA4IBAQAMA+wGrOrfy7dtnS8pGJtReh4yWeTdtyBcrvJ6lazxwIQco0h3GTEF73bqNligJWpDYLnAhzoGK3unFBvBlx1jv9SNI8vWPf5aPpCv2IODM22vcauCjYFj4eTRBMHnGKNLhFlF0065qOuuDkrKbaG55hQiLEiRnsaqOLDu+DxFXan1cpo+a3aHKn87ODfkYYkkBlYbUDuuUE4QkheDHBtLisL4dr83ZQf8oZlXietLSdrtjsNDfGq5L9+isliB/nyTOBtSlmw3Vtb4SUqqBzO5XsGBp0V4yrt1GknFnD9ZsLJwBAwQezOT2aNlGwo9HA7XFJRr/vjWUh7bBu25SwV")!
+}
+
+
 final class ServerTrustDelegate: NSObject, URLSessionDelegate {
     static let shared = ServerTrustDelegate()
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.spx.chat.ios", category: "ServerTrust")
@@ -15,7 +20,10 @@ final class ServerTrustDelegate: NSObject, URLSessionDelegate {
               let certificate = SecCertificateCreateWithData(nil, bytes as CFData) else {
             completionHandler(.performDefaultHandling, nil); return
         }
-        let status = SecTrustSetAnchorCertificates(trust, [certificate] as CFArray)
+        guard let leafPin = SecCertificateCreateWithData(nil, ServerCertificatePin.leafDER as CFData) else {
+            completionHandler(.performDefaultHandling, nil); return
+        }
+        let status = SecTrustSetAnchorCertificates(trust, [leafPin] as CFArray)
         guard status == errSecSuccess else {
             logger.error("Custom anchor configuration failed: \(status)")
             completionHandler(.performDefaultHandling, nil); return
