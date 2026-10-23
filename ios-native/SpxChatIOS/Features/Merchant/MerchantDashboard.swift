@@ -35,9 +35,9 @@ struct MerchantOverviewView: View {
                     SPXCard {
                         VStack(alignment: .leading, spacing: 16) {
                             Text("经营工具").font(.headline)
-                            NavigationLink("商品草稿", systemImage: "doc.text") { MerchantDraftsView() }
-                            NavigationLink("店铺资料", systemImage: "storefront") { MerchantProfileEditor(merchant: merchant, application: false) }
-                            NavigationLink("操作记录", systemImage: "clock.arrow.circlepath") { RecordsView(title: "操作记录", action: "merchant.audit") }
+                            NavigationLink { MerchantDraftsView() } label: { Label("商品草稿", systemImage: "doc.text") }
+                            NavigationLink { MerchantProfileEditor(merchant: merchant, application: false) } label: { Label("店铺资料", systemImage: "storefront") }
+                            NavigationLink { RecordsView(title: "操作记录", action: "merchant.audit") } label: { Label("操作记录", systemImage: "clock.arrow.circlepath") }
                             InfoRow(title: "待结算 SPX001", value: stats["held_amount"].string)
                             InfoRow(title: "已冻结保证金", value: merchant["deposit_frozen"].string)
                             if merchant["status"].string == "awaiting_deposit" { Button("缴纳保证金 \(required) SPX001") { deposit = true } }

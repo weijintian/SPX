@@ -21,7 +21,7 @@ struct WalletView: View {
                     walletLink("兑换", "arrow.left.arrow.right.circle") { ExchangeView() }
                     walletLink("记录", "clock") { WalletTransactionsView() }
                 }
-                SPXCard { VStack(spacing: 18) { NavigationLink("BSC 钱包绑定", systemImage: "link") { WalletBindingView() }; NavigationLink("锁仓质押", systemImage: "lock.shield") { StakingView() }; NavigationLink("红包记录", systemImage: "gift") { RedPacketHistoryView() } } }
+                SPXCard { VStack(spacing: 18) { NavigationLink { WalletBindingView() } label: { Label("BSC 钱包绑定", systemImage: "link") }; NavigationLink { StakingView() } label: { Label("锁仓质押", systemImage: "lock.shield") }; NavigationLink { RedPacketHistoryView() } label: { Label("红包记录", systemImage: "gift") } } }
                 if let error { ErrorBanner(message: error) }
             }.padding(18)
         }.navigationTitle("资产").spxPage().task { await load() }.refreshable { await load() }

@@ -6,7 +6,7 @@ struct SupportView: View {
     @State private var error: String?
     var body: some View {
         List {
-            Section { NavigationLink("提交客服工单", systemImage: "bubble.left.and.text.bubble.right") { SupportEditor() }; NavigationLink("意见反馈", systemImage: "square.and.pencil") { SupportEditor(feedback: true) }; NavigationLink("我的提问", systemImage: "questionmark.bubble") { QuestionsView() } }
+            Section { NavigationLink { SupportEditor() } label: { Label("提交客服工单", systemImage: "bubble.left.and.text.bubble.right") }; NavigationLink { SupportEditor(feedback: true) } label: { Label("意见反馈", systemImage: "square.and.pencil") }; NavigationLink { QuestionsView() } label: { Label("我的提问", systemImage: "questionmark.bubble") } }
             Section("常见问题") { ForEach(faq) { item in DisclosureGroup(item["question"].string) { Text(item["answer"].string).font(.subheadline).foregroundStyle(.secondary).textSelection(.enabled) } } }
             Section("我的工单") { ForEach(tickets) { ticket in DisclosureGroup(ticket["subject"].string) { Text(ticket["content"].string); InfoRow(title: "状态", value: ticket["status"].string); if !ticket["admin_reply"].string.isEmpty { Text(ticket["admin_reply"].string).padding(10).background(SPXColor.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10)) } } } }
         }.navigationTitle("帮助与反馈").task { await load() }.refreshable { await load() }.errorAlert($error)

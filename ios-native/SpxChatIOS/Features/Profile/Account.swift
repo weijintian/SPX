@@ -7,25 +7,25 @@ struct ProfileView: View {
     var body: some View {
         List {
             Section {
-                NavigationLink("我的二维码", systemImage: "qrcode") { QRCodeView(value: "SPXUSER:\(session.user?["spx_id"].string ?? "")", title: session.user?.name ?? "我的二维码") }
+                NavigationLink { QRCodeView(value: "SPXUSER:\(session.user?["spx_id"].string ?? "")", title: session.user?.name ?? "我的二维码") } label: { Label("我的二维码", systemImage: "qrcode") }
                 NavigationLink { ProfileEditView() } label: {
                     HStack(spacing: 16) { Avatar(url: session.user?.avatar ?? "", name: session.user?.name ?? "我", size: 64); VStack(alignment: .leading, spacing: 7) { Text(session.user?.name ?? "我的账号").font(.title2.bold()); Text("SPX ID：\(session.user?["spx_id"].string ?? "")").font(.caption).foregroundStyle(.secondary) } }.padding(.vertical, 12)
                 }
             }
             Section {
-                NavigationLink("我的资产", systemImage: "creditcard") { WalletView() }
-                NavigationLink("商家中心", systemImage: "storefront") { MerchantOverviewView() }
-                NavigationLink("我的订单", systemImage: "shippingbox") { OrdersView() }
-                NavigationLink("收藏商品", systemImage: "heart") { FavoritesView() }
-                NavigationLink("收货地址", systemImage: "mappin.and.ellipse") { AddressView() }
-                NavigationLink("邀请朋友", systemImage: "person.badge.plus") { ReferralsView() }
-                NavigationLink("我的权益", systemImage: "seal") { BenefitsView() }
+                NavigationLink { WalletView() } label: { Label("我的资产", systemImage: "creditcard") }
+                NavigationLink { MerchantOverviewView() } label: { Label("商家中心", systemImage: "storefront") }
+                NavigationLink { OrdersView() } label: { Label("我的订单", systemImage: "shippingbox") }
+                NavigationLink { FavoritesView() } label: { Label("收藏商品", systemImage: "heart") }
+                NavigationLink { AddressView() } label: { Label("收货地址", systemImage: "mappin.and.ellipse") }
+                NavigationLink { ReferralsView() } label: { Label("邀请朋友", systemImage: "person.badge.plus") }
+                NavigationLink { BenefitsView() } label: { Label("我的权益", systemImage: "seal") }
             }
             Section {
-                NavigationLink("账号与安全", systemImage: "lock.shield") { SecurityView() }
-                NavigationLink("帮助与反馈", systemImage: "questionmark.circle") { SupportView() }
-                NavigationLink("更新历史", systemImage: "clock.arrow.circlepath") { UpdateHistoryView() }
-                NavigationLink("设置", systemImage: "gearshape") { SettingsView() }
+                NavigationLink { SecurityView() } label: { Label("账号与安全", systemImage: "lock.shield") }
+                NavigationLink { SupportView() } label: { Label("帮助与反馈", systemImage: "questionmark.circle") }
+                NavigationLink { UpdateHistoryView() } label: { Label("更新历史", systemImage: "clock.arrow.circlepath") }
+                NavigationLink { SettingsView() } label: { Label("设置", systemImage: "gearshape") }
             }
             Section { Button("退出登录", role: .destructive) { logout = true } }
         }.navigationTitle("我的").spxPage().refreshable { try? await session.refreshProfile() }
