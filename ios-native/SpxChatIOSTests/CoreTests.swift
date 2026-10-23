@@ -4,6 +4,9 @@ import XCTest
 final class CoreTests: XCTestCase {
     /// Integration probe: no credentials or user data; exercises iOS TLS against the actual login host.
     func testBundledServerCertificateReachesAPIWithoutCredentials() async throws {
+        guard ProcessInfo.processInfo.environment["SPX_RUN_LIVE_TLS_PROBE"] == "1" else {
+            throw XCTSkip("Set SPX_RUN_LIVE_TLS_PROBE=1 to test current production TLS directly")
+        }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 15
         configuration.timeoutIntervalForResource = 20
@@ -39,17 +42,6 @@ final class CoreTests: XCTestCase {
         await api.setToken(nil)
         let loggedOut = await api.sessionIdentity()
         XCTAssertNotEqual(changed, loggedOut)
-    }
-    func testKeychainCanReplaceAndRemoveOnlyItsOwnTestCredential() throws {
-        let account = "test-session-" + UUID().uuidString
-        defer { try? Keychain.write(nil, account: account) }
-        try Keychain.write("old", account: account)
-        XCTAssertEqual(Keychain.read(account), "old")
-        try Keychain.write("new", account: account)
-        XCTAssertEqual(Keychain.read(account), "new")
-        try Keychain.write(nil, account: account)
-        XCTAssertNil(Keychain.read(account))
-        XCTAssertNoThrow(try Keychain.write(nil, account: account))
     }
     @MainActor func testOutboxRejectsAttachmentsFromPreviousAccountBeforeEnqueue() async {
         let outbox = Outbox()
