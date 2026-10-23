@@ -4,9 +4,6 @@ import XCTest
 final class CoreTests: XCTestCase {
     /// Integration probe: no credentials or user data; exercises iOS TLS against the actual login host.
     func testBundledServerCertificateReachesAPIWithoutCredentials() async throws {
-        guard ProcessInfo.processInfo.environment["SPX_RUN_LIVE_TLS_PROBE"] == "1" else {
-            throw XCTSkip("Set SPX_RUN_LIVE_TLS_PROBE=1 to test current production TLS directly")
-        }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 15
         configuration.timeoutIntervalForResource = 20
