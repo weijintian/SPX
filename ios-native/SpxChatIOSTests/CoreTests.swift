@@ -229,7 +229,14 @@ final class CoreTests: XCTestCase {
         } catch { }
         let otherAccount: Record? = await store.read(key, userID: userID - 1)
         XCTAssertNil(otherAccount)
-        await store.remove(key, userID: userID)
+        let rejected = await store.completeFinancial(key, userID: userID, requestID: "other-request")
+        XCTAssertFalse(rejected)
+        let retained: Record? = await store.read(key, userID: userID)
+        XCTAssertEqual(retained, reserved)
+        let cleared = await store.completeFinancial(key, userID: userID, requestID: reserved["client_request_id"].string)
+        XCTAssertTrue(cleared)
+        let empty: Record? = await store.read(key, userID: userID)
+        XCTAssertNil(empty)
     }
 
 }

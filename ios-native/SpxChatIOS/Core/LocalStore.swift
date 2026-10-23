@@ -30,6 +30,13 @@ actor LocalStore {
         try save(pending, key: key, userID: userID)
         return pending
     }
+    /// An old page may finish after a new request was reserved; only clear its own ID.
+    func completeFinancial(_ key: String, userID: Int, requestID: String) -> Bool {
+        let saved: Record? = read(key, userID: userID)
+        guard !requestID.isEmpty, saved?["client_request_id"].string == requestID else { return false }
+        remove(key, userID: userID)
+        return true
+    }
     func remove(_ key:String,userID:Int) {try? FileManager.default.removeItem(at:url(key,userID:userID))}
     func updateGroupContactRemark(peerID: Int, remark: String, userID: Int) {
         guard userID > 0, peerID > 0 else { return }

@@ -118,7 +118,7 @@ struct WalletTransferView: View {
     }
     private func finish(_ result: JSON, owner: Int) async {
         guard result["cancelled"].flag || result["transaction_id"].int > 0 else { return }
-        await LocalStore.shared.remove("withdraw-pending", userID: owner)
+        guard await LocalStore.shared.completeFinancial("withdraw-pending", userID: owner, requestID: result["client_request_id"].string) else { return }
         guard session.user?.id == owner else { return }
         pending = nil; uncertain = false; amount = ""
         error = result["cancelled"].flag ? "已确认上次申请未提交，可重新填写。" : "提现已提交，请在交易记录查看处理状态。"
@@ -235,6 +235,7 @@ struct WalletTransactionsView: View {
 }
 
 struct StakingView: View {
+    @State private var pending: Record?
     @EnvironmentObject private var session: SessionStore
     @State private var plans: [Record] = []
     @State private var records: [Record] = []
@@ -295,7 +296,7 @@ struct StakingView: View {
     }
     private func finish(_ result: JSON, owner: Int) async {
         guard result["cancelled"].flag || result["id"].int > 0 else { return }
-        await LocalStore.shared.remove("staking-pending", userID: owner)
+        guard await LocalStore.shared.completeFinancial("staking-pending", userID: owner, requestID: result["client_request_id"].string) else { return }
         guard session.user?.id == owner else { return }
         pending = nil; uncertain = false
         error = result["cancelled"].flag ? "已确认上次申请未提交，可重新选择方案。" : "质押申请已完成。"
