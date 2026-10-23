@@ -24,6 +24,8 @@ ios-native/*.xcworkspace/
 !.env.example
 **/Config/Local.xcconfig
 **/signing.properties
+ios-native/signing/
+ios-native/project.signing.generated.json
 **/signing.env.ps1
 **/tencent-call.env
 **/config*.private.php

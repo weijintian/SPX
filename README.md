@@ -28,6 +28,10 @@ GitHub 的 **Actions → iOS build and archive** 会在源码推送及手动运�
 
 ## 生成可安装的正式包
 
+已提供证书时，可使用 **Actions → iOS signed IPA → Run workflow** 自动签名并导出 IPA。
+所需三个加密 Secrets、安装范围和本机打包方法见 [签名说明](ios-native/SIGNING.md)。
+证书和描述文件只保存在加密 Secrets 或本地忽略的 signing 目录，不能提交到 Git。
+
 在 Mac 的 Xcode 中登录 Apple Developer 账号，配置 com.spx.chat.ios 对应的签名和描述文件。然后运行：
 
 ```bash
@@ -36,7 +40,7 @@ cd ios-native
 bash scripts/archive-macos.sh
 ```
 
-使用 Xcode Organizer 验证并导出 IPA，按实际账号和分发方式选择 Development、Ad Hoc、TestFlight 或 App Store。证书、私钥、描述文件和账号凭证不存入本仓库。CI 目前只生成未签名归档；尚未配置签名 IPA 导出。
+使用 Xcode Organizer 验证并导出 IPA，按实际账号和分发方式选择 Development、Ad Hoc、TestFlight 或 App Store。证书、私钥、描述文件和账号凭证不存入本仓库。默认 CI 生成未签名归档；独立的签名工作流需配置三个加密 Secrets 后手动运行。
 
 ## 代码与验收状态
 

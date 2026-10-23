@@ -1,0 +1,79 @@
+name: iOS signed IPA
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_id:
+        description: 'Bundle ID (leave empty to use the provisioning profile)'
+        required: false
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: ios-sign-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  sign:
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-15
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: ios-native
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check signing configuration
+        env:
+          SPX_IOS_CERTIFICATE_BASE64: ${{ secrets.SPX_IOS_CERTIFICATE_BASE64 }}
+          SPX_IOS_P12_PASSWORD: ${{ secrets.SPX_IOS_P12_PASSWORD }}
+          SPX_IOS_PROFILE_BASE64: ${{ secrets.SPX_IOS_PROFILE_BASE64 }}
+        run: |
+          python - <<'PY'
+          import os, sys
+          names = ('SPX_IOS_CERTIFICATE_BASE64', 'SPX_IOS_P12_PASSWORD', 'SPX_IOS_PROFILE_BASE64')
+          missing = [name for name in names if not os.environ.get(name)]
+          if missing:
+              sys.exit('Configure these repository Actions secrets: ' + ', '.join(missing))
+          print('Signing secrets are configured; values are not printed.')
+          PY
+      - name: Prepare toolchain and validate sources
+        run: |
+          set -euo pipefail
+          export HOMEBREW_NO_AUTO_UPDATE=1
+          command -v xcodegen >/dev/null || brew install xcodegen
+          command -v pod >/dev/null
+          python -m pip install -r scripts/requirements-dev.txt
+          python scripts/validate_sources.py
+          python scripts/test_signing_configuration.py
+          mkdir -p build
+      - name: Archive, sign, export and verify IPA
+        env:
+          SPX_IOS_CERTIFICATE_BASE64: ${{ secrets.SPX_IOS_CERTIFICATE_BASE64 }}
+          SPX_IOS_P12_PASSWORD: ${{ secrets.SPX_IOS_P12_PASSWORD }}
+          SPX_IOS_PROFILE_BASE64: ${{ secrets.SPX_IOS_PROFILE_BASE64 }}
+          SPX_BUNDLE_IDENTIFIER: ${{ inputs.bundle_id }}
+          SPX_BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          set -o pipefail
+          bash scripts/build-signed-ipa-macos.sh 2>&1 | tee build/signing.log
+      - name: Upload signed IPA and verification report
+        uses: actions/upload-artifact@v4
+        with:
+          name: SPX-signed-IPA-${{ github.run_number }}
+          path: |
+            ios-native/build/export/*.ipa
+            ios-native/build/export/SHA256SUMS.txt
+            ios-native/build/export/signing-report.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-signing-logs-${{ github.run_number }}
+          path: ios-native/build/signing.log
+          if-no-files-found: ignore
+          retention-days: 7

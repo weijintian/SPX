@@ -24,6 +24,10 @@ The verification script builds the app and runs the XCTest target. The current W
 
 An Apple Developer team, bundle identifiers, signing certificates, provisioning, App Store Connect records, and Apple review are required before TestFlight or App Store distribution. `scripts/archive-macos.sh` only creates an archive; it does not upload or publish it.
 
+For an existing P12 and provisioning profile, use the manual **iOS signed IPA**
+workflow or `scripts/build-signed-ipa-macos.sh`. See [SIGNING.md](SIGNING.md) for
+secret configuration, signed IPA export and device restrictions.
+
 ## Integration boundaries
 
 - Deploy the companion `spxchat/chat_upload.php` and `spxchat/index.php` changes before using this media resume build. `upload.message.status` returns authenticated per-account checkpoints and completed upload results; the existing `upload.message.chunk` contract remains compatible.

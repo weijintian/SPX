@@ -7,3 +7,5 @@ xcuserdata/
 *.p12
 *.mobileprovision
 Config/Local.xcconfig
+signing/
+project.signing.generated.json
