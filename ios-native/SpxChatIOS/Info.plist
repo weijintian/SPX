@@ -8,6 +8,21 @@
   <key>NSPhotoLibraryUsageDescription</key><string>用于选择并发送图片和视频</string>
   <key>NSPhotoLibraryAddUsageDescription</key><string>用于保存聊天媒体</string>
   <key>NSLocationWhenInUseUsageDescription</key><string>用于发送位置和地图导航</string>
+  <!-- The API uses a private certificate on this IP. Allow its custom anchor
+       evaluation; ServerTrustDelegate still verifies the pinned certificate,
+       SSL hostname and validity. All other hosts retain default ATS rules. -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSExceptionDomains</key>
+    <dict>
+      <key>70.39.201.191</key>
+      <dict>
+        <key>NSExceptionAllowsInsecureHTTPLoads</key><true/>
+        <key>NSExceptionMinimumTLSVersion</key><string>TLSv1.2</string>
+        <key>NSExceptionRequiresForwardSecrecy</key><true/>
+      </dict>
+    </dict>
+  </dict>
   <key>UIBackgroundModes</key><array><string>audio</string></array>
   <key>CFBundleURLTypes</key><array><dict><key>CFBundleURLSchemes</key><array><string>spxchat</string></array></dict></array>
   <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
