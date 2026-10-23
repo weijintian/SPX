@@ -2,6 +2,84 @@ import XCTest
 @testable import SpxChatIOS
 
 final class CoreTests: XCTestCase {
+    /// Integration probe: no credentials or user data; exercises iOS TLS against the actual login host.
+    func testBundledServerCertificateReachesAPIWithoutCredentials() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 15
+        configuration.timeoutIntervalForResource = 20
+        let session = URLSession(configuration: configuration, delegate: ServerTrustDelegate.shared, delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        let url = URL(string: "https://70.39.201.191/spxchat/api.php?action=me")!
+        let (data, response) = try await session.data(from: url)
+        let http = try XCTUnwrap(response as? HTTPURLResponse)
+        XCTAssertEqual(http.statusCode, 401, "The protected endpoint should reject an anonymous request after TLS succeeds")
+        XCTAssertNoThrow(try JSONDecoder().decode(APIEnvelope.self, from: data))
+    }
+
+    func testAuthenticationRequiresBothCredentialAndValidAccount() throws {
+        let account = try AuthenticatedAccount(.object(["token": "test-session", "user": .object(["id": 42, "nickname": "Tester"])]))
+        XCTAssertEqual(account.token, "test-session")
+        XCTAssertEqual(account.user.id, 42)
+        for result in [JSON.null, .object(["token": "test-session"]),
+                             .object(["token": " ", "user": .object(["id": 42])]),
+                             .object(["token": "test-session", "user": .object(["id": 0])])] {
+            XCTAssertThrowsError(try AuthenticatedAccount(result))
+        }
+    }
+    func testReapplyingSameCredentialDoesNotInvalidateCurrentRequests() async {
+        let api = APIClient()
+        await api.setToken("first")
+        let original = await api.sessionIdentity()
+        await api.setToken("first")
+        let unchanged = await api.sessionIdentity()
+        XCTAssertEqual(original, unchanged)
+        await api.setToken("second")
+        let changed = await api.sessionIdentity()
+        XCTAssertNotEqual(original, changed)
+        await api.setToken(nil)
+        let loggedOut = await api.sessionIdentity()
+        XCTAssertNotEqual(changed, loggedOut)
+    }
+    func testKeychainCanReplaceAndRemoveOnlyItsOwnTestCredential() throws {
+        let account = "test-session-" + UUID().uuidString
+        defer { try? Keychain.write(nil, account: account) }
+        try Keychain.write("old", account: account)
+        XCTAssertEqual(Keychain.read(account), "old")
+        try Keychain.write("new", account: account)
+        XCTAssertEqual(Keychain.read(account), "new")
+        try Keychain.write(nil, account: account)
+        XCTAssertNil(Keychain.read(account))
+        XCTAssertNoThrow(try Keychain.write(nil, account: account))
+    }
+    @MainActor func testOutboxRejectsAttachmentsFromPreviousAccountBeforeEnqueue() async {
+        let outbox = Outbox()
+        let owner = 2_147_480_000
+        await outbox.start(userID: owner)
+        do {
+            try await outbox.enqueue(scope: "chat", id: 1, body: ["message_type": "image"],
+                                     localURL: URL(fileURLWithPath: "/tmp/previous-account.jpg"), expectedUserID: owner - 1)
+            XCTFail("A stale media selection must not enter the new account's queue")
+        } catch APIError.staleSession { }
+        catch { XCTFail("Unexpected error: " + error.localizedDescription) }
+        XCTAssertTrue(outbox.items.isEmpty)
+        await outbox.stop(userID: owner)
+        await LocalStore.shared.remove("outbox", userID: owner)
+    }
+
+    func testAuthenticationTransportErrorsRemainDistinctFromAccountErrors() {
+        let cancelled = AuthenticationErrorMessage.describe(URLError(.cancelled))
+        let untrusted = AuthenticationErrorMessage.describe(URLError(.serverCertificateUntrusted))
+        let offline = AuthenticationErrorMessage.describe(URLError(.notConnectedToInternet))
+        XCTAssertTrue(cancelled.contains("-999"))
+        XCTAssertTrue(untrusted.contains("-1202"))
+        XCTAssertTrue(untrusted.contains("证书"))
+        XCTAssertTrue(offline.contains("网络不可用"))
+        XCTAssertNotEqual(cancelled, untrusted)
+        XCTAssertEqual(AuthenticationErrorMessage.describe(APIError.server(422, "用户名或密码错误")), "用户名或密码错误")
+        XCTAssertTrue(AuthenticationErrorMessage.describe(URLError(.serverCertificateNotYetValid)).contains("手机日期"))
+        XCTAssertEqual(AuthenticationErrorMessage.describe(CancellationError()), "操作已取消，请重试")
+    }
+
     func testGroupRemarksRenameExistingMessageAndQuoteWithoutChangingIdentity() {
         let source = Record(["id": 100, "sender_id": 2, "nickname": "Bob", "content": "hello", "reply": .object(["id": 90, "sender_id": 2, "nickname": "Bob", "preview": "earlier"])])
         let renamed = source.applyingGroupRemark(peerID: 2, remark: "Friend B")

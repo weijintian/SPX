@@ -31,7 +31,7 @@ actor APIClient {
         configuration.timeoutIntervalForResource = 300
         session = URLSession(configuration:configuration, delegate: ServerTrustDelegate.shared, delegateQueue: nil)
     }
-    func setToken(_ value:String?) { token = value; generation = UUID() }
+    func setToken(_ value:String?) { guard token != value else { return }; token = value; generation = UUID() }
     func sessionIdentity() -> UUID { generation }
     func endpoint() throws -> URL {
         let configured = UserDefaults.standard.string(forKey:"spx.apiURL") ?? "https://70.39.201.191/spxchat/api.php"

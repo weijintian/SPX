@@ -134,7 +134,7 @@ struct UpdateHistoryView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                Text("以下为平台 Android 版本记录。iOS 已安装版本请在设置中查看，后续更新通过 App Store 提供。")
+                Text("以下为平台 Android 版本记录。iOS 已安装版本请在设置中查看，新版本请通过官方发布渠道重新下载安装。")
                     .font(.footnote).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
                 if !loaded { ProgressView().padding(30) }
                 ForEach(rows, id: \.fields) { release in

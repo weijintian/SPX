@@ -466,8 +466,9 @@ struct ConversationView: View {
         if let replied { body["reply_to_message_id"] = .number(Decimal(replied.id)) }
         if isGroup { body["mention_user_ids"] = .array(mentions.keys.sorted().filter { value.contains("@\(mentions[$0] ?? "")") }.map { .number(Decimal($0)) }) }
         let savedMentions = mentions
+        let savedReply = replied
         text = ""; replied = nil; mentions = [:]
-        Task { do { try await outbox.enqueue(scope: isGroup ? "group" : "chat", id: item.id, body: body); scrollTarget = "bottom" } catch { if text.isEmpty { text = value; mentions = savedMentions }; self.error = error.localizedDescription } }
+        Task { do { try await outbox.enqueue(scope: isGroup ? "group" : "chat", id: item.id, body: body, expectedUserID: userID); scrollTarget = "bottom" } catch { if text.isEmpty { text = value; mentions = savedMentions; replied = savedReply }; self.error = error.localizedDescription } }
     }
     private func insertMention(id: Int, name: String) {
         guard id != userID, id > 0 || id == -1, !name.isEmpty else { return }
@@ -497,7 +498,7 @@ struct ConversationView: View {
         if selectedMessages.contains(id) { selectedMessages.remove(id) } else if selectedMessages.count < 100 { selectedMessages.insert(id) } else { error = "一次最多选择 100 条消息" }
     }
     private func queue(file: URL, kind: String, name: String) async throws {
-        try await outbox.enqueue(scope: isGroup ? "group" : "chat", id: item.id, body: ["content": .string(name), "message_type": .string(kind)], localURL: file)
+        try await outbox.enqueue(scope: isGroup ? "group" : "chat", id: item.id, body: ["content": .string(name), "message_type": .string(kind)], localURL: file, expectedUserID: userID)
         scrollTarget = "bottom"
     }
     private func sendPhotos(_ items: [PhotosPickerItem]) async {

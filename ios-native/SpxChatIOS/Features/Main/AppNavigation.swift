@@ -11,7 +11,20 @@ struct RootView: View {
         ZStack {
             Group {
                 if session.restoring { ProgressView("正在恢复会话…") }
-                else if session.isAuthenticated { MainTabView().id(session.user?.id) }
+                else if session.isAuthenticated {
+                    MainTabView().id(session.user?.id)
+                        .safeAreaInset(edge: .top, spacing: 0) {
+                            if let message = session.recoveryError {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("正在恢复连接，暂时显示本机缓存").font(.subheadline.bold())
+                                    Text(message).font(.caption).foregroundStyle(.secondary)
+                                    Button(session.recoveringSession ? "重试中…" : "重新连接") { Task { await session.restore() } }
+                                        .disabled(session.recoveringSession)
+                                }.frame(maxWidth: .infinity, alignment: .leading).padding(12).background(.regularMaterial)
+                            }
+                        }
+                }
+                else if session.token != nil { SessionRecoveryView() }
                 else { AuthView() }
             }
         }
@@ -45,6 +58,20 @@ struct RootView: View {
                 }.toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { link = nil } } }
             }
         }
+    }
+}
+
+private struct SessionRecoveryView: View {
+    @EnvironmentObject private var session: SessionStore
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "wifi.exclamationmark").font(.system(size: 42)).foregroundStyle(.secondary)
+            Text("暂时无法恢复登录").font(.title3.bold())
+            Text(session.recoveryError ?? "请检查网络后重试").foregroundStyle(.secondary).multilineTextAlignment(.center)
+            if session.recoveringSession { ProgressView("正在重新连接…") }
+            Button("重新连接") { Task { await session.restore() } }.buttonStyle(.borderedProminent).disabled(session.recoveringSession || session.loading)
+            Button(session.loading ? "退出中…" : "返回登录") { Task { await session.logout() } }.disabled(session.loading)
+        }.padding(28).frame(maxWidth: 440)
     }
 }
 

@@ -49,8 +49,9 @@ struct PendingMessage: Codable, Identifiable {
         await LocalStore.shared.write(snapshot, key: "outbox", userID: userID)
     }
 
-    func enqueue(scope: String, id: Int, body: [String: JSON], localURL: URL? = nil) async throws {
+    func enqueue(scope: String, id: Int, body: [String: JSON], localURL: URL? = nil, expectedUserID: Int) async throws {
         guard userID > 0, id > 0 else { throw APIError.unauthorized }
+        guard expectedUserID == userID else { throw APIError.staleSession }
         let clientID = UUID().uuidString.lowercased()
         var payload = body
         payload[scope == "group" ? "group_id" : "chat_id"] = .number(Decimal(id))

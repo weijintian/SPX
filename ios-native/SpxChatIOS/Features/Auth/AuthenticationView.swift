@@ -91,7 +91,7 @@ struct AuthView: View {
             do {
                 try await APIClient.shared.post("auth.email.code", ["email": .string(email), "purpose": "register"])
                 cooldown = 60; notice = "验证码已发送，请查收邮箱"
-            } catch { session.error = error.localizedDescription }
+            } catch { session.error = AuthenticationErrorMessage.describe(error) }
         }
     }
 }
@@ -124,10 +124,10 @@ struct PasswordResetView: View {
     }
     private func send() {
         busy = true
-        Task { defer { busy = false }; do { try await APIClient.shared.post("auth.email.code", ["email": .string(email), "purpose": "password_reset"]); cooldown = 60 } catch { self.error = error.localizedDescription } }
+        Task { defer { busy = false }; do { try await APIClient.shared.post("auth.email.code", ["email": .string(email), "purpose": "password_reset"]); cooldown = 60 } catch { self.error = AuthenticationErrorMessage.describe(error) } }
     }
     private func save() {
         busy = true
-        Task { defer { busy = false }; do { try await APIClient.shared.post("auth.password.reset", ["email": .string(email), "code": .string(code), "new_password": .string(password)]); dismiss() } catch { self.error = error.localizedDescription } }
+        Task { defer { busy = false }; do { try await APIClient.shared.post("auth.password.reset", ["email": .string(email), "code": .string(code), "new_password": .string(password)]); dismiss() } catch { self.error = AuthenticationErrorMessage.describe(error) } }
     }
 }

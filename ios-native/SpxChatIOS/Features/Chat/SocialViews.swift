@@ -137,6 +137,7 @@ struct GroupJoinView: View {
 }
 
 struct ForwardMessageView: View {
+    @EnvironmentObject private var session: SessionStore
     let messages: [Record]
     init(message: Record) { messages = [message] }
     init(messages: [Record]) { self.messages = messages }
@@ -188,10 +189,12 @@ struct ForwardMessageView: View {
     private func send() {
         guard !busy else { return }; busy = true
         let destinations = selection.sorted()
+        let owner = session.user?.id ?? 0
         Task {
             defer { busy = false }
             do {
                 for destination in destinations {
+                    guard owner > 0, session.user?.id == owner else { throw APIError.staleSession }
                     let pieces = destination.split(separator: ":"); guard pieces.count == 2, let id = Int(pieces[1]) else { continue }
                     var scope = String(pieces[0]); var targetID = id
                     if scope == "contact" { targetID = try await APIClient.shared.post("chats.create", ["peer_user_id": .number(Decimal(id))])["chat_id"].int; scope = "chat" }
@@ -199,7 +202,7 @@ struct ForwardMessageView: View {
                     for (index, message) in available.enumerated() {
                         let receipt = destination+":"+String(index)
                         guard !accepted.contains(receipt) else { continue }
-                        try await Outbox.shared.enqueue(scope: scope, id: targetID, body: MessageContent.forwardBody(message))
+                        try await Outbox.shared.enqueue(scope: scope, id: targetID, body: MessageContent.forwardBody(message), expectedUserID: owner)
                         accepted.insert(receipt)
                     }
                 }
@@ -311,6 +314,7 @@ struct ScheduledMessageView: View {
 }
 
 struct SendLocationView: View {
+    @EnvironmentObject private var session: SessionStore
     let scope: String
     let targetID: Int
     @Environment(\.dismiss) private var dismiss
@@ -321,7 +325,7 @@ struct SendLocationView: View {
         NavigationStack {
             Form {
                 TextField("位置名称", text: $label)
-                if let coordinate = location.coordinate { InfoRow(title: "纬度", value: String(coordinate.latitude)); InfoRow(title: "经度", value: String(coordinate.longitude)); Button("发送位置") { Task { do { let link = "https://maps.apple.com/?ll=\(coordinate.latitude),\(coordinate.longitude)&q=\(label.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"; try await Outbox.shared.enqueue(scope: scope, id: targetID, body: ["message_type": "text", "content": .string("\(label)\n\(link)")]); dismiss() } catch { self.error = error.localizedDescription } } } }
+                if let coordinate = location.coordinate { InfoRow(title: "纬度", value: String(coordinate.latitude)); InfoRow(title: "经度", value: String(coordinate.longitude)); Button("发送位置") { let owner = session.user?.id ?? 0; Task { do { let link = "https://maps.apple.com/?ll=\(coordinate.latitude),\(coordinate.longitude)&q=\(label.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"; try await Outbox.shared.enqueue(scope: scope, id: targetID, body: ["message_type": "text", "content": .string("\(label)\n\(link)")], expectedUserID: owner); dismiss() } catch { self.error = error.localizedDescription } } } }
                 else { ProgressView("正在获取当前位置…") }
                 if let error = location.error { ErrorBanner(message: error); Button("重试") { location.request() } }
             }.navigationTitle("发送位置").toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }.onAppear { location.request() }.errorAlert($error)
