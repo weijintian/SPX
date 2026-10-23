@@ -1,0 +1,30 @@
+workflows:
+  ios-release:
+    name: SPX iOS signed IPA
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      groups:
+        - spx-ios-signing
+      vars:
+        SPX_BUNDLE_IDENTIFIER: ce4c475e-98c7-45a1-a039-f25e31da8cbb
+    scripts:
+      - name: Validate iOS sources
+        script: |
+          set -euo pipefail
+          cd ios-native
+          command -v xcodegen >/dev/null || brew install xcodegen
+          command -v pod >/dev/null
+          python3 -m pip install -r scripts/requirements-dev.txt
+          python3 scripts/validate_sources.py
+          python3 scripts/test_signing_configuration.py
+      - name: Build and sign IPA
+        script: |
+          set -euo pipefail
+          cd ios-native
+          bash scripts/build-signed-ipa-macos.sh 2>&1 | tee build/signing.log
+    artifacts:
+      - ios-native/build/export/*.ipa
+      - ios-native/build/export/SHA256SUMS.txt
+      - ios-native/build/export/signing-report.json
+      - ios-native/build/signing.log
