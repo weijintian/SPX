@@ -1,4 +1,6 @@
 import Foundation
+import SwiftUI
+import CoreTransferable
 import CryptoKit
 import PhotosUI
 import UniformTypeIdentifiers
