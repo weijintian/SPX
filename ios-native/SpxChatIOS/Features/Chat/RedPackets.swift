@@ -1,0 +1,93 @@
+import SwiftUI
+
+extension Notification.Name { static let spxOpenPacket = Notification.Name("spx.openPacket") }
+
+struct RedPacketSendView: View {
+    let scope: String
+    let targetID: Int
+    @EnvironmentObject private var session: SessionStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var mode = "ordinary"
+    @State private var count = 1
+    @State private var amount = ""
+    @State private var greeting = "恭喜发财，大吉大利"
+    @State private var password = ""
+    @State private var requestID = UUID().uuidString.lowercased()
+    @State private var busy = false
+    @State private var uncertain = false
+    @State private var error: String?
+    @State private var confirm = false
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("红包类型", selection: $mode) { Text("普通红包").tag("ordinary"); if scope == "group" { Text("拼手气红包").tag("random") } }
+                    if scope == "group" { Stepper("红包个数：\(count)", value: $count, in: 1...100) }
+                    TextField("总金额（SPX001）", text: $amount).keyboardType(.decimalPad)
+                    TextField("祝福语", text: $greeting)
+                    SecureField("账号密码", text: $password).textContentType(.password)
+                }.disabled(uncertain || busy)
+                Section {
+                    Text("红包到账至 SPX001 资产。普通红包按六位小数均分，未领取部分由服务器按到期规则退回。").font(.footnote).foregroundStyle(.secondary)
+                    if uncertain { Button("核对上次发送结果") { resolve() } }
+                    else { Button(busy ? "发送中…" : "塞钱进红包") { confirm = true }.disabled(busy || !Money.positive(amount, scale: 6) || password.isEmpty) }
+                }
+            }.navigationTitle("发红包").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() }.disabled(busy) } }
+                .tint(.red).errorAlert($error)
+                .confirmationDialog("确认发送 \(amount) SPX001，分为 \(count) 个红包？", isPresented: $confirm, titleVisibility: .visible) { Button("确认发送") { send() } }
+                .task { if let saved: String = await LocalStore.shared.read("redpacket-pending-\(scope)-\(targetID)", userID: session.user?.id ?? 0) { requestID = saved; uncertain = true } }
+        }
+    }
+    private func send() {
+        guard !busy, let owner = session.user?.id, owner > 0 else { return }
+        guard greeting.count <= 50 else { error = "祝福语最多 50 字"; return }
+        guard let total = Decimal(string: amount), total >= Decimal(count) * Decimal(string: "0.000001")! else { error = "每个红包至少 0.000001 SPX001"; return }
+        if mode == "ordinary" { let each = total / Decimal(count); var raw = each; var rounded = Decimal(); NSDecimalRound(&rounded, &raw, 6, .down); guard rounded * Decimal(count) == total else { error = "普通红包需可按六位小数平均分配，请调整总额或个数"; return } }
+        busy = true
+        let payload: [String: JSON] = ["request_id": .string(requestID), "scope": .string(scope), "target_id": .number(Decimal(targetID)), "mode": .string(mode), "count": .number(Decimal(count)), "amount": .string(amount), "greeting": .string(greeting), "password": .string(password)]
+        Task {
+            defer { busy = false; password = "" }
+            do { try await LocalStore.shared.save(requestID, key: "redpacket-pending-\(scope)-\(targetID)", userID: owner) }
+            catch { self.error = "无法保存红包恢复记录，请检查设备存储后重试"; return }
+            do { guard session.user?.id == owner else { throw APIError.staleSession }; let result = try await APIClient.shared.post("redpackets.create", payload); guard session.user?.id == owner else { throw APIError.staleSession }; ChatSoundEffects.shared.packet(result["message"].record); await LocalStore.shared.remove("redpacket-pending-\(scope)-\(targetID)", userID: owner); dismiss() }
+            catch {
+                if (error as? APIError)?.definitiveRejection == true { await LocalStore.shared.remove("redpacket-pending-\(scope)-\(targetID)", userID: owner); requestID = UUID().uuidString.lowercased(); self.error = error.localizedDescription }
+                else { uncertain = true; self.error = "发送结果需要核对：\(error.localizedDescription)" }
+            }
+        }
+    }
+    private func resolve() {
+        guard !busy, let owner = session.user?.id else { return }
+        busy = true
+        Task { defer { busy = false }; do { let result = try await APIClient.shared.get("redpackets.request", ["request_id": requestID]); guard session.user?.id == owner else { throw APIError.staleSession }; await LocalStore.shared.remove("redpacket-pending-\(scope)-\(targetID)", userID: owner); if result["exists"].flag { ChatSoundEffects.shared.packet(result["message"].record); dismiss() } else { requestID = UUID().uuidString.lowercased(); uncertain = false; error = "服务器已核对，红包未创建，可以重新填写发送" } } catch { self.error = error.localizedDescription } }
+    }
+}
+
+struct RedPacketPopup: View {
+    let packetID: String
+    let close: () -> Void
+    @State private var packet: JSON = .null
+    @State private var busy = false
+    @State private var error: String?
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.55).ignoresSafeArea().onTapGesture { if !busy { close() } }
+            VStack(spacing: 22) {
+                Image(systemName: "gift.fill").font(.system(size: 38)).foregroundStyle(.yellow)
+                Text(packet["sender_name"].string).font(.headline)
+                Text(packet["greeting"].string.isEmpty ? "恭喜发财，大吉大利" : packet["greeting"].string).font(.title3.weight(.medium)).multilineTextAlignment(.center)
+                if packet["can_claim"].flag {
+                    Button { claim() } label: { ZStack { Circle().fill(LinearGradient(colors: [.yellow, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)).frame(width: 94, height: 94); Circle().stroke(.brown.opacity(0.4), lineWidth: 2).frame(width: 80, height: 80); if busy { ProgressView().tint(.brown) } else { Text("開").font(.system(size: 38, weight: .medium, design: .serif)).foregroundStyle(.brown) } } }.disabled(busy)
+                } else if !packet["my_amount"].string.isEmpty { Text("\(packet["my_amount"].string) SPX001").font(.title2.bold()).foregroundStyle(.yellow); Text("已存入资产").font(.footnote) }
+                else { Text(packet["status"].string == "active" ? "查看红包领取情况" : "红包已领完或已过期").foregroundStyle(.white.opacity(0.8)) }
+                if let error { Text(error).font(.footnote).foregroundStyle(.yellow) }
+                if !packet["claims"].array.isEmpty {
+                    ScrollView { LazyVStack(spacing: 12) { ForEach(Array(packet["claims"].array.enumerated()), id: \.offset) { _, claim in HStack { Text(claim["nickname"].string); Spacer(); Text(claim["amount"].string) }.font(.caption) } } }.frame(maxHeight: 200)
+                }
+                Button("关闭") { close() }.foregroundStyle(.white.opacity(0.8)).disabled(busy)
+            }.padding(30).frame(maxWidth: 320).foregroundStyle(.white).background(LinearGradient(colors: [Color(red: 0.86, green: 0.24, blue: 0.18), Color(red: 0.67, green: 0.1, blue: 0.1)], startPoint: .top, endPoint: .bottom), in: RoundedRectangle(cornerRadius: 24))
+        }.task { do { packet = try await APIClient.shared.get("redpackets.detail", ["id": packetID]) } catch { self.error = error.localizedDescription } }
+    }
+    private func claim() { busy = true; Task { defer { busy = false }; do { packet = try await APIClient.shared.post("redpackets.claim", ["id": .string(packetID)]) } catch { self.error = error.localizedDescription; if let result = try? await APIClient.shared.get("redpackets.detail", ["id": packetID]) { packet = result } } } }
+}

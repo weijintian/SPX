@@ -1,0 +1,34 @@
+# Generated Apple projects and dependencies
+ios-native/*.xcodeproj/
+ios-native/*.xcworkspace/
+**/Pods/
+**/build/
+**/DerivedData/
+**/.tools/
+**/.venv/
+**/__pycache__/
+*.pyc
+.DS_Store
+*.xcuserstate
+**/xcuserdata/
+# Local signing and account configuration
+*.p12
+*.p8
+*.mobileprovision
+*.provisionprofile
+*.jks
+*.keystore
+*.key
+.env
+.env.*
+!.env.example
+**/Config/Local.xcconfig
+**/signing.properties
+**/signing.env.ps1
+**/tencent-call.env
+**/config*.private.php
+# Build output
+*.ipa
+*.apk
+*.aab
+*.xcarchive

@@ -1,0 +1,9 @@
+.tools/
+Pods/
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.p12
+*.mobileprovision
+Config/Local.xcconfig

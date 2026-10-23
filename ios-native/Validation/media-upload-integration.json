@@ -1,0 +1,59 @@
+{
+  "passed": true,
+  "checks": [
+    {
+      "name": "new upload has no completed chunks",
+      "passed": true
+    },
+    {
+      "name": "first chunk is persisted and reported",
+      "passed": true
+    },
+    {
+      "name": "duplicate chunk is idempotent",
+      "passed": true
+    },
+    {
+      "name": "different contents for the same chunk are rejected",
+      "passed": true
+    },
+    {
+      "name": "different account cannot read the checkpoint",
+      "passed": true
+    },
+    {
+      "name": "changed upload dimensions are rejected",
+      "passed": true
+    },
+    {
+      "name": "invalid final chunk length is rejected before persistence",
+      "passed": true
+    },
+    {
+      "name": "resuming only the missing chunk yields the exact original file",
+      "passed": true
+    },
+    {
+      "name": "finished result is reusable without uploading again",
+      "passed": true
+    },
+    {
+      "name": "lost merge result recovers by resending the last saved chunk",
+      "passed": true
+    },
+    {
+      "name": "expired partial checkpoints restart consistently",
+      "passed": true
+    },
+    {
+      "name": "incomplete persisted chunks are rejected",
+      "passed": true
+    },
+    {
+      "name": "malformed IDs and size limits are rejected",
+      "passed": true
+    }
+  ],
+  "php_sapi": "cli-server",
+  "scope": "loopback isolated storage; no production API, account or database used"
+}

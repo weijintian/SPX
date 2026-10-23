@@ -1,0 +1,84 @@
+name: iOS build and archive
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ios-native/**'
+      - 'server-companion/**'
+      - '.github/workflows/ios-build.yml'
+  pull_request:
+    paths:
+      - 'ios-native/**'
+      - 'server-companion/**'
+      - '.github/workflows/ios-build.yml'
+  workflow_dispatch:
+    inputs:
+      unsigned_archive:
+        description: 'Create an unsigned device archive (Apple signing still required to install)'
+        type: boolean
+        default: true
+permissions:
+  contents: read
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: ios-native
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install XcodeGen and check toolchain
+        run: |
+          set -euo pipefail
+          export HOMEBREW_NO_AUTO_UPDATE=1
+          command -v xcodegen >/dev/null || brew install xcodegen
+          command -v pod >/dev/null || { echo "CocoaPods missing on runner"; exit 1; }
+          xcodebuild -version
+          pod --version
+          mkdir -p build
+      - name: Validate source syntax, resources and API snapshot
+        run: |
+          python -m pip install -r scripts/requirements-dev.txt
+          python scripts/validate_sources.py
+      - name: Generate Xcode project and resolve dependencies
+        run: |
+          set -o pipefail
+          bash scripts/bootstrap-macos.sh 2>&1 | tee build/bootstrap.log
+      - name: Build and run XCTest on an available iPhone simulator
+        run: |
+          set -o pipefail
+          bash scripts/verify-macos.sh 2>&1 | tee build/build-test.log
+      - name: Create unsigned device archive
+        if: github.event_name != 'pull_request' && github.event.inputs.unsigned_archive != 'false'
+        run: |
+          set -o pipefail
+          bash scripts/archive-unsigned-macos.sh 2>&1 | tee build/archive.log
+          tar -czf build/SpxChatIOS-unsigned.xcarchive.tar.gz -C build SpxChatIOS-unsigned.xcarchive
+      - name: Upload build logs and validation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-validation-${{ github.run_number }}
+          path: |
+            ios-native/build/*.log
+            ios-native/Validation/
+            ios-native/Podfile.lock
+            ios-native/build/DerivedData/Logs/Test/*.xcresult
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload unsigned archive
+        if: success() && github.event_name != 'pull_request' && github.event.inputs.unsigned_archive != 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpxChatIOS-unsigned-archive-${{ github.run_number }}
+          path: ios-native/build/SpxChatIOS-unsigned.xcarchive.tar.gz
+          if-no-files-found: error
+          retention-days: 14

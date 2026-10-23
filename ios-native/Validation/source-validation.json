@@ -1,0 +1,15 @@
+{
+  "swift_files": 48,
+  "lines": 6173,
+  "syntax_errors": [],
+  "literal_api_actions": 95,
+  "actions_not_found_in_local_backend": [],
+  "api_action_validation_source": "exported_backend_action_snapshot_not_live_server",
+  "policy_resources": [
+    "SpxChatIOS\\Resources\\privacy.txt",
+    "SpxChatIOS\\Resources\\agreement.txt"
+  ],
+  "xcode_compilation": "not_run",
+  "unit_tests": "not_run",
+  "device_testing": "not_run"
+}

@@ -1,0 +1,180 @@
+import SwiftUI
+import PhotosUI
+
+struct ProfileView: View {
+    @EnvironmentObject private var session: SessionStore
+    @State private var logout = false
+    var body: some View {
+        List {
+            Section {
+                NavigationLink("我的二维码", systemImage: "qrcode") { QRCodeView(value: "SPXUSER:\(session.user?["spx_id"].string ?? "")", title: session.user?.name ?? "我的二维码") }
+                NavigationLink { ProfileEditView() } label: {
+                    HStack(spacing: 16) { Avatar(url: session.user?.avatar ?? "", name: session.user?.name ?? "我", size: 64); VStack(alignment: .leading, spacing: 7) { Text(session.user?.name ?? "我的账号").font(.title2.bold()); Text("SPX ID：\(session.user?["spx_id"].string ?? "")").font(.caption).foregroundStyle(.secondary) } }.padding(.vertical, 12)
+                }
+            }
+            Section {
+                NavigationLink("我的资产", systemImage: "creditcard") { WalletView() }
+                NavigationLink("商家中心", systemImage: "storefront") { MerchantOverviewView() }
+                NavigationLink("我的订单", systemImage: "shippingbox") { OrdersView() }
+                NavigationLink("收藏商品", systemImage: "heart") { FavoritesView() }
+                NavigationLink("收货地址", systemImage: "mappin.and.ellipse") { AddressView() }
+                NavigationLink("邀请朋友", systemImage: "person.badge.plus") { ReferralsView() }
+                NavigationLink("我的权益", systemImage: "seal") { BenefitsView() }
+            }
+            Section {
+                NavigationLink("账号与安全", systemImage: "lock.shield") { SecurityView() }
+                NavigationLink("帮助与反馈", systemImage: "questionmark.circle") { SupportView() }
+                NavigationLink("更新历史", systemImage: "clock.arrow.circlepath") { UpdateHistoryView() }
+                NavigationLink("设置", systemImage: "gearshape") { SettingsView() }
+            }
+            Section { Button("退出登录", role: .destructive) { logout = true } }
+        }.navigationTitle("我的").spxPage().refreshable { try? await session.refreshProfile() }
+            .confirmationDialog("确认退出当前账号？", isPresented: $logout, titleVisibility: .visible) { Button("退出登录", role: .destructive) { Task { await session.logout() } } }
+    }
+}
+
+struct ProfileEditView: View {
+    @EnvironmentObject private var session: SessionStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var nickname = ""
+    @State private var remark = ""
+    @State private var avatar = ""
+    @State private var selected: PhotosPickerItem?
+    @State private var busy = false
+    @State private var error: String?
+    var body: some View {
+        Form {
+            Section {
+                HStack { Avatar(url: avatar, name: nickname, size: 72); Spacer(); PhotosPicker(selection: $selected, matching: .images) { Label("更换头像", systemImage: "camera") } }
+                TextField("昵称", text: $nickname)
+                InfoRow(title: "SPX ID", value: session.user?["spx_id"].string ?? "")
+                TextField("个人简介", text: $remark, axis: .vertical).lineLimit(3...8)
+            }
+            if let error { ErrorBanner(message: error) }
+            Section { Button(busy ? "保存中…" : "保存资料") { save() }.disabled(busy || nickname.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+        }.navigationTitle("个人资料").disabled(busy)
+            .onAppear { nickname = session.user?["nickname"].string ?? ""; remark = session.user?["remark"].string ?? ""; avatar = session.user?.avatar ?? "" }
+            .onChange(of: selected) { _, item in guard let item else { return }; busy = true; Task { defer { busy = false }; do { let file = try await MediaFiles.select(item, userID: session.user?.id ?? 0); avatar = try await MediaUploader.shared.uploadForm(file: file, action: "upload.avatar"); try? FileManager.default.removeItem(at: file) } catch { self.error = error.localizedDescription } } }
+    }
+    private func save() { busy = true; Task { defer { busy = false }; do { try await APIClient.shared.post("profile.update", ["nickname": .string(nickname), "remark": .string(remark), "avatar_url": .string(avatar)]); try await session.refreshProfile(); dismiss() } catch { self.error = error.localizedDescription } } }
+}
+
+struct SecurityView: View {
+    @EnvironmentObject private var session: SessionStore
+    var body: some View {
+        Form {
+            Section("账号信息") { InfoRow(title: "邮箱", value: session.user?["email"].string ?? ""); InfoRow(title: "SPX ID", value: session.user?["spx_id"].string ?? "") }
+            Section { NavigationLink("修改登录密码") { ChangePasswordView() }; NavigationLink("邮箱验证修改密码") { ChangePasswordView(emailVerification: true) }; NavigationLink("钱包地址绑定") { WalletBindingView() } }
+        }.navigationTitle("账号与安全")
+    }
+}
+
+struct ChangePasswordView: View {
+    var emailVerification = false
+    @EnvironmentObject private var session: SessionStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var current = ""
+    @State private var code = ""
+    @State private var password = ""
+    @State private var confirmation = ""
+    @State private var busy = false
+    @State private var cooldown = 0
+    @State private var error: String?
+    var body: some View {
+        Form {
+            Section {
+                if emailVerification { InfoRow(title: "验证邮箱", value: session.user?["email"].string ?? ""); HStack { TextField("六位验证码", text: $code).keyboardType(.numberPad); Button(cooldown > 0 ? "\(cooldown)s" : "发送验证码") { sendCode() }.disabled(busy || cooldown > 0) } }
+                else { SecureField("当前密码", text: $current).textContentType(.password) }
+                SecureField("新密码（至少六位）", text: $password).textContentType(.newPassword)
+                SecureField("确认新密码", text: $confirmation).textContentType(.newPassword)
+                Button("保存新密码") { save() }.disabled(busy || password.count < 6 || password != confirmation || (emailVerification ? code.count != 6 : current.isEmpty))
+            }
+            if let error { ErrorBanner(message: error) }
+        }.navigationTitle("修改密码").task(id: cooldown) { guard cooldown > 0 else { return }; do { try await Task.sleep(for: .seconds(1)); cooldown -= 1 } catch { } }
+    }
+    private func sendCode() { busy = true; Task { defer { busy = false }; do { try await APIClient.shared.post("password.email.code"); cooldown = 60 } catch { self.error = error.localizedDescription } } }
+    private func save() { busy = true; Task { defer { busy = false; current = ""; password = ""; confirmation = ""; code = "" }; do { let response = try await APIClient.shared.post(emailVerification ? "password.update.email" : "password.update", [emailVerification ? "code" : "current_password": .string(emailVerification ? code : current), "new_password": .string(password)]); if emailVerification { try await session.replaceToken(response["token"].string) }; dismiss() } catch { self.error = error.localizedDescription } } }
+}
+
+struct SettingsView: View {
+    @EnvironmentObject private var session: SessionStore
+    @AppStorage("spx.appearance") private var appearance = "system"
+    @AppStorage("spx.language") private var language = "zh-CN"
+    @State private var clear = false
+    @State private var error: String?
+    var body: some View {
+        Form {
+            Section("显示") { Picker("外观", selection: $appearance) { Text("跟随系统").tag("system"); Text("浅色").tag("light"); Text("深色").tag("dark") } }
+            Section("服务消息语言") { Picker("服务器提示语言", selection: $language) { Text("简体中文").tag("zh-CN"); Text("English").tag("en") }; Text("当前原生界面以简体中文呈现。").font(.caption).foregroundStyle(.secondary) }
+            Section { Button("清理媒体缓存") { clear = true }; Link("打开系统权限设置", destination: URL(string: UIApplication.openSettingsURLString)!); NavigationLink("服务协议") { PolicyView(kind: "agreement") }; NavigationLink("隐私政策") { PolicyView(kind: "privacy") } }
+            Section("关于") { InfoRow(title: "应用", value: "SPX Chat for iOS"); InfoRow(title: "版本", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""); InfoRow(title: "构建号", value: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "") }
+        }.navigationTitle("设置").errorAlert($error)
+            .confirmationDialog("清除已下载的聊天媒体？后续可重新下载", isPresented: $clear, titleVisibility: .visible) { Button("清理缓存", role: .destructive) { Task { do { try await MediaCache.shared.clear(userID: session.user?.id ?? 0); error = "缓存已清理" } catch { self.error = error.localizedDescription } } } }
+    }
+}
+
+struct PolicyView: View {
+    let kind: String
+    @State private var text = ""
+    @State private var error: String?
+    var body: some View { ScrollView { VStack(alignment: .leading, spacing: 16) { if text.isEmpty, error == nil { ProgressView() } else { Text(text).textSelection(.enabled) }; if let error { ErrorBanner(message: error) } }.padding(20).frame(maxWidth: .infinity, alignment: .leading) }.navigationTitle(kind == "privacy" ? "隐私政策" : "服务协议").task { do { let url = Bundle.main.url(forResource: kind, withExtension: "txt"); if let url { text = try String(contentsOf: url, encoding: .utf8) } else { error = "协议暂时无法加载，请稍后重试。" } } catch { self.error = error.localizedDescription } } }
+}
+
+struct BenefitsView: View {
+    private let benefits = [("生态服务", "浏览平台商城与生态入口"), ("质押权益", "查看真实质押计划和账户记录"), ("邀请奖励", "查看邀请记录与已发奖励")]
+    var body: some View {
+        List { Section { ForEach(benefits, id: \.0) { item in Label { VStack(alignment: .leading, spacing: 5) { Text(item.0).font(.headline); Text(item.1).font(.caption).foregroundStyle(.secondary) } } icon: { Image(systemName: "seal").foregroundStyle(SPXColor.primary) } } } footer: { Text("权益以账户记录与平台规则为准。") }; Section { NavigationLink("我的质押") { StakingView() }; NavigationLink("邀请记录") { ReferralsView() }; NavigationLink("我的订单") { OrdersView() } } }.spxPage().navigationTitle("我的权益")
+    }
+}
+
+struct UpdateHistoryView: View {
+    @State private var rows: [Record] = []
+    @State private var loaded = false
+    @State private var error: String?
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 12) {
+                Text("以下为平台 Android 版本记录。iOS 已安装版本请在设置中查看，后续更新通过 App Store 提供。")
+                    .font(.footnote).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+                if !loaded { ProgressView().padding(30) }
+                ForEach(rows, id: \.fields) { release in
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack { Text("Android \(release["version_name"].string)").font(.headline); Spacer(); Text(release["created_at"].string).font(.caption).foregroundStyle(.secondary) }
+                        Text(release["release_notes"].string).font(.subheadline).foregroundStyle(.secondary).textSelection(.enabled)
+                    }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 16))
+                }
+                if loaded, rows.isEmpty, error == nil { EmptyState(title: "暂无更新记录", icon: "clock.arrow.circlepath") }
+                if let error { ErrorBanner(message: error); Button("重试") { Task { await load() } } }
+            }.padding(16)
+        }.background(SPXColor.surface).navigationTitle("平台更新历史").task { await load() }
+    }
+    private func load() async { do { rows = try await APIClient.shared.get("app.update.history").list; error = nil; loaded = true } catch { self.error = error.localizedDescription; loaded = true } }
+}
+
+struct FavoritesView: View {
+    @State private var rows: [Record] = []
+    @State private var error: String?
+    var body: some View { List { ForEach(rows) { product in NavigationLink { ProductDetailView(product: product) } label: { HStack { CachedImage(source: product.image).frame(width: 64, height: 64); VStack(alignment: .leading) { Text(product.name); Text("¥\(product["cny_price"].string)").foregroundStyle(SPXColor.primary) } } } }; if rows.isEmpty { EmptyState(title: "还没有收藏商品", icon: "heart") } }.navigationTitle("收藏商品").task { await load() }.refreshable { await load() }.errorAlert($error) }
+    private func load() async { do { rows = try await APIClient.shared.get("favorites").list } catch { self.error = error.localizedDescription } }
+}
+
+struct RecordsView: View {
+    let title: String
+    let action: String
+    var query: [String: String] = [:]
+    @StateObject private var state = PageState()
+    @State private var error: String?
+    var body: some View {
+        List { ForEach(Array(state.rows.enumerated()), id: \.offset) { _, row in DisclosureGroup { ForEach(row.fields.keys.sorted(), id: \.self) { key in if !row[key].string.isEmpty { InfoRow(title: key, value: row[key].string) } } } label: { VStack(alignment: .leading, spacing: 6) { Text(row.text("title", "subject", "action", "type", "greeting", "name", "id")).font(.headline); Text(row.text("amount", "total_amount", "status", "created_at")).font(.caption).foregroundStyle(.secondary) } } }; if state.more { Button("加载更多") { Task { await load(reset: false) } }.disabled(state.busy) }; if state.rows.isEmpty { EmptyState(title: "暂无记录") } }.navigationTitle(title).task { await load(reset: true) }.refreshable { await load(reset: true) }.errorAlert($error)
+    }
+    private func load(reset: Bool) async {
+        do {
+            try await state.load(reset: reset, paginated: action.hasPrefix("merchant.")) { next in
+            var params = query
+            params["page"] = String(next)
+            params["page_size"] = "30"
+                return try await APIClient.shared.get(action, params).list
+            }
+        } catch { self.error = error.localizedDescription }
+    }
+}
