@@ -49,35 +49,138 @@ struct PublishProductView: View {
     }
     private var editing: Bool { product.id > 0 }
     var body: some View {
-        editorForm            .navigationTitle(editing ? "编辑商品" : "发布商品").navigationBarTitleDisplayMode(.inline).disabled(busy).interactiveDismissDisabled(busy)
+        editorWithDialogs
+            .onChange(of: mainPicker) { _, selected in
+                Task { await upload(selected, detail: false) }
+            }
+            .onChange(of: detailPicker) { _, selected in
+                Task { await upload(selected, detail: true) }
+            }
+            .onChange(of: videoPicker) { _, item in
+                guard let item else { return }
+                Task { await uploadVideo(item) }
+            }
+    }
+
+    private var editorWithNavigation: some View {
+        editorForm
+            .navigationTitle(editing ? "编辑商品" : "发布商品")
+            .navigationBarTitleDisplayMode(.inline)
+            .disabled(busy)
+            .interactiveDismissDisabled(busy)
             .navigationBarBackButtonHidden()
-            .toolbar { ToolbarItem(placement: .topBarLeading) { Button { if snapshot != savedFingerprint { leaving = true } else { dismiss() } } label: { Label("返回", systemImage: "chevron.left") }.disabled(busy) } }
-            .task {
-                guard !initialized else { return }; initialize(); savedFingerprint = snapshot
-                recovery = await LocalStore.shared.read(localKey, userID: session.user?.id ?? 0)
-                restored = true
-                if let config = try? await APIClient.shared.get("mall.config") { let configured = config["categories"].array.map(\.string); if !configured.isEmpty { categories = configured }; if let selected = values["category"], !categories.contains(selected) { categories.append(selected) } }
-                if let valuation = try? await APIClient.shared.get("mall.valuation") { usd = valuation["spx_usdt"].string }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(action: requestLeave) {
+                        Label("返回", systemImage: "chevron.left")
+                    }
+                    .disabled(busy)
+                }
             }
-            .task(id: snapshot) {
-                guard restored, recovery == nil, !committed else { return }
-                let current = snapshot; let owner = session.user?.id ?? 0
-                do { try await Task.sleep(for: .milliseconds(500)); if current != savedFingerprint { try await LocalStore.shared.save(current, key: localKey, userID: owner) } } catch is CancellationError { } catch { self.error = "本地草稿保存失败，请手动保存草稿" }
+    }
+
+    private var editorWithTasks: some View {
+        editorWithNavigation
+            .task { await loadEditor() }
+            .task(id: snapshot) { await persistLocalDraft() }
+    }
+
+    private var recoveryPresented: Binding<Bool> {
+        Binding(
+            get: { recovery != nil },
+            set: { if !$0 { recovery = nil } }
+        )
+    }
+
+    private var editorWithDialogs: some View {
+        editorWithTasks
+            .alert("发现未完成的编辑", isPresented: recoveryPresented) {
+                Button("恢复编辑", action: restoreLocalDraft)
+                Button("放弃本地草稿", role: .destructive, action: discardLocalDraft)
+            } message: {
+                Text("可恢复上次离开时的商品内容、图片和规格。")
             }
-            .alert("发现未完成的编辑", isPresented: Binding(get: { recovery != nil }, set: { if !$0 { recovery = nil } })) {
-                Button("恢复编辑") { if let recovery { restore(recovery) }; recovery = nil }
-                Button("放弃本地草稿", role: .destructive) { recovery = nil; let owner = session.user?.id ?? 0; Task { await LocalStore.shared.remove(localKey, userID: owner) } }
-            } message: { Text("可恢复上次离开时的商品内容、图片和规格。") }
             .confirmationDialog("是否保留这次编辑？", isPresented: $leaving, titleVisibility: .visible) {
-                Button("保留到本机并返回") { let data = snapshot; let owner = session.user?.id ?? 0; Task { do { try await LocalStore.shared.save(data, key: localKey, userID: owner); dismiss() } catch { self.error = error.localizedDescription } } }
-                Button("放弃修改", role: .destructive) { committed = true; let owner = session.user?.id ?? 0; Task { await LocalStore.shared.remove(localKey, userID: owner); dismiss() } }
+                Button("保留到本机并返回", action: keepDraftAndLeave)
+                Button("放弃修改", role: .destructive, action: discardChangesAndLeave)
                 Button("继续编辑", role: .cancel) {}
             }
-            .onChange(of: mainPicker) { _, selected in Task { await upload(selected, detail: false) } }
-            .onChange(of: detailPicker) { _, selected in Task { await upload(selected, detail: true) } }
-            .onChange(of: videoPicker) { _, item in if let item { Task { await uploadVideo(item) } } }
-            .confirmationDialog("确认提交商品资料？", isPresented: $publish, titleVisibility: .visible) { Button("确认提交") { save(publishing: true) } }
+            .confirmationDialog("确认提交商品资料？", isPresented: $publish, titleVisibility: .visible) {
+                Button("确认提交") { save(publishing: true) }
+            }
     }
+
+    private func requestLeave() {
+        if snapshot != savedFingerprint { leaving = true }
+        else { dismiss() }
+    }
+
+    @MainActor private func loadEditor() async {
+        guard !initialized else { return }
+        initialize()
+        savedFingerprint = snapshot
+        recovery = await LocalStore.shared.read(localKey, userID: session.user?.id ?? 0)
+        restored = true
+        if let config = try? await APIClient.shared.get("mall.config") {
+            let configured = config["categories"].array.map(\.string)
+            if !configured.isEmpty { categories = configured }
+            if let selected = values["category"], !categories.contains(selected) {
+                categories.append(selected)
+            }
+        }
+        if let valuation = try? await APIClient.shared.get("mall.valuation") {
+            usd = valuation["spx_usdt"].string
+        }
+    }
+
+    @MainActor private func persistLocalDraft() async {
+        guard restored, recovery == nil, !committed else { return }
+        let current = snapshot
+        let owner = session.user?.id ?? 0
+        do {
+            try await Task.sleep(for: .milliseconds(500))
+            if current != savedFingerprint {
+                try await LocalStore.shared.save(current, key: localKey, userID: owner)
+            }
+        } catch is CancellationError {
+        } catch {
+            self.error = "本地草稿保存失败，请手动保存草稿"
+        }
+    }
+
+    private func restoreLocalDraft() {
+        if let recovery { restore(recovery) }
+        recovery = nil
+    }
+
+    private func discardLocalDraft() {
+        recovery = nil
+        let owner = session.user?.id ?? 0
+        Task { await LocalStore.shared.remove(localKey, userID: owner) }
+    }
+
+    private func keepDraftAndLeave() {
+        let data = snapshot
+        let owner = session.user?.id ?? 0
+        Task {
+            do {
+                try await LocalStore.shared.save(data, key: localKey, userID: owner)
+                dismiss()
+            } catch {
+                self.error = error.localizedDescription
+            }
+        }
+    }
+
+    private func discardChangesAndLeave() {
+        committed = true
+        let owner = session.user?.id ?? 0
+        Task {
+            await LocalStore.shared.remove(localKey, userID: owner)
+            dismiss()
+        }
+    }
+
     private var editorForm: some View {
         Form {
             basicSection
