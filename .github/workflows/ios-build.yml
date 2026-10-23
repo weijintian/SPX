@@ -53,6 +53,8 @@ jobs:
           set -o pipefail
           bash scripts/bootstrap-macos.sh 2>&1 | tee build/bootstrap.log
       - name: Build and run XCTest on an available iPhone simulator
+        env:
+          SPX_RUN_LIVE_TLS_PROBE: '1'
         run: |
           set -o pipefail
           bash scripts/verify-macos.sh 2>&1 | tee build/build-test.log
