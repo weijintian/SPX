@@ -3,37 +3,37 @@ import Security
 import OSLog
 
 /// Pins the active server leaf certificate while URLSession evaluates hostname and validity.
-private enum ServerCertificatePin {
-    static let leafDER = Data(base64Encoded: "MIIDgDCCAmigAwIBAgIQZdIbhko8YKx3HUVdCKJnDzANBgkqhkiG9w0BAQsFADBWMQswCQYDVQQGEwJDTjEOMAwGA1UECAwFU3RhdGUxDTALBgNVBAcMBENpdHkxEDAOBgNVBAoMB1NQWENoYXQxFjAUBgNVBAMMDTcwLjM5LjIwMS4xOTEwHhcNMjYxMDIzMDUxOTU0WhcNMjcxMTI0MDUxOTU0WjAYMRYwFAYDVQQDDA03MC4zOS4yMDEuMTkxMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAn6sVF1bkJGNRq7okhoI/g9Itub6mix8aZfSHx7XsvcXjec2uZT/NLnoGsV2qiPSZwPs5K87WRj3UWHpSS8YSlggY370KtJrM4Tu1x1eM4RI257WrmNjTBX1Unaa9qBFdSzTYLFQmaT7IbH0CMVIJoOm1HqEbdumnQmw2LqrHGbCw2PfoNzWWx5cxSqPv3Re9rwL2typZwaXCQuB5loS1XsjM32qYw2wcseD9aP/nKtES2elJs1SSH0EXNUTlswnRSpk5JQg+ttiO3Gea/6/CyZXecKXHsTjgoW0wk3xM/kymwLlAmDgl2ezxQk0kUMrEap7NLqdA+BextTqAgReijQIDAQABo4GHMIGEMAwGA1UdEwEB/wQCMAAwDgYDVR0PAQH/BAQDAgWgMBMGA1UdJQQMMAoGCCsGAQUFBwMBMA8GA1UdEQQIMAaHBEYnyb8wHQYDVR0OBBYEFNlQQQA8jNu/kC6a5UlVWXHRp+YLMB8GA1UdIwQYMBaAFNlQQQA8jNu/kC6a5UlVWXHRp+YLMA0GCSqGSIb3DQEBCwUAA4IBAQAMA+wGrOrfy7dtnS8pGJtReh4yWeTdtyBcrvJ6lazxwIQco0h3GTEF73bqNligJWpDYLnAhzoGK3unFBvBlx1jv9SNI8vWPf5aPpCv2IODM22vcauCjYFj4eTRBMHnGKNLhFlF0065qOuuDkrKbaG55hQiLEiRnsaqOLDu+DxFXan1cpo+a3aHKn87ODfkYYkkBlYbUDuuUE4QkheDHBtLisL4dr83ZQf8oZlXietLSdrtjsNDfGq5L9+isliB/nyTOBtSlmw3Vtb4SUqqBzO5XsGBp0V4yrt1GknFnD9ZsLJwBAwQezOT2aNlGwo9HA7XFJRr/vjWUh7bBu25SwV")!
-}
-
-
 final class ServerTrustDelegate: NSObject, URLSessionDelegate {
     static let shared = ServerTrustDelegate()
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.spx.chat.ios", category: "ServerTrust")
-    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+
+    func urlSession(
+        _ session: URLSession,
+        didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
               challenge.protectionSpace.host == "70.39.201.191",
               let trust = challenge.protectionSpace.serverTrust,
               let file = Bundle.main.url(forResource: "spx-server", withExtension: "cer"),
               let bytes = try? Data(contentsOf: file),
               let certificate = SecCertificateCreateWithData(nil, bytes as CFData) else {
-            completionHandler(.performDefaultHandling, nil); return
+            completionHandler(.performDefaultHandling, nil)
+            return
         }
-        guard let leafPin = SecCertificateCreateWithData(nil, ServerCertificatePin.leafDER as CFData) else {
-            completionHandler(.performDefaultHandling, nil); return
-        }
-        let status = SecTrustSetAnchorCertificates(trust, [leafPin] as CFArray)
+
+        let status = SecTrustSetAnchorCertificates(trust, [certificate] as CFArray)
         guard status == errSecSuccess else {
             logger.error("Custom anchor configuration failed: \(status)")
-            completionHandler(.performDefaultHandling, nil); return
+            completionHandler(.performDefaultHandling, nil)
+            return
         }
+
         SecTrustSetAnchorCertificatesOnly(trust, true)
         var error: CFError?
-        if SecTrustEvaluateWithError(trust, &error) { completionHandler(.useCredential, URLCredential(trust: trust)) }
-        else {
-            // Preserve URLSession's TLS error instead of replacing it with URLError.cancelled.
-            // Default handling still rejects untrusted servers.
+        if SecTrustEvaluateWithError(trust, &error) {
+            completionHandler(.useCredential, URLCredential(trust: trust))
+        } else {
             let reason = error.map { String(describing: $0) } ?? "unknown trust failure"
             logger.error("Server certificate evaluation failed: \(reason, privacy: .public)")
             completionHandler(.performDefaultHandling, nil)
@@ -43,6 +43,7 @@ final class ServerTrustDelegate: NSObject, URLSessionDelegate {
 
 enum NetworkSession {
     static let shared = make()
+
     static func make() -> URLSession {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
