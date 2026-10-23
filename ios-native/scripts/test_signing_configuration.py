@@ -55,7 +55,7 @@ class SigningConfigurationTests(unittest.TestCase):
             ipa = Path(directory) / "test.ipa"
             with zipfile.ZipFile(ipa, "w") as package:
                 package.writestr("Payload/Test.app/Info.plist", plistlib.dumps({
-                    "CFBundleIdentifier": settings["bundleID"], "CFBundleVersion": "7"}))
+                    "CFBundleIdentifier": settings["bundleID"], "CFBundleVersion": "7", "SPXNetworkTrust": "system-public-ip-v1"}))
                 package.writestr("Payload/Test.app/embedded.mobileprovision", b"fixture")
             self.assertEqual(verify_ipa(ipa, settings, "7")["CFBundleVersion"], "7")
             with self.assertRaises(BuildFailure):
@@ -69,10 +69,22 @@ class SigningConfigurationTests(unittest.TestCase):
             ipa = Path(directory) / "test.ipa"
             with zipfile.ZipFile(ipa, "w") as package:
                 package.writestr("Payload/Test.app/Info.plist", plistlib.dumps({
-                    "CFBundleIdentifier": settings["bundleID"], "CFBundleVersion": "7"}))
+                    "CFBundleIdentifier": settings["bundleID"], "CFBundleVersion": "7", "SPXNetworkTrust": "system-public-ip-v1"}))
             with self.assertRaises(BuildFailure):
                 verify_ipa(ipa, settings, "7")
 
+
+    def test_exported_ipa_rejects_old_network_configuration(self):
+        settings = profile_settings(self.profile())
+        with tempfile.TemporaryDirectory() as directory:
+            ipa = Path(directory) / "old.ipa"
+            for extra in [{}, {"SPXNetworkTrust": "system-public-ip-v1", "NSAppTransportSecurity": {"NSAllowsArbitraryLoads": True}}]:
+                with zipfile.ZipFile(ipa, "w") as package:
+                    package.writestr("Payload/Test.app/Info.plist", plistlib.dumps({
+                        "CFBundleIdentifier": settings["bundleID"], "CFBundleVersion": "7", **extra}))
+                    package.writestr("Payload/Test.app/embedded.mobileprovision", b"fixture")
+                with self.assertRaises(BuildFailure):
+                    verify_ipa(ipa, settings, "7")
 
 if __name__ == "__main__":
     unittest.main()

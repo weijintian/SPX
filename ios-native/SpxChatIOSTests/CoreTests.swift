@@ -3,11 +3,14 @@ import XCTest
 
 final class CoreTests: XCTestCase {
     /// Integration probe: no credentials or user data; exercises iOS TLS against the actual login host.
-    func testBundledServerCertificateReachesAPIWithoutCredentials() async throws {
+    func testSystemTrustedServerReachesAPIWithoutCredentials() async throws {
+        guard ProcessInfo.processInfo.environment["SPX_RUN_LIVE_TLS_PROBE"] == "1" else {
+            throw XCTSkip("Set SPX_RUN_LIVE_TLS_PROBE=1 to test current production TLS directly")
+        }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 15
         configuration.timeoutIntervalForResource = 20
-        let session = URLSession(configuration: configuration, delegate: ServerTrustDelegate.shared, delegateQueue: nil)
+        let session = URLSession(configuration: configuration)
         defer { session.invalidateAndCancel() }
         let url = URL(string: "https://70.39.201.191/spxchat/api.php?action=me")!
         let (data, response) = try await session.data(from: url)

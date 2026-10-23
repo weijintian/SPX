@@ -1,63 +1,16 @@
 import Foundation
-import Security
-import OSLog
 
-/// Pins the active server leaf certificate while URLSession evaluates hostname and validity.
+/// All API and upload connections use system trust, including hostname and expiry checks.
+/// The API now serves a publicly trusted certificate; rotating it requires no App update.
 final class ServerTrustDelegate: NSObject, URLSessionDelegate {
     static let shared = ServerTrustDelegate()
-    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.spx.chat.ios", category: "ServerTrust")
-
-    private func bundledCertificate() -> SecCertificate? {
-        guard let file = Bundle.main.url(forResource: "spx-server", withExtension: "cer"),
-              let bytes = try? Data(contentsOf: file) else { return nil }
-        if let certificate = SecCertificateCreateWithData(nil, bytes as CFData) { return certificate }
-        guard let pem = String(data: bytes, encoding: .utf8) else { return nil }
-        let body = pem
-            .replacingOccurrences(of: "-----BEGIN CERTIFICATE-----", with: "")
-            .replacingOccurrences(of: "-----END CERTIFICATE-----", with: "")
-            .components(separatedBy: .whitespacesAndNewlines)
-            .joined()
-        guard let der = Data(base64Encoded: body) else { return nil }
-        return SecCertificateCreateWithData(nil, der as CFData)
-    }
 
     func urlSession(
         _ session: URLSession,
         didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
-        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
-              challenge.protectionSpace.host == "70.39.201.191",
-              let trust = challenge.protectionSpace.serverTrust,
-              let certificate = bundledCertificate() else {
-            completionHandler(.performDefaultHandling, nil)
-            return
-        }
-
-        // The per-IP ATS exception permits this private trust anchor. Keep SSL
-        // hostname, certificate lifetime and chain validation enabled.
-        let policyStatus = SecTrustSetPolicies(trust, SecPolicyCreateSSL(true, challenge.protectionSpace.host as CFString))
-        guard policyStatus == errSecSuccess else {
-            logger.error("SSL policy configuration failed: \(policyStatus)")
-            completionHandler(.cancelAuthenticationChallenge, nil)
-            return
-        }
-        let status = SecTrustSetAnchorCertificates(trust, [certificate] as CFArray)
-        guard status == errSecSuccess else {
-            logger.error("Custom anchor configuration failed: \(status)")
-            completionHandler(.cancelAuthenticationChallenge, nil)
-            return
-        }
-
-        SecTrustSetAnchorCertificatesOnly(trust, true)
-        var error: CFError?
-        if SecTrustEvaluateWithError(trust, &error) {
-            completionHandler(.useCredential, URLCredential(trust: trust))
-        } else {
-            let reason = error.map { String(describing: $0) } ?? "unknown trust failure"
-            logger.error("Server certificate evaluation failed: \(reason, privacy: .public)")
-            completionHandler(.cancelAuthenticationChallenge, nil)
-        }
+        completionHandler(.performDefaultHandling, nil)
     }
 }
 

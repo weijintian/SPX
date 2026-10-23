@@ -131,6 +131,10 @@ def verify_ipa(ipa, settings, build_number):
             raise BuildFailure("Exported IPA has the wrong bundle identifier.")
         if build_number and info.get("CFBundleVersion") != build_number:
             raise BuildFailure("Exported IPA has the wrong build number.")
+        if info.get("SPXNetworkTrust") != "system-public-ip-v1":
+            raise BuildFailure("Exported IPA does not contain the public HTTPS login fix.")
+        if "NSAppTransportSecurity" in info:
+            raise BuildFailure("Exported IPA unexpectedly relaxes system transport security.")
         embedded = entries[0].removesuffix("Info.plist") + "embedded.mobileprovision"
         if embedded not in package.namelist():
             raise BuildFailure("Exported IPA has no embedded provisioning profile.")
@@ -250,7 +254,9 @@ def build():
             "bundleID": settings["bundleID"], "version": info["CFBundleShortVersionString"],
             "build": info["CFBundleVersion"], "method": settings["method"], "teamID": settings["teamID"],
             "profileExpires": settings["expiration"], "registeredDevices": settings["deviceCount"],
-            "signatureVerified": True, "realDeviceTesting": "not_run"}
+            "signatureVerified": True, "networkTrust": info.get("SPXNetworkTrust"),
+            "sourceCommit": os.environ.get("GITHUB_SHA") or os.environ.get("CM_COMMIT", "local"),
+            "realDeviceTesting": "not_run"}
         (output / "signing-report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(report), flush=True)
     finally:

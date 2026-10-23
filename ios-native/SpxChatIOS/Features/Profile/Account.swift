@@ -107,7 +107,7 @@ struct SettingsView: View {
             Section("显示") { Picker("外观", selection: $appearance) { Text("跟随系统").tag("system"); Text("浅色").tag("light"); Text("深色").tag("dark") } }
             Section("服务消息语言") { Picker("服务器提示语言", selection: $language) { Text("简体中文").tag("zh-CN"); Text("English").tag("en") }; Text("当前原生界面以简体中文呈现。").font(.caption).foregroundStyle(.secondary) }
             Section { Button("清理媒体缓存") { clear = true }; Link("打开系统权限设置", destination: URL(string: UIApplication.openSettingsURLString)!); NavigationLink("服务协议") { PolicyView(kind: "agreement") }; NavigationLink("隐私政策") { PolicyView(kind: "privacy") } }
-            Section("关于") { InfoRow(title: "应用", value: "SPX Chat for iOS"); InfoRow(title: "版本", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""); InfoRow(title: "构建号", value: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "") }
+            Section("关于") { InfoRow(title: "应用", value: "SPX Chat for iOS"); InfoRow(title: "版本", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""); InfoRow(title: "构建号", value: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""); InfoRow(title: "连接安全", value: "系统公信 HTTPS") }
         }.navigationTitle("设置").errorAlert($error)
             .confirmationDialog("清除已下载的聊天媒体？后续可重新下载", isPresented: $clear, titleVisibility: .visible) { Button("清理缓存", role: .destructive) { Task { do { try await MediaCache.shared.clear(userID: session.user?.id ?? 0); error = "缓存已清理" } catch { self.error = error.localizedDescription } } } }
     }
