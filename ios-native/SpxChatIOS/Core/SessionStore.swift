@@ -51,6 +51,9 @@ import UIKit
             let profile = try await APIClient.shared.get("me").record
             guard epoch == lifecycle else { return }
             guard profile.id > 0, lastID == 0 || profile.id == lastID else { throw APIError.invalidResponse }
+            try Keychain.write(String(profile.id), account: "lastUserID")
+            await Outbox.shared.start(userID: profile.id)
+            guard epoch == lifecycle else { return }
             user = profile
             await persistUser()
             guard epoch == lifecycle else { return }
@@ -105,7 +108,15 @@ import UIKit
             await persistUser(); await startServices()
         } catch {if epoch == lifecycle {self.error = AuthenticationErrorMessage.describe(error)}}
     }
-    func refreshProfile() async throws {let epoch = lifecycle; let profile = try await APIClient.shared.get("me").record; guard epoch == lifecycle else { throw APIError.staleSession }; user = profile; await persistUser()}
+    func refreshProfile() async throws {
+        let epoch = lifecycle
+        let owner = user?.id
+        let profile = try await APIClient.shared.get("me").record
+        guard epoch == lifecycle else { throw APIError.staleSession }
+        guard profile.id > 0, owner == nil || owner == profile.id else { throw APIError.invalidResponse }
+        user = profile
+        await persistUser()
+    }
     func replaceToken(_ value: String) async throws {
         guard !value.isEmpty else { throw APIError.invalidResponse }
         let epoch = lifecycle
@@ -126,8 +137,11 @@ import UIKit
         try? await MediaCache.shared.trim(userID: user.id)
         guard epoch == lifecycle else { return }
         CallCoordinator.shared.start(userID: user.id)
-        if let token { RealtimeClient.shared.start(token: token) }
-        if active {startPresence()}
+        CallCoordinator.shared.setActive(active)
+        if active {
+            if let token { RealtimeClient.shared.start(token: token) }
+            startPresence()
+        }
     }
     func setActive(_ value:Bool) {
         active = value
