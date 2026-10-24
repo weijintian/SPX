@@ -138,6 +138,8 @@ import UIKit
         guard epoch == lifecycle else { return }
         CallCoordinator.shared.start(userID: user.id)
         CallCoordinator.shared.setActive(active)
+        MessageNotifications.shared.start(userID: user.id, sessionToken: token ?? "")
+        MessageNotifications.shared.setActive(active)
         if active {
             if let token { RealtimeClient.shared.start(token: token) }
             startPresence()
@@ -145,6 +147,7 @@ import UIKit
     }
     func setActive(_ value:Bool) {
         active = value
+        MessageNotifications.shared.setActive(value)
         presenceEpoch = UUID()
         let presenceEpoch = self.presenceEpoch
         if value, token != nil, let user, user.id > 0, !restoring {
@@ -174,6 +177,7 @@ import UIKit
         CallCoordinator.shared.stop()
         VoicePlayback.shared.stop()
         RealtimeClient.shared.stop()
+        MessageNotifications.shared.stop()
         token = nil;user = nil;try? Keychain.write(nil,account:"token")
         teardown = Task {await APIClient.shared.setToken(nil);await Outbox.shared.stop(userID:previous)}
     }

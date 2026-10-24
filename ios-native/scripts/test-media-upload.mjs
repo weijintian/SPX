@@ -63,6 +63,52 @@ try {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   assert.ok(ready, 'Loopback PHP test server did not start');
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jP1sAAAAASUVORK5CYII=', 'base64');
+  await check('small image uploads through the same single-file contract as Android', async () => {
+    const form = new FormData(); form.set('file', new Blob([png], { type: 'image/png' }), 'photo.png');
+    const r = await request('single', { uid: '9' }, form);
+    assert.equal(r.status, 200); assert.equal(r.envelope.data.message_type, 'image');
+    assert.deepEqual(await readFile(path.join(testRoot, 'messages', path.basename(r.envelope.data.url))), png);
+  });
+  await check('image chunks assemble into a complete image and retain its type', async () => {
+    const r = await chunk(randomUUID(), 0, png, png.length);
+    assert.equal(r.status, 200); assert.equal(r.envelope.data.message_type, 'image');
+    assert.deepEqual(await readFile(path.join(testRoot, 'messages', path.basename(r.envelope.data.url))), png);
+  });
+  await check('voice WAV upload retains its voice type and all bytes', async () => {
+    const voice = Buffer.alloc(44 + 16_000);
+    voice.write('RIFF', 0); voice.writeUInt32LE(voice.length - 8, 4); voice.write('WAVEfmt ', 8);
+    voice.writeUInt32LE(16, 16); voice.writeUInt16LE(1, 20); voice.writeUInt16LE(1, 22);
+    voice.writeUInt32LE(8_000, 24); voice.writeUInt32LE(16_000, 28);
+    voice.writeUInt16LE(2, 32); voice.writeUInt16LE(16, 34); voice.write('data', 36); voice.writeUInt32LE(16_000, 40);
+    const form = new FormData(); form.set('file', new Blob([voice], { type: 'audio/wav' }), 'voice.wav');
+    const r = await request('single', { uid: '9' }, form);
+    assert.equal(r.status, 200); assert.equal(r.envelope.data.message_type, 'voice');
+    assert.deepEqual(await readFile(path.join(testRoot, 'messages', path.basename(r.envelope.data.url))), voice);
+  });
+  await check('iOS M4A container is classified as a voice attachment', async () => {
+    // Container/MIME fixture only; actual AAC recording and playback require a device.
+    const voice = Buffer.alloc(128);
+    voice.writeUInt32BE(24, 0); voice.write('ftypM4A ', 4); voice.writeUInt32BE(512, 12);
+    voice.write('M4A isom', 16); voice.writeUInt32BE(104, 24); voice.write('free', 28);
+    const form = new FormData(); form.set('file', new Blob([voice], { type: 'audio/mp4' }), 'voice.m4a');
+    const r = await request('single', { uid: '9' }, form);
+    assert.equal(r.status, 200); assert.equal(r.envelope.data.message_type, 'voice');
+    assert.deepEqual(await readFile(path.join(testRoot, 'messages', path.basename(r.envelope.data.url))), voice);
+  });
+  await check('a multi-chunk MP4 container retains video type and all bytes', async () => {
+    // Protocol fixture only: an ISO BMFF ftyp/free container, not a playback test.
+    const video = Buffer.alloc(chunkSize + 128);
+    video.writeUInt32BE(24, 0); video.write('ftypisom', 4, 'ascii'); video.writeUInt32BE(512, 12);
+    video.write('isommp42', 16, 'ascii'); video.writeUInt32BE(video.length - 24, 24); video.write('free', 28, 'ascii');
+    const uploadID = randomUUID();
+    assert.equal((await chunk(uploadID, 0, video.subarray(0, chunkSize), video.length)).status, 200);
+    const status = await request('status', query(uploadID, video.length));
+    assert.deepEqual(status.envelope.data.received_chunks, [0]);
+    const r = await chunk(uploadID, 1, video.subarray(chunkSize), video.length);
+    assert.equal(r.status, 200); assert.equal(r.envelope.data.message_type, 'video');
+    assert.deepEqual(await readFile(path.join(testRoot, 'messages', path.basename(r.envelope.data.url))), video);
+  });
   const id = randomUUID();
   await check('new upload has no completed chunks', async () => {
     const r = await request('status', query(id));

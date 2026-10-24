@@ -43,9 +43,11 @@ struct RootView: View {
             presentation.packetID = packetID.lowercased()
         }
         .onChange(of: session.isAuthenticated) { _, authenticated in
-            if authenticated { link = pendingLink; pendingLink = nil }
+            if authenticated { link = pendingLink; pendingLink = nil; openPendingNotification() }
             else { presentation.packetID = nil; link = nil }
         }
+        .onReceive(MessageNotifications.shared.$pendingRoute) { route in if route != nil { openPendingNotification() } }
+        .onChange(of: session.user?.id) { _, _ in openPendingNotification() }
         .onOpenURL { url in if let value = AppLink.parse(url) { if session.isAuthenticated { link = value } else { pendingLink = value } } }
         .sheet(item: $link) { value in
             NavigationStack {
@@ -54,9 +56,40 @@ struct RootView: View {
                     case .user(let id): LinkedUserView(lookup: id)
                     case .group(let code): GroupJoinView(initialCode: code)
                     case .product(let id): ProductDetailView(product: Record(["id": .number(Decimal(id))]))
+                    case .conversation(let route): LinkedConversationView(route: route)
                     }
                 }.toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { link = nil } } }
             }
+        }
+    }
+    private func openPendingNotification() {
+        guard session.isAuthenticated, let route = MessageNotifications.shared.pendingRoute else { return }
+        MessageNotifications.shared.pendingRoute = nil
+        guard route.userID == session.user?.id else { return }
+        link = .conversation(route)
+    }
+}
+
+private struct LinkedConversationView: View {
+    let route: ChatNotificationRoute
+    @EnvironmentObject private var session: SessionStore
+    @State private var item: Record?
+    @State private var error: String?
+    @State private var retry = 0
+    var body: some View {
+        Group {
+            if let item { ChatDetailView(item: item, isGroup: route.group) }
+            else if let error { VStack { EmptyState(title: "暂时无法打开会话", description: error); Button("重新加载") { retry += 1 } } }
+            else { ProgressView("正在打开会话…") }
+        }.spxPage().task(id: retry) {
+            guard session.user?.id == route.userID else { error = "此通知不属于当前账号"; return }
+            do {
+                error = nil
+                let rows = try await APIClient.shared.get(route.group ? "groups" : "chats").list
+                guard session.user?.id == route.userID else { return }
+                guard var value = rows.first(where: { $0.id == route.targetID }) else { error = "该会话已删除或你已退出群聊"; return }
+                value["kind"] = .string(route.group ? "group" : "chat"); item = value
+            } catch { self.error = error.localizedDescription }
         }
     }
 }
@@ -84,20 +117,56 @@ private struct LinkedUserView: View {
 
 struct MainTabView: View {
     @State private var selected = 0
-    @State private var roots = [UUID(), UUID(), UUID(), UUID()]
-    private var selection: Binding<Int> {
-        Binding(get: { selected }, set: { value in
-            // A tab tap always has a predictable destination: its root page.
-            roots[value] = UUID()
-            selected = value
-        })
-    }
+    @State private var path = NavigationPath()
     var body: some View {
-        TabView(selection: selection) {
-            NavigationStack { ChatListView().toolbar(.visible, for: .tabBar) }.id(roots[0]).tabItem { Label("聊天", systemImage: "bubble.left.and.bubble.right") }.tag(0)
-            NavigationStack { ContactsView().toolbar(.visible, for: .tabBar) }.id(roots[1]).tabItem { Label("通讯录", systemImage: "person.crop.rectangle.stack") }.tag(1)
-            NavigationStack { EcosystemView().toolbar(.visible, for: .tabBar) }.id(roots[2]).tabItem { Label("生态", systemImage: "square.grid.2x2") }.tag(2)
-            NavigationStack { ProfileView().toolbar(.visible, for: .tabBar) }.id(roots[3]).tabItem { Label("我的", systemImage: "person.crop.circle") }.tag(3)
+        NavigationStack(path: $path) {
+            Group {
+                switch selected {
+                case 1: ContactsView()
+                case 2: EcosystemView()
+                case 3: ProfileView()
+                default: ChatListView()
+                }
+            }
+            // The bar belongs to the root content, so pushed pages never inherit it.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                SPXBottomBar(selected: selected) { value in
+                    path = NavigationPath()
+                    if selected != value { selected = value }
+                }
+            }
         }.tint(SPXColor.primary)
+    }
+}
+
+private struct SPXBottomBar: View {
+    @ObservedObject private var notifications = MessageNotifications.shared
+    let selected: Int
+    let select: (Int) -> Void
+    private let titles = ["聊天", "通讯录", "生态", "我的"]
+    private let icons = ["chat", "contacts", "eco", "profile"]
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(titles.indices, id: \.self) { index in
+                Button { select(index) } label: {
+                    VStack(spacing: 5) {
+                        SPXIcon(icons[index]).frame(width: 23, height: 23).overlay(alignment: .topTrailing) {
+                            if index == 0, notifications.unread > 0 {
+                                Text(notifications.unread > 99 ? "99+" : String(notifications.unread)).font(.system(size: 9, weight: .bold))
+                                    .foregroundStyle(.white).padding(.horizontal, 4).frame(minWidth: 16, minHeight: 16)
+                                    .background(.red, in: Capsule()).offset(x: 12, y: -8)
+                            }
+                        }
+                        Text(titles[index]).font(.system(size: 11, weight: selected == index ? .semibold : .regular))
+                    }.foregroundStyle(selected == index ? SPXColor.primary : SPXColor.muted)
+                        .frame(maxWidth: .infinity).frame(minHeight: 68).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityLabel(titles[index])
+                    .accessibilityAddTraits(selected == index ? .isSelected : [])
+            }
+        }.padding(.horizontal, 8).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 24))
+            .overlay(RoundedRectangle(cornerRadius: 24).stroke(SPXColor.line, lineWidth: 0.7))
+            .shadow(color: .black.opacity(0.07), radius: 10, y: 3)
+            .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 10)
+            .background(SPXColor.surface)
     }
 }

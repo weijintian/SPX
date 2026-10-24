@@ -167,13 +167,29 @@ struct LiveOutboxTransport: OutboxTransport {
                 let result = try await transport.upload(file: url, userID: item.userID, uploadID: item.uploadID) { progress in
                     Task { @MainActor in
                         guard activeEpoch == self.epoch, let index = self.items.firstIndex(where: { $0.id == item.id }) else { return }
-                        self.items[index].progress = min(1, max(0, progress))
+                        let value = min(1, max(0, progress))
+                        // Byte-level callbacks must not repeatedly sort and redraw the entire timeline.
+                        if value == 0 || value == 1 || abs(value - self.items[index].progress) >= 0.01 {
+                            self.items[index].progress = value
+                        }
                     }
                 }
                 guard activeEpoch == epoch else { return }
-                payload["media_url"] = result["url"]; payload["message_type"] = result["message_type"]
+                // Upload responses have used both `url` and `media_url` over the
+                // lifetime of the API. Keep the locally selected type when the
+                // server omits it so an image/video cannot turn into a blank file.
+                let remoteURL = UploadedMedia.url(in: result)
+                guard !remoteURL.isEmpty else { throw APIError.server(502, "附件上传未返回地址，请重试") }
+                payload["media_url"] = .string(remoteURL)
+                let uploadedType = UploadedMedia.type(in: result)
+                if !uploadedType.isEmpty, payload["message_type"]?.string != "file" { payload["message_type"] = .string(uploadedType) }
                 if let index = items.firstIndex(where: { $0.id == item.id }) { items[index].body = payload }
                 await persist()
+                guard activeEpoch == epoch else { return }
+                try Task.checkCancellation()
+                // Seed before publishing/sending: a realtime echo can arrive before the
+                // send receipt, and its preview should reuse the file already on this device.
+                try? await MediaCache.shared.seed(url, source: remoteURL, userID: item.userID)
                 guard activeEpoch == epoch else { return }
                 try Task.checkCancellation()
             }
@@ -183,6 +199,12 @@ struct LiveOutboxTransport: OutboxTransport {
             var message = result["message"].object.isEmpty ? result.record : result["message"].record
             // Send endpoints may return only an ID. Preserve the local content and media URL.
             for (key, value) in payload where message[key] == .null { message[key] = value }
+            if message["media_url"].string.isEmpty, let mediaURL = payload["media_url"], !mediaURL.string.isEmpty {
+                message["media_url"] = mediaURL
+            }
+            if message["message_type"].string.isEmpty, let messageType = payload["message_type"], !messageType.string.isEmpty {
+                message["message_type"] = messageType
+            }
             // Complete compact receipts for immediate local rendering.
             message[item.scope == "group" ? "group_id" : "chat_id"] = .number(Decimal(item.targetID))
             message["sender_id"] = .number(Decimal(item.userID))

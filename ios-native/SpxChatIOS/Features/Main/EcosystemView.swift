@@ -1,38 +1,51 @@
 import SwiftUI
 
 struct EcosystemView: View {
-    private let columns = [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)]
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("连接生活与价值").font(.largeTitle.bold())
-                    Text("购物、经营与资产，一处轻松管理").font(.subheadline).foregroundStyle(.secondary)
-                }.padding(.top, 16)
+            VStack(spacing: 16) {
                 NavigationLink { MallHomeView() } label: {
-                    HStack(spacing: 18) {
-                        Image(systemName: "bag").font(.system(size: 38, weight: .light)).frame(width: 70, height: 76).background(.white.opacity(0.15), in: RoundedRectangle(cornerRadius: 22))
-                        VStack(alignment: .leading, spacing: 8) { Text("SPX 商城").font(.title2.bold()); Text("发现好物，安心购物").font(.subheadline).opacity(0.8) }
-                        Spacer(); Image(systemName: "arrow.up.right")
-                    }.padding(22).foregroundStyle(.white).background(LinearGradient(colors: [SPXColor.primary, Color(red: 0.17, green: 0.47, blue: 0.94)], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 26))
-                }.buttonStyle(.plain)
-                Text("常用服务").font(.title3.bold())
-                LazyVGrid(columns: columns, spacing: 14) {
-                    destination("商家中心", subtitle: "经营概览与商品管理", icon: "storefront") { MerchantOverviewView() }
-                    destination("我的资产", subtitle: "余额、充值与提现", icon: "creditcard") { WalletView() }
-                    destination("质押中心", subtitle: "查看计划与收益", icon: "chart.line.uptrend.xyaxis") { StakingView() }
-                    destination("我的订单", subtitle: "物流与售后服务", icon: "shippingbox") { OrdersView() }
+                    EcosystemCard(title: "商城", detail: "发现好物，安心购物", badge: "进入商城", image: "https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=900", icon: "store", color: SPXColor.primary)
                 }
-                HStack(spacing: 12) { Image(systemName: "play.rectangle").font(.title2); VStack(alignment: .leading, spacing: 4) { Text("视频奖励").font(.subheadline.weight(.medium)); Text("与安卓端一致，当前服务尚未开放").font(.caption).foregroundStyle(.secondary) }; Spacer(); Text("筹备中").font(.caption).foregroundStyle(.secondary) }.padding(18).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 20))
-            }.padding(18)
+                NavigationLink { StakingView() } label: {
+                    EcosystemCard(title: "质押", detail: "查看质押计划与收益记录", badge: "查看质押", image: "https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=900", icon: "chart.line.uptrend.xyaxis", color: .orange)
+                }
+                NavigationLink { VideoRewardIntroView() } label: {
+                    EcosystemCard(title: "视频奖励", detail: "了解视频奖励与活动进展", badge: "筹备中", image: "", icon: "play.rectangle", color: SPXColor.success)
+                }
+            }.buttonStyle(.plain).padding(18)
         }.navigationTitle("生态").spxPage()
     }
-    private func destination<Content: View>(_ title: String, subtitle: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
-        NavigationLink(destination: content()) {
-            VStack(alignment: .leading, spacing: 16) {
-                Image(systemName: icon).font(.system(size: 25, weight: .regular)).foregroundStyle(SPXColor.primary).frame(width: 48, height: 48).background(SPXColor.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 15))
-                VStack(alignment: .leading, spacing: 5) { Text(title).font(.headline); Text(subtitle).font(.caption).foregroundStyle(.secondary) }
-            }.frame(maxWidth: .infinity, alignment: .leading).padding(18).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 22))
-        }.buttonStyle(.plain)
+}
+
+private struct EcosystemCard: View {
+    let title: String
+    let detail: String
+    let badge: String
+    let image: String
+    let icon: String
+    let color: Color
+    var body: some View {
+        HStack(spacing: 16) {
+            Group {
+                if !image.isEmpty { CachedImage(source: image) }
+                else { Image("reward_video").resizable().scaledToFill() }
+            }.frame(width: 82, height: 82).clipShape(RoundedRectangle(cornerRadius: 16))
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title).font(.system(size: 19, weight: .semibold)).foregroundStyle(SPXColor.ink)
+                Text(detail).font(.system(size: 13)).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
+                Text(badge).font(.system(size: 12, weight: .medium)).foregroundStyle(color)
+                    .padding(.horizontal, 9).padding(.vertical, 4).background(color.opacity(0.09), in: Capsule())
+            }.frame(maxWidth: .infinity, alignment: .leading)
+            SPXIcon("chevron").frame(width: 18, height: 18).foregroundStyle(SPXColor.muted.opacity(0.5))
+        }.padding(18).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 20))
+            .overlay(RoundedRectangle(cornerRadius: 20).stroke(SPXColor.line, lineWidth: 0.6))
+    }
+}
+
+private struct VideoRewardIntroView: View {
+    var body: some View {
+        EmptyState(title: "视频奖励筹备中", description: "服务开放后将在这里展示奖励活动。", icon: "play.rectangle")
+            .frame(maxHeight: .infinity).navigationTitle("视频奖励").spxPage()
     }
 }

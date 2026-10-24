@@ -1,0 +1,255 @@
+{
+  "date": "2026-10-24",
+  "scope": "iOS UI and Android/iOS notifications",
+  "files": [
+    {
+      "path": "ios-native/SpxChatIOS/App.swift",
+      "sha256": "47bd636c5b4b88d16ff1b529b0dd83f20b1a205c5fbca62ca9a1624bcbd9bdba",
+      "bytes": 2796
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Core/DeepLink.swift",
+      "sha256": "7700877b0521b929f83c4da8340699e2645ffbf055d1b98e829a442d2bee6640",
+      "bytes": 1682
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Core/RealtimeClient.swift",
+      "sha256": "60a81b7ba634781b9ec879a82407649e9e182bbbf9c567124504d9959466de12",
+      "bytes": 5007
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Core/SessionStore.swift",
+      "sha256": "1bb6669155102a564cc17a29708b2f45775f5e0af5e28de0c608e7e133879f72",
+      "bytes": 10391
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Design/Components.swift",
+      "sha256": "9e276c51bf3fb3504118af597684ffb43093cf9a06573229cea392daa653921d",
+      "bytes": 6066
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Features/Auth/AuthenticationView.swift",
+      "sha256": "ee419c173972baf5cfaf0077e567e3044083f4cefcd686e6055bcd876d14512c",
+      "bytes": 8269
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Features/Chat/ChatAccessories.swift",
+      "sha256": "8fe32eb0e9779f03e8e0e56328dd2b627966eed657315f44daee1241174420e9",
+      "bytes": 5285
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Features/Chat/Conversations.swift",
+      "sha256": "c97656115f44c5cb6a823b0afc6776960d8a936d5484df17e68ba184dc1b8538",
+      "bytes": 61929
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Features/Chat/ConversationSettings.swift",
+      "sha256": "48b40401916f81baa9be6d2da4ed31ef10c06c0c213b90696e397d2cce9bd26e",
+      "bytes": 26268
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Features/Chat/MessageHistory.swift",
+      "sha256": "6c24b9d118e1db3ce6344bc0a80e919736d9aaecc5afd23293bf1b2a6c4bc7d5",
+      "bytes": 7551
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Features/Chat/RedPacketHistory.swift",
+      "sha256": "c9e68f0dddcda73888f8e01564a9a4e7635f2b97a1990ac80c846dfe45437add",
+      "bytes": 4113
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Features/Chat/RedPackets.swift",
+      "sha256": "e418871592bb29d0c7c4ceaa0a887f8c3ea09a205be4f1a94eba204b01cc4d98",
+      "bytes": 12557
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Features/Chat/SocialViews.swift",
+      "sha256": "172fd2d1014e2756e3c25ba5bdeee4401d24d433bb58987c838f1b866726533c",
+      "bytes": 36451
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Features/Main/AppNavigation.swift",
+      "sha256": "c1a370eff31ea4b5e575ffe843fd0104ea4f77e6aa04ca5cbafba7fa781664ce",
+      "bytes": 9425
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Features/Main/EcosystemView.swift",
+      "sha256": "cf9324a52ff24a2e723ef573a3d2061324bdc49fcc7a22be26142ce917d38502",
+      "bytes": 2744
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Features/Mall/Addresses.swift",
+      "sha256": "6f26179eadc8b77eaa876f155e9ba4a5f5296bcbe6da2a14bb593161f34cede8",
+      "bytes": 4925
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Features/Mall/Catalog.swift",
+      "sha256": "46477df4989e2389811e84e9f3efda957db107099d330d5768a11a741aaa19ee",
+      "bytes": 20507
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Features/Mall/Orders.swift",
+      "sha256": "28169289a2889e634e71d13c1218caafa599c0efa78102a36a1e2d94ca1d0fd0",
+      "bytes": 28005
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Features/Merchant/MerchantDashboard.swift",
+      "sha256": "e29939bc902576c84ddba0ad0ea2e0fc8f77132914852c08d9c80dbb77362fc5",
+      "bytes": 20873
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Features/Merchant/MerchantOperations.swift",
+      "sha256": "8e29a76af4ff98e6b56d59886273c3a02e887f6839eb3490ca0a129bd10dd61b",
+      "bytes": 22145
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Features/Merchant/ProductEditor.swift",
+      "sha256": "7eacdc72fb1f712749ed17afa100e75f0542ecbc6f3139a5134271ebe604ab5e",
+      "bytes": 28191
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Features/Merchant/ShopLocationPicker.swift",
+      "sha256": "885606063750f2b8985f80367c351ac7694b86e11b6b6c36a05621bd1aafa02e",
+      "bytes": 5394
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Features/Profile/Account.swift",
+      "sha256": "6c756af4569094e6f80e3c9fc401019206a4949550def4eb8fd01c0b69446058",
+      "bytes": 22907
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Features/Profile/Support.swift",
+      "sha256": "2ecd1b41481ff2e6b0d17d61ef039128c3d3e24128268f8d783c02df8d4552b3",
+      "bytes": 7366
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Features/Wallet/Assets.swift",
+      "sha256": "a852eb3fc79a2bd3687e361b9f76dffec8c3c6ff5b695240ca10726c2e39dd18",
+      "bytes": 33944
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Core/MessageNotifications.swift",
+      "sha256": "d9dfc996e4c535a2d61266d8a73f34943764d3807c9fb4569ca7ac07aa02057f",
+      "bytes": 14581
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Design/AndroidParity.swift",
+      "sha256": "e1d5d3a7a28e3f4d746cce5115c27c00d41b818baddfd6e7ecf1e6ffb6a90718",
+      "bytes": 8835
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Features/Profile/MessageNotificationSettings.swift",
+      "sha256": "af8cc22d8861b042dc1030222726d3e087b7cee7b8a923b3a7c76c4201359cd2",
+      "bytes": 2692
+    },
+    {
+      "path": "ios-native/SpxChatIOSTests/MessageNotificationTests.swift",
+      "sha256": "841d6cf7f82f8824d310f90794e9fcffe50834b50842de16e1a94eb98104be5c",
+      "bytes": 2601
+    },
+    {
+      "path": "ios-native/project.yml",
+      "sha256": "888f3f19ade25523a717e257641e171507ef8a35abe377abcecb3a566c54aee8",
+      "bytes": 1298
+    },
+    {
+      "path": "ios-native/scripts/build_signed_ipa.py",
+      "sha256": "82dd4ec21a210450585830a55030fc7a7d0d92fc5ade7376ae14be8755d18f9a",
+      "bytes": 16171
+    },
+    {
+      "path": "ios-native/scripts/test_signing_configuration.py",
+      "sha256": "dacba4bed87f257c9dd83f6a5c096aa71830390c1b886af3876811d1dbcee3fc",
+      "bytes": 6132
+    },
+    {
+      "path": "android-native/app/src/main/java/com/spx/chat/ChatBadge.java",
+      "sha256": "c75a23599fc4ebeecede54e9fe984a30d388054bb5d8718ec5218fe81a0330fc",
+      "bytes": 5675
+    },
+    {
+      "path": "android-native/app/src/main/java/com/spx/chat/MainActivity.java",
+      "sha256": "3683bf319545a497b08400bc858fba5a5ddfedc690bf27c3d70f6aa8faa3998d",
+      "bytes": 625955
+    },
+    {
+      "path": "android-native/app/build.gradle",
+      "sha256": "44ce4017975b161f761ebe052122fe97b1f7d4adae1867f707f9515d390cc4b5",
+      "bytes": 2352
+    },
+    {
+      "path": "spxchat/push_notifications.php",
+      "sha256": "d133d557ea1b877bf578aa2dd42e18a10d2f4749610f17b6250f9fbe986b7243",
+      "bytes": 9562
+    },
+    {
+      "path": "spxchat/push_worker.php",
+      "sha256": "64a0efb4d9968bf3417bdba6d6fd65d89640c19032add5b9a0d6a1a2078af009",
+      "bytes": 7886
+    },
+    {
+      "path": "spxchat/db.php",
+      "sha256": "9b3a5744c5bc970dbf28f3bb0a32ded2bc2ccf0f18574fbc3aedeb653716eea8",
+      "bytes": 42724
+    },
+    {
+      "path": "spxchat/index.php",
+      "sha256": "00c76f7b920e96bd07063e8d550282167269ad5b56c13a7a24f3ff63a948978b",
+      "bytes": 129140
+    },
+    {
+      "path": "spxchat/ws-event.php",
+      "sha256": "83c29cdd671459339d77d48554837436932e106f0ad2a10036f59388703e9e3f",
+      "bytes": 1757
+    },
+    {
+      "path": "server-companion/push_notifications.php",
+      "sha256": "d133d557ea1b877bf578aa2dd42e18a10d2f4749610f17b6250f9fbe986b7243",
+      "bytes": 9562
+    },
+    {
+      "path": "server-companion/push_worker.php",
+      "sha256": "64a0efb4d9968bf3417bdba6d6fd65d89640c19032add5b9a0d6a1a2078af009",
+      "bytes": 7886
+    },
+    {
+      "path": "server-companion/tests/push-policy.php",
+      "sha256": "2e8a5640b619189ebb7907e7dfd0807116ab090d58eb78b96390dd35d9a0458b",
+      "bytes": 3802
+    },
+    {
+      "path": "ios-native/SpxChatIOS/Design/DetailPages.swift",
+      "sha256": "34a1218562eda6729bb8d23aff1eb9dd8a6b254b0cebe41b931118fcf3a74717",
+      "bytes": 7394
+    },
+    {
+      "path": "ios-native/scripts/verify_subpage_ui.py",
+      "sha256": "fc425d1c4774fd4017bbb08fa8b12483b85cc161ef594cb0dbea684436befa72",
+      "bytes": 2592
+    },
+    {
+      "path": "ios-native/CHANGELOG.md",
+      "sha256": "7d36d30c7a9a2b3b511197986734624fe30d1f263206e60bba33397f59aa3047",
+      "bytes": 1589
+    },
+    {
+      "path": "ios-native/Validation/UI-SUBPAGES-2026-10-25.md",
+      "sha256": "2beafd14b33321c4956989682df3de95d796c03273c65133bc794068e4a85978",
+      "bytes": 2808
+    },
+    {
+      "path": "ios-native/Validation/ui-subpages-verification.json",
+      "sha256": "e8628a0bbde6e7fc2605facaa0bc18d9c533dfd8bd571ee82a87239808719b02",
+      "bytes": 4054
+    },
+    {
+      "path": "ios-native/Validation/source-validation.json",
+      "sha256": "9cf8d81b926d0dfd951ec4d04643ec0ffb7f23812d4a57b0de94ffcc368e1868",
+      "bytes": 408
+    }
+  ],
+  "reaudit_date": "2026-10-24",
+  "ui_detail_completion_date": "2026-10-25",
+  "last_updated": "2026-10-25",
+  "subpages_report": "ios-native/Validation/ui-subpages-verification.json"
+}

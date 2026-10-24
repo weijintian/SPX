@@ -6,18 +6,43 @@ import UIKit
 import ImageIO
 import UniformTypeIdentifiers
 
+enum ChatMediaLayout {
+    static let width: CGFloat = 210
+    static let height: CGFloat = 160
+    static func imageSize(_ source: CGSize, maximumWidth: CGFloat = 220) -> CGSize {
+        let width = max(48, min(220, maximumWidth))
+        guard source.width.isFinite, source.height.isFinite, source.width > 0, source.height > 0 else { return CGSize(width: min(Self.width, width), height: height) }
+        let scale = min(width / source.width, 300 / source.height)
+        return CGSize(width: max(48, source.width * scale), height: max(48, source.height * scale))
+    }
+}
+
+/// Android uses a bounded, aspect-preserving bubble after the image is decoded.
+private struct ChatImageLayout: Layout {
+    let imageSize: CGSize?
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        ChatMediaLayout.imageSize(imageSize ?? .zero, maximumWidth: proposal.width ?? 220)
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for view in subviews { view.place(at: bounds.origin, anchor: .topLeading, proposal: ProposedViewSize(bounds.size)) }
+    }
+}
+
 struct LocalAttachmentPreview: View {
     let url: URL
     let kind: String
     @State private var thumbnail: UIImage?
     var body: some View {
         Group {
-            if let thumbnail {
-                Image(uiImage: thumbnail).resizable().scaledToFit().frame(maxWidth: 200, maxHeight: 200)
-                    .overlay { if kind == "video" { Image(systemName: "play.circle.fill").font(.largeTitle).foregroundStyle(.white).shadow(radius: 3) } }
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-            } else if kind == "image" || kind == "video" {
-                ProgressView().frame(width: 160, height: 120)
+            if kind == "image" || kind == "video" {
+                let preview = ZStack {
+                    Color.black.opacity(0.06)
+                    if let thumbnail { Image(uiImage: thumbnail).resizable().scaledToFit() }
+                    else { ProgressView() }
+                    if kind == "video" { Image(systemName: "play.circle.fill").font(.system(size: 40)).foregroundStyle(.white).shadow(radius: 3) }
+                }
+                if kind == "image" { ChatImageLayout(imageSize: thumbnail?.size) { preview }.clipShape(RoundedRectangle(cornerRadius: 12)) }
+                else { preview.frame(width: ChatMediaLayout.width, height: ChatMediaLayout.height).clipShape(RoundedRectangle(cornerRadius: 12)) }
             }
         }.task(id: url) {
             if kind == "image" { thumbnail = try? await ImageThumbnailCache.shared.local(url) }
@@ -33,18 +58,15 @@ struct CachedImage: View {
     let source: String
     var fit = true
     var maximumPixelSize = 720
+    var messagePreview = false
     @EnvironmentObject private var session: SessionStore
     @State private var image: UIImage?
     @State private var failed = false
     @State private var retry = 0
     var body: some View {
         Group {
-            if let image { if fit { Image(uiImage: image).resizable().scaledToFit() } else { Image(uiImage: image).resizable().scaledToFill() } }
-            else if failed {
-                VStack(spacing: 5) { Image(systemName: "photo").foregroundStyle(.secondary); Text("轻点重试").font(.caption2).foregroundStyle(.secondary) }
-                    .contentShape(Rectangle()).onTapGesture { retry += 1 }.accessibilityAddTraits(.isButton).accessibilityLabel("图片加载失败，轻点重试")
-            }
-            else { ProgressView() }
+            if messagePreview { ChatImageLayout(imageSize: image?.size) { content } }
+            else { content }
         }.task(id: source + ":" + String(retry)) {
             let requestedSource = source
             image = nil; failed = false
@@ -58,6 +80,14 @@ struct CachedImage: View {
             catch is CancellationError { }
             catch { failed = true }
         }
+    }
+    @ViewBuilder private var content: some View {
+            if let image { if fit { Image(uiImage: image).resizable().scaledToFit() } else { Image(uiImage: image).resizable().scaledToFill() } }
+            else if failed {
+                VStack(spacing: 5) { Image(systemName: "photo").foregroundStyle(.secondary); Text("轻点重试").font(.caption2).foregroundStyle(.secondary) }
+                    .contentShape(Rectangle()).onTapGesture { retry += 1 }.accessibilityAddTraits(.isButton).accessibilityLabel("图片加载失败，轻点重试")
+            }
+            else { ProgressView() }
     }
 }
 

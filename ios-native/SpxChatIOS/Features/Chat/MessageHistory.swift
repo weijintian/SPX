@@ -28,6 +28,14 @@ enum MessageTimeline {
         return result
     }
     static func showsTime(before message: Record, in messages: [Record]) -> Bool { boundaries(in: messages).contains(message.id) }
+    static func conversationLabel(_ value: String) -> String {
+        guard let date = date(value) else { return "" }
+        lock.lock(); defer { lock.unlock() }
+        let calendar = Calendar.current
+        if calendar.isDateInYesterday(date) { return "昨天" }
+        displayFormatter.dateFormat = calendar.isDateInToday(date) ? "HH:mm" : calendar.component(.year,from: date) == calendar.component(.year,from: .now) ? "MM/dd" : "yyyy/MM/dd"
+        return displayFormatter.string(from: date)
+    }
     static func label(_ value: String) -> String {
         guard let date = date(value) else { return value }
         lock.lock(); defer { lock.unlock() }
@@ -76,7 +84,7 @@ struct MessageContextView: View {
                     ForEach(rows) { row in
                         VStack(spacing: 8) {
                             Text(MessageTimeline.label(row["created_at"].string)).font(.caption2).foregroundStyle(.secondary)
-                            MessageBubble(message: row, currentUserID: session.user?.id ?? 0, open: { open(row) })
+                            MessageBubble(message: row, currentUserID: session.user?.id ?? 0, isGroup: group, open: { open(row) })
                         }.padding(8).background(row.id == messageID ? SPXColor.primary.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 16)).id(row.id)
                             .contextMenu { if MessageContent.canForward(row) { Button("转发", systemImage: "arrowshape.turn.up.right") { forward = row } } }
                     }

@@ -43,6 +43,16 @@ enum MediaFiles {
         try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: target.path)
         return target
     }
+    static func keepForSending(_ source: URL, userID: Int) async throws -> URL {
+        let file = try await Task.detached(priority: .userInitiated) { try keep(source, userID: userID) }.value
+        if Task.isCancelled { try? FileManager.default.removeItem(at: file); throw CancellationError() }
+        return file
+    }
+    static func preparePhoto(_ image: UIImage, userID: Int) async throws -> URL {
+        let file = try await Task.detached(priority: .userInitiated) { try jpeg(image, userID: userID) }.value
+        if Task.isCancelled { try? FileManager.default.removeItem(at: file); throw CancellationError() }
+        return file
+    }
     static func jpeg(_ image: UIImage, userID: Int) throws -> URL {
         let factor = min(1, 2048 / max(image.size.width, image.size.height))
         let size = CGSize(width: image.size.width * factor, height: image.size.height * factor)
@@ -91,6 +101,26 @@ struct PickedMovie: Transferable {
     }
 }
 
+enum UploadedMedia {
+    static func url(in result: JSON) -> String {
+        for value in [result["url"], result["media_url"], result["data"]["url"], result["data"]["media_url"]] {
+            let source = value.string.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !source.isEmpty { return source }
+        }
+        return ""
+    }
+    static func type(in result: JSON) -> String {
+        let type = result["message_type"].string.isEmpty ? result["data"]["message_type"].string : result["message_type"].string
+        return ["image", "video", "voice", "file"].contains(type) ? type : ""
+    }
+    static func supportsStatusFallback(_ error: Error) -> Bool {
+        guard let failure = error as? APIError, case .server(let code, _) = failure else { return false }
+        // The checkpoint probe is optional. Older deployments may return 5xx when
+        // that extension is missing, while the established chunk route still works.
+        return [404, 405].contains(code) || (500...599).contains(code)
+    }
+}
+
 actor MediaUploader {
     static let shared = MediaUploader()
     private let chunkSize = 1_048_576
@@ -102,6 +132,20 @@ actor MediaUploader {
         guard size > 0, size <= 1_073_741_824 else { throw APIError.server(413, "附件不能为空且不能超过 1 GB") }
         let total = (size + chunkSize - 1) / chunkSize
         guard userID > 0 else { throw APIError.unauthorized }
+        // Match Android: small attachments use the established single-file endpoint.
+        // Do not make every photo depend on the resumable-upload status extension.
+        if size <= chunkSize {
+            let boundary = "SPX-" + UUID().uuidString
+            let mime = UTType(filenameExtension: file.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+            let body = Multipart.body(boundary: boundary, fields: [:], data: try Data(contentsOf: file),
+                                      name: "file", filename: file.lastPathComponent, mime: mime)
+            progress(0)
+            let request = try await APIClient.shared.backgroundUploadRequest("upload.message", boundary: boundary, userID: userID)
+            let result = try await APIClient.shared.uploadPrepared(request, body: body, expectedSession: sessionID)
+            guard !UploadedMedia.url(in: result).isEmpty else { throw APIError.server(502, "附件上传未返回地址，请重试") }
+            progress(1)
+            return result
+        }
         var status: JSON = .null
         for attempt in 0..<4 {
             do {
@@ -109,13 +153,14 @@ actor MediaUploader {
                                                                 totalChunks: total, totalBytes: size)
                 break
             } catch {
+                if UploadedMedia.supportsStatusFallback(error) { break }
                 guard (error as? APIError)?.retryable == true || error is URLError, attempt < 3 else { throw error }
                 try await Task.sleep(for: .seconds(attempt + 1))
             }
         }
         let currentSessionID = await APIClient.shared.sessionIdentity()
         guard sessionID == currentSessionID else { throw APIError.staleSession }
-        if !status["result"]["url"].string.isEmpty { return status["result"] }
+        if !UploadedMedia.url(in: status["result"]).isEmpty { progress(1); return status["result"] }
         let received = Set(status["received_chunks"].array.map(\.int))
         try Task.checkCancellation()
         return try await BackgroundMediaTransfer.shared.upload(

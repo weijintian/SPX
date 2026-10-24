@@ -6,8 +6,25 @@ import UIKit
     private static var backgroundEventsReady = false
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        let navigation = UINavigationBarAppearance()
+        navigation.configureWithOpaqueBackground()
+        navigation.backgroundColor = UIColor(SPXColor.card)
+        navigation.shadowColor = UIColor(SPXColor.line)
+        navigation.titleTextAttributes = [.font: UIFont.systemFont(ofSize: 18, weight: .semibold), .foregroundColor: UIColor(SPXColor.ink)]
+        UINavigationBar.appearance().standardAppearance = navigation
+        UINavigationBar.appearance().scrollEdgeAppearance = navigation
+        UINavigationBar.appearance().compactAppearance = navigation
+        UINavigationBar.appearance().tintColor = UIColor(SPXColor.primary)
+        MessageNotifications.shared.configure()
         _ = BackgroundMediaTransfer.shared
         return true
+    }
+
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        MessageNotifications.shared.receivedDeviceToken(deviceToken)
+    }
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        MessageNotifications.shared.registrationFailed(error)
     }
 
     func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,

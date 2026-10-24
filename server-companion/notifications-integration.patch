@@ -1,0 +1,48 @@
+--- a/spxchat/db.php
++++ b/spxchat/db.php
+@@ -3,6 +3,7 @@
+ 
+ date_default_timezone_set('Asia/Shanghai');
+ require_once __DIR__ . '/mall_schema.php';
++require_once __DIR__ . '/push_notifications.php';
+ require_once __DIR__ . '/chat_schema.php';
+ require_once __DIR__ . '/mall_commerce.php';
+ require_once __DIR__ . '/mall_merchant_media.php';
+@@ -49,7 +50,7 @@
+     if ($installed) return;
+     $installed = true;
+     // Run schema repair once per code revision, instead of issuing DDL on every API request.
+-    $fingerprint = hash('sha256', hash_file('sha256', __FILE__) . hash_file('sha256', __DIR__ . '/chat_schema.php') . hash_file('sha256', __DIR__ . '/mall_schema.php') . hash_file('sha256', __DIR__ . '/mall_commerce.php') . hash_file('sha256', __DIR__ . '/mall_merchant_media.php') . hash_file('sha256', __DIR__ . '/mall_workspace.php'));
++    $fingerprint = hash('sha256', hash_file('sha256', __DIR__ . '/push_notifications.php') . hash_file('sha256', __FILE__) . hash_file('sha256', __DIR__ . '/chat_schema.php') . hash_file('sha256', __DIR__ . '/mall_schema.php') . hash_file('sha256', __DIR__ . '/mall_commerce.php') . hash_file('sha256', __DIR__ . '/mall_merchant_media.php') . hash_file('sha256', __DIR__ . '/mall_workspace.php'));
+     $schemaCurrent = static function () use ($pdo, $fingerprint): bool {
+         try {
+             $q = $pdo->prepare('SELECT `value` FROM app_settings WHERE `key`=? LIMIT 1');
+@@ -235,6 +236,7 @@
+         } while ($checkId->fetch());
+         $pdo->prepare('UPDATE users SET spx_id=? WHERE id=?')->execute([$newSpxId, $legacyId]);
+     }
++    installPushSchema($pdo);
+     installChatSchema($pdo);
+     installMallSchema($pdo);
+     installMallCommerceSchema($pdo);
+--- a/spxchat/index.php
++++ b/spxchat/index.php
+@@ -75,6 +75,7 @@
+ $body = requestBody();
+ 
+ try {
++    pushApi($action, $method, $body);
+     tencentCallApi($action, $method, $body);
+     // Catalog and image reads do not require wallet settlement or its global lock.
+     if (!in_array($action, ['products', 'product', 'shops', 'shop', 'mall.config', 'merchant.qualification.image', 'app.update.download'], true)) runStakingSettlement();
+--- a/spxchat/ws-event.php
++++ b/spxchat/ws-event.php
+@@ -21,6 +21,8 @@
+         if (!empty($event['group_id']) && isset($event['message']) && is_array($event['message']) && (int)($event['user_id'] ?? 0) > 0) {
+             $event = personalizeWebSocketEvent(db(), $event);
+         }
++        // Queueing is independent of WebSocket availability and cannot fail a chat send.
++        try { if (function_exists('pushQueueEvent')) pushQueueEvent($event); } catch (Throwable $ignored) {}
+         $config = require __DIR__ . '/config.php';
+         $host = (string) ($config['app']['websocket_event_host'] ?? '127.0.0.1');
+         $port = (int) ($config['app']['websocket_event_port'] ?? 8090);

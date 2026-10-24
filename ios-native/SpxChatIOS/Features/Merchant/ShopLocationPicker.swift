@@ -16,37 +16,41 @@ struct ShopLocationPicker: View {
     @State private var error: String?
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
+            SPXDetailPage {
+                SPXPageHeading(title: "门店位置", subtitle: "搜索地址并选择结果，也可轻点地图调整位置", icon: "location", color: SPXColor.commerce)
                 MapReader { proxy in
                     Map(position: $camera) {
                         if let coordinate { Marker("门店位置", coordinate: CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude)).tint(SPXColor.primary) }
                     }.onTapGesture { point in
                         if let value = proxy.convert(point, from: .local) { coordinate = MapCoordinate(latitude: value.latitude, longitude: value.longitude); results = [] }
                     }
-                }.frame(height: 280)
-                Form {
-                    Section("门店地址") {
-                        TextField("输入城市、街道和门牌号", text: $address, axis: .vertical).lineLimit(2...4)
-                        Text("搜索地址后选择结果，或轻点地图调整门店位置。").font(.caption).foregroundStyle(.secondary)
-                        if let coordinate { InfoRow(title: "经纬度", value: String(format: "%.6f, %.6f", coordinate.latitude, coordinate.longitude)) }
+                }.frame(height: 260).clipShape(RoundedRectangle(cornerRadius: 20))
+                SPXCard { VStack(alignment: .leading, spacing: 16) {
+                    SPXField("详细地址") { TextField("输入城市、街道和门牌号", text: $address, axis: .vertical).lineLimit(2...4) }
+                    if let coordinate { Divider(); InfoRow(title: "经纬度", value: String(format: "%.6f, %.6f", coordinate.latitude, coordinate.longitude)) }
+                    Text("地图选点后请核对详细地址，方便用户准确找到门店。").font(.system(size: 12)).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
+                } }
+                if searching { ProgressView("正在搜索地址…").frame(maxWidth: .infinity).padding(16) }
+                if !results.isEmpty {
+                    SPXSectionTitle(title: "搜索结果", detail: "\(results.count) 个地点")
+                    ForEach(Array(results.enumerated()), id: \.offset) { _, item in
+                        Button { choose(item) } label: {
+                            SPXCard { HStack(spacing: 12) {
+                                SPXIcon("location").frame(width: 22, height: 22).foregroundStyle(SPXColor.commerce)
+                                VStack(alignment: .leading, spacing: 6) { Text(item.name ?? "地点").font(.system(size: 15, weight: .medium)).foregroundStyle(SPXColor.ink); Text(item.placemark.title ?? "").font(.system(size: 12)).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true) }.frame(maxWidth: .infinity, alignment: .leading)
+                                SPXIcon("chevron").frame(width: 14, height: 14).foregroundStyle(SPXColor.muted)
+                            }.frame(minHeight: 44) }
+                        }.buttonStyle(.plain)
                     }
-                    if searching { ProgressView("正在搜索…") }
-                    if !results.isEmpty {
-                        Section("搜索结果") {
-                            ForEach(Array(results.enumerated()), id: \.offset) { _, item in
-                                Button { choose(item) } label: { VStack(alignment: .leading, spacing: 5) { Text(item.name ?? "地点").foregroundStyle(.primary); Text(item.placemark.title ?? "").font(.caption).foregroundStyle(.secondary) } }
-                            }
-                        }
-                    }
-                    if let error { ErrorBanner(message: error) }
                 }
+                if let error { ErrorBanner(message: error) }
             }.navigationTitle("选择门店位置").navigationBarTitleDisplayMode(.inline)
                 .searchable(text: $query, prompt: "搜索城市与门店")
                 .onSubmit(of: .search) { Task { await search() } }
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
-                    ToolbarItem(placement: .confirmationAction) { Button("使用此位置") { if let coordinate { selected(address.trimmingCharacters(in: .whitespacesAndNewlines), coordinate); dismiss() } }.disabled(coordinate == nil || address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
                 }
+                .safeAreaInset(edge: .bottom) { SPXBottomAction { Button("使用此位置") { if let coordinate { selected(address.trimmingCharacters(in: .whitespacesAndNewlines), coordinate); dismiss() } }.disabled(coordinate == nil || address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) } }
                 .onAppear {
                     address = initialAddress; query = initialAddress; coordinate = initialCoordinate
                     if let coordinate { center(coordinate) }

@@ -28,6 +28,12 @@ class SigningConfigurationTests(unittest.TestCase):
         self.assertEqual(result["method"], "release-testing")
         self.assertFalse(result["debugAllowed"])
 
+    def test_push_entitlement_is_optional(self):
+        self.assertEqual(profile_settings(self.profile())["pushEnvironment"], "")
+        value = self.profile()
+        value["Entitlements"]["aps-environment"] = "production"
+        self.assertEqual(profile_settings(value)["pushEnvironment"], "production")
+
     def test_expired_and_wrong_bundle_are_rejected(self):
         with self.assertRaises(BuildFailure):
             profile_settings(self.profile(ExpirationDate=dt.datetime(2000, 1, 1)))
@@ -62,6 +68,25 @@ class SigningConfigurationTests(unittest.TestCase):
                 verify_ipa(ipa, settings, "8")
             with self.assertRaises(BuildFailure):
                 verify_ipa(ipa, {**settings, "bundleID": "com.example.other"}, "7")
+
+    def test_exported_ipa_requires_push_environment_when_profile_supports_it(self):
+        profile = self.profile()
+        profile["Entitlements"]["aps-environment"] = "production"
+        settings = profile_settings(profile)
+        with tempfile.TemporaryDirectory() as directory:
+            ipa = Path(directory) / "test.ipa"
+            for environment in [None, "development", "production"]:
+                info = {"CFBundleIdentifier": settings["bundleID"], "CFBundleVersion": "7", "SPXNetworkTrust": "system-public-ip-v1"}
+                if environment:
+                    info["SPXPushEnvironment"] = environment
+                with zipfile.ZipFile(ipa, "w") as package:
+                    package.writestr("Payload/Test.app/Info.plist", plistlib.dumps(info))
+                    package.writestr("Payload/Test.app/embedded.mobileprovision", b"fixture")
+                if environment == "production":
+                    self.assertEqual(verify_ipa(ipa, settings, "7")["SPXPushEnvironment"], environment)
+                else:
+                    with self.assertRaises(BuildFailure):
+                        verify_ipa(ipa, settings, "7")
 
     def test_exported_ipa_without_profile_is_rejected(self):
         settings = profile_settings(self.profile())

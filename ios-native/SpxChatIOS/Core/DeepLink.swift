@@ -1,8 +1,8 @@
 import Foundation
 
 enum AppLink: Equatable, Identifiable {
-    case user(String), group(String), product(Int)
-    var id: String { switch self { case .user(let id): return "user:" + id; case .group(let code): return "group:" + code; case .product(let id): return "product:" + String(id) } }
+    case user(String), group(String), product(Int), conversation(ChatNotificationRoute)
+    var id: String { switch self { case .user(let id): return "user:" + id; case .group(let code): return "group:" + code; case .product(let id): return "product:" + String(id); case .conversation(let route): return "conversation:" + route.id } }
     static func parse(_ url: URL) -> AppLink? {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
         let values = Dictionary(components.queryItems?.map { ($0.name, $0.value ?? "") } ?? [], uniquingKeysWith: { first, _ in first })

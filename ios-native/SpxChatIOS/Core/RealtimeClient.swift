@@ -53,7 +53,9 @@ extension Notification.Name { static let spxRealtime = Notification.Name("spx.re
                                 guard generation == epoch, !Task.isCancelled else { return }
                             }
                         }
-                        ChatSoundEffects.shared.incoming(payload, userID: Int(Keychain.read("lastUserID") ?? "0") ?? 0)
+                        let recipientID = Int(Keychain.read("lastUserID") ?? "0") ?? 0
+                        MessageNotifications.shared.incoming(payload, userID: recipientID)
+                        ChatSoundEffects.shared.incoming(payload, userID: recipientID)
                         NotificationCenter.default.post(name: .spxRealtime, object: payload)
                     }
                 } catch is CancellationError { return }

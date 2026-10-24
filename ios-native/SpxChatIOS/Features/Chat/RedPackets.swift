@@ -20,24 +20,37 @@ struct RedPacketSendView: View {
     @State private var restored = false
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    Picker("红包类型", selection: $mode) { Text("普通红包").tag("ordinary"); if scope == "group" { Text("拼手气红包").tag("random") } }
-                    if scope == "group" { Stepper("红包个数：\(count)", value: $count, in: 1...100) }
-                    TextField("总金额（SPX001）", text: $amount).keyboardType(.decimalPad)
-                    TextField("祝福语", text: $greeting)
-                    SecureField("账号密码", text: $password).textContentType(.password)
-                }.disabled(!restored || uncertain || busy)
-                Section {
-                    Text("红包到账至 SPX001 资产。普通红包按六位小数均分，未领取部分由服务器按到期规则退回。").font(.footnote).foregroundStyle(.secondary)
-                    if uncertain { Button("核对上次发送结果") { resolve() } }
-                    else { Button(busy ? "发送中…" : "塞钱进红包") { confirm = true }.disabled(!restored || busy || !Money.positive(amount, scale: 6) || password.isEmpty) }
+            ScrollView {
+                VStack(spacing: 18) {
+                    HStack { SPXIcon("gift").frame(width: 22,height: 22); Text("SPX001 红包").font(.system(size: 15,weight: .semibold)); Spacer() }.foregroundStyle(SPXColor.hex(0xC34438))
+                    SPXPanel("红包信息") {
+                        Picker("红包类型",selection: $mode) { Text("普通红包").tag("ordinary"); if scope == "group" { Text("拼手气红包").tag("random") } }.pickerStyle(.segmented)
+                        if scope == "group" { Stepper("红包个数：\(count)",value: $count,in: 1...100) }
+                        HStack { Text("总金额").font(.system(size: 15)); Spacer(); TextField("0.00",text: $amount).keyboardType(.decimalPad).multilineTextAlignment(.trailing); Text("SPX001").font(.system(size: 12)).foregroundStyle(SPXColor.muted) }
+                        Text(mode == "random" ? "每个人领取的金额随机分配" : "每个人领取相同金额").font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+                    }
+                    SPXPanel("祝福语") { TextField("恭喜发财，大吉大利",text: $greeting).onChange(of: greeting) { _, value in if value.count > 50 { greeting = String(value.prefix(50)) } } }
+                    Text("\(DisplayLabels.amount(amount.isEmpty ? "0" : amount)) SPX001").font(.system(size: 30,weight: .semibold)).monospacedDigit().minimumScaleFactor(0.5).lineLimit(1).padding(.vertical,16)
+                    if uncertain { ErrorBanner(message: "上次发送结果待确认，请先核对，避免重复扣款。") }
+                    Text("红包到账至 SPX001 资产，未领取部分由服务器按到期规则退回。普通红包按六位小数均分，实际金额以确认结果为准。")
+                        .font(.system(size: 12)).foregroundStyle(SPXColor.muted).frame(maxWidth: .infinity,alignment: .leading)
+                }.padding(20).disabled(!restored || uncertain || busy)
+            }.scrollDismissesKeyboard(.interactively)
+                .safeAreaInset(edge: .bottom) {
+                    Button { if uncertain { resolve() } else { password = ""; confirm = true } } label: {
+                        HStack { Spacer(); if busy { ProgressView().tint(.white) }; Text(uncertain ? "核对上次发送结果" : "塞钱进红包"); Spacer() }
+                            .font(.system(size: 16,weight: .semibold)).foregroundStyle(.white).frame(minHeight: 50).background(SPXColor.hex(0xD34B3F).opacity(busy ? 0.5 : 1),in: RoundedRectangle(cornerRadius: 14))
+                    }.disabled(!restored || busy || (!uncertain && !Money.positive(amount,scale: 6))).padding(16).background(SPXColor.card)
                 }
-            }.navigationTitle("发红包").navigationBarTitleDisplayMode(.inline)
+                .navigationTitle("发红包").spxPage()
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() }.disabled(busy) } }
-                .tint(.red).errorAlert($error)
-                .confirmationDialog("确认发送 \(DisplayLabels.amount(amount)) SPX001，分为 \(count) 个红包？", isPresented: $confirm, titleVisibility: .visible) { Button("确认发送") { send() } }
-                .task { if let saved: String = await LocalStore.shared.read("redpacket-pending-\(scope)-\(targetID)", userID: session.user?.id ?? 0) { requestID = saved; uncertain = true }; restored = true }
+                .tint(SPXColor.hex(0xC34438)).errorAlert($error)
+                .alert("确认发送红包",isPresented: $confirm) {
+                    SecureField("请输入账号密码",text: $password).textContentType(.password)
+                    Button("取消",role: .cancel) { password = "" }
+                    Button("确认发送") { send() }.disabled(password.isEmpty)
+                } message: { Text("总额 \(DisplayLabels.amount(amount)) SPX001，共 \(count) 个。确认后从资产扣除。") }
+                .task { if let saved: String = await LocalStore.shared.read("redpacket-pending-\(scope)-\(targetID)",userID: session.user?.id ?? 0) { requestID = saved; uncertain = true }; restored = true }
         }
     }
     private func send() {

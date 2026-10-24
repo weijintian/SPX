@@ -3,47 +3,88 @@ import SwiftUI
 struct WalletView: View {
     @EnvironmentObject private var session: SessionStore
     @Environment(\.scenePhase) private var phase
+    @AppStorage("spx.wallet.balanceHidden") private var hidden = true
     @State private var loadID = UUID()
     @State private var assets: [Record] = []
+    @State private var usd = ""
+    @State private var loaded = false
+    @State private var loading = false
     @State private var error: String?
+    private var visibleAssets: [Record] { assets.filter { ["SPX001", "USDT"].contains($0["symbol"].string) } }
+    private var total: Decimal? {
+        guard loaded else { return nil }
+        var result = Decimal.zero
+        for asset in visibleAssets {
+            guard let balance = Decimal(string: asset["balance"].string) else { return nil }
+            if asset["symbol"].string == "USDT" { result += balance }
+            else if balance != 0 { guard let price = Decimal(string: usd), price > 0 else { return nil }; result += balance * price }
+        }
+        return result
+    }
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                ForEach(Array(visibleAssets.enumerated()), id: \.offset) { _, asset in
-                    SPXCard {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack { Text(asset["symbol"].string).font(.headline); Spacer(); Text(asset["chain"].string).font(.caption).foregroundStyle(.secondary) }
-                            Text(DisplayLabels.amount(asset["balance"].string)).font(.system(size: 32, weight: .semibold, design: .rounded)).minimumScaleFactor(0.5).lineLimit(1)
-                            if asset["symbol"].string == "SPX001" { InfoRow(title: "可质押余额", value: DisplayLabels.amount(asset["stakeable_balance"].string)) }
-                        }
+            VStack(alignment: .leading, spacing: 14) {
+                Button { hidden.toggle() } label: {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack { Text("总资产估值（USD）").font(.system(size: 13)); Spacer(); Image(systemName: hidden ? "eye.slash" : "eye").frame(width: 28, height: 28) }
+                        Text(hidden ? "$ ••••" : total.map { "$ " + DisplayLabels.amount(NSDecimalNumber(decimal: $0).stringValue) } ?? "$ —")
+                            .font(.system(size: 34, weight: .bold)).lineLimit(1).minimumScaleFactor(0.5)
+                        Text("\(usd.isEmpty ? "行情暂未取得，估值可能暂不可用" : "估值随行情变化，以实际资产数量为准") · 轻触\(hidden ? "显示" : "隐藏")余额")
+                            .font(.system(size: 12)).foregroundStyle(.white.opacity(0.75))
+                    }.foregroundStyle(.white).padding(22).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(LinearGradient(colors: [SPXColor.hex(0x173A3F), SPXColor.hex(0x27645C)], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 18))
+                }.buttonStyle(.plain).accessibilityLabel(hidden ? "显示资产余额" : "隐藏资产余额")
+                HStack(spacing: 12) {
+                    walletLink("充值", "arrow.down.circle", color: SPXColor.primary) { WalletTransferView(withdrawal: false) }
+                    walletLink("提现", "arrow.up.circle", color: SPXColor.success) { WalletTransferView(withdrawal: true) }
+                }
+                NavigationLink { WalletBindingView() } label: { SPXMenuRow(title: "BSC 钱包绑定", subtitle: "查看或绑定本人钱包地址", icon: "link") }
+                SPXSectionTitle(title: "我的资产")
+                if loading && !loaded { ProgressView("正在读取资产…").frame(maxWidth: .infinity).padding() }
+                ForEach(visibleAssets, id: \.fields) { asset in
+                    NavigationLink { WalletTransactionsView() } label: {
+                        HStack(spacing: 14) {
+                            Image(asset["symbol"].string == "USDT" ? "wallet_usdt" : "wallet_spx001").resizable().scaledToFit().frame(width: 44, height: 44).clipShape(Circle())
+                            VStack(alignment: .leading, spacing: 5) { Text(asset["symbol"].string).font(.system(size: 16, weight: .semibold)); Text(asset["chain"].string.isEmpty ? "BSC" : asset["chain"].string).font(.system(size: 12)).foregroundStyle(SPXColor.muted) }
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 6) {
+                                Text(hidden ? "••••" : DisplayLabels.amount(asset["balance"].string)).font(.system(size: 18, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.6)
+                                if asset["symbol"].string == "SPX001" { Text(hidden ? "可质押 ••••" : "可质押 " + DisplayLabels.amount(asset["stakeable_balance"].string)).font(.system(size: 11)).foregroundStyle(SPXColor.muted) }
+                            }
+                        }.foregroundStyle(SPXColor.ink).padding(16).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 16))
                     }
                 }
-                HStack(spacing: 10) {
-                    walletLink("充值", "arrow.down.circle") { WalletTransferView(withdrawal: false) }
-                    walletLink("提现", "arrow.up.circle") { WalletTransferView(withdrawal: true) }
-                    walletLink("兑换", "arrow.left.arrow.right.circle") { ExchangeView() }
-                    walletLink("记录", "clock") { WalletTransactionsView() }
-                }
-                SPXCard { VStack(spacing: 18) { NavigationLink { WalletBindingView() } label: { Label("BSC 钱包绑定", systemImage: "link") }; NavigationLink { StakingView() } label: { Label("锁仓质押", systemImage: "lock.shield") }; NavigationLink { RedPacketHistoryView() } label: { Label("红包记录", systemImage: "gift") } } }
-                if let error { ErrorBanner(message: error) }
-            }.padding(18)
+                if loaded && visibleAssets.isEmpty { EmptyState(title: "暂无资产", description: "充值后可在这里查看余额", icon: "wallet.pass") }
+                NavigationLink { ExchangeView() } label: { SPXMenuRow(title: "兑换", subtitle: "USDT 兑换 SPX001", icon: "arrow.left.arrow.right") }
+                NavigationLink { WalletTransactionsView() } label: { SPXMenuRow(title: "交易记录", subtitle: "充值、提现与资产变动", icon: "clock") }
+                NavigationLink { StakingView() } label: { SPXMenuRow(title: "锁仓质押", subtitle: "质押计划、收益与赎回", icon: "lock.shield") }
+                NavigationLink { RedPacketHistoryView() } label: { SPXMenuRow(title: "红包记录", subtitle: "查看发出和领取的红包", icon: "gift") }
+                if let error { ErrorBanner(message: error); Button("重新加载") { Task { await load() } } }
+            }.buttonStyle(.plain).padding(18)
         }.navigationTitle("资产").spxPage().task(id: phase) { if phase == .active { await load() } }.refreshable { await load() }
             .onReceive(NotificationCenter.default.publisher(for: .spxWalletChanged).debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { event in
                 Task { if await AccountMutation.isCurrent(event) { await load() } }
             }
     }
-    private func walletLink<Destination: View>(_ title: String, _ icon: String, @ViewBuilder destination: () -> Destination) -> some View { NavigationLink(destination: destination) { VStack(spacing: 9) { Image(systemName: icon).font(.system(size: 25)); Text(title).font(.caption) }.frame(maxWidth: .infinity).padding(.vertical, 18).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 18)) }.buttonStyle(.plain).foregroundStyle(SPXColor.primary) }
-    private var visibleAssets: [Record] { assets.filter { $0["symbol"].string != "SPX" } }
+    private func walletLink<Destination: View>(_ title: String, _ icon: String, color: Color, @ViewBuilder destination: () -> Destination) -> some View {
+        NavigationLink(destination: destination()) { Label(title, systemImage: icon).font(.system(size: 16, weight: .semibold)).foregroundStyle(color).frame(maxWidth: .infinity, minHeight: 54).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14).stroke(SPXColor.line, lineWidth: 0.6)) }
+    }
     private func load() async {
         guard let owner = session.user?.id, owner > 0 else { return }
-        let requestID = UUID(); loadID = requestID
+        let requestID = UUID(); loadID = requestID; loading = true
+        defer { if loadID == requestID { loading = false } }
+        if !loaded, let cache: [Record] = await LocalStore.shared.read("wallet-ui", userID: owner), session.user?.id == owner { assets = cache; loaded = true }
         do {
+            async let valuation = loadValuation()
             let rows = try await APIClient.shared.get("wallet").list
+            let price = await valuation
             guard loadID == requestID, session.user?.id == owner, !Task.isCancelled else { return }
-            if assets != rows { assets = rows }; error = nil
+            assets = rows; usd = price; loaded = true; error = nil
+            await LocalStore.shared.write(rows, key: "wallet-ui", userID: owner)
         } catch is CancellationError { }
         catch { if loadID == requestID, session.user?.id == owner { self.error = error.localizedDescription } }
     }
+    private func loadValuation() async -> String { (try? await APIClient.shared.get("mall.valuation"))?["spx_usdt"].string ?? "" }
 }
 
 struct WalletBindingView: View {
@@ -54,9 +95,10 @@ struct WalletBindingView: View {
     @State private var confirmation = false
     @State private var error: String?
     var body: some View {
-        Form {
-            if binding["bound"].flag { Section("已绑定钱包") { Text(binding["bound_address"].string).font(.system(.body, design: .monospaced)).textSelection(.enabled); Text("绑定地址固定。如需帮助，请提交客服工单。").font(.footnote).foregroundStyle(.secondary) } }
-            else { Section("绑定 BSC 钱包") { TextField("0x 开头的 BSC 地址", text: $address).textInputAutocapitalization(.never).autocorrectionDisabled(); SecureField("账号密码", text: $password); Text("确认绑定后不可直接更改。提现将仅允许发送至该地址。").font(.footnote).foregroundStyle(.secondary); Button("确认绑定") { confirmation = true }.disabled(busy || address.count != 42 || password.isEmpty) } }
+        SPXDetailPage {
+            SPXPageHeading(title: "钱包绑定", subtitle: "BSC 网络 · 管理资产出入金地址", icon: "wallet", color: SPXColor.success)
+            if binding["bound"].flag { SPXPanel("已绑定钱包") { Text(binding["bound_address"].string).font(.system(.body, design: .monospaced)).textSelection(.enabled); Text("绑定地址固定。如需帮助，请提交客服工单。").font(.footnote).foregroundStyle(.secondary) } }
+            else { SPXPanel("绑定 BSC 钱包") { SPXField("钱包地址") { TextField("0x 开头的 BSC 地址", text: $address).textInputAutocapitalization(.never).autocorrectionDisabled() }; SPXField("验证账号密码") { SecureField("请输入账号密码", text: $password).textContentType(.password) }; Text("确认绑定后不可直接更改。提现将仅允许发送至该地址。").font(.footnote).foregroundStyle(.secondary); Button(busy ? "绑定中…" : "确认绑定") { confirmation = true }.buttonStyle(SPXPrimaryButtonStyle()).disabled(busy || address.count != 42 || password.isEmpty) } }
             if let error { ErrorBanner(message: error) }
         }.navigationTitle("钱包绑定").task { await load() }
             .confirmationDialog("请确认这是你本人控制的 BSC 钱包地址", isPresented: $confirmation, titleVisibility: .visible) { Button("确认并绑定") { bind() } }
@@ -79,9 +121,10 @@ struct WalletTransferView: View {
     @State private var unlock = false
     @State private var pending: Record?
     var body: some View {
-        Form {
-            Section("资产") {
-                Picker("币种", selection: $symbol) { Text("SPX001").tag("SPX001"); Text("USDT").tag("USDT") }
+        SPXDetailPage {
+            SPXPageHeading(title: withdrawal ? "提现" : "充值", subtitle: "BSC 网络 · 请核对币种、地址与数量", icon: withdrawal ? "arrow.up.right" : "arrow.down.left", color: SPXColor.success)
+            SPXPanel("资产与地址") {
+                Picker("币种", selection: $symbol) { Text("SPX001").tag("SPX001"); Text("USDT").tag("USDT") }.pickerStyle(.segmented)
                 InfoRow(title: "网络", value: "BSC")
                 InfoRow(title: withdrawal ? "提现至绑定地址" : "付款来源地址", value: info["bound_address"].string)
                 if !withdrawal {
@@ -89,15 +132,15 @@ struct WalletTransferView: View {
                     Text("平台充值地址").foregroundStyle(.secondary)
                     Text(destination).font(.system(.subheadline, design: .monospaced)).textSelection(.enabled)
                     Button("复制充值地址", systemImage: "doc.on.doc") { UIPasteboard.general.string = destination }
-                    TextField("链上交易哈希", text: $hash).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    SPXField("链上交易哈希") { TextField("请输入交易哈希", text: $hash).textInputAutocapitalization(.never).autocorrectionDisabled() }
                 }
-                TextField(withdrawal ? "提现数量" : "转账数量", text: $amount).keyboardType(.decimalPad)
+                SPXField(withdrawal ? "提现数量" : "转账数量") { TextField("请输入数量", text: $amount).keyboardType(.decimalPad).font(.system(size: 28, weight: .semibold, design: .rounded)) }
                 if withdrawal, let total = Decimal(string: amount), Money.positive(amount, scale: 18) {
                     InfoRow(title: "手续费（1%）", value: DisplayLabels.amount(Money.format(Money.withdrawalFee(total), scale: 18)) + " " + symbol)
                     InfoRow(title: "预计到账", value: DisplayLabels.amount(Money.format(total - Money.withdrawalFee(total), scale: 18)) + " " + symbol)
                 }
             }.disabled(busy || uncertain)
-            Section {
+            SPXPanel("处理说明与结果核对") {
                 Text(withdrawal ? "手续费按当前服务器规则收取，提交后可在交易记录查看审核状态。" : "请使用绑定钱包在 BSC 网络转入对应资产，填写真实交易哈希，到账以链上确认与服务器核验为准。").font(.footnote).foregroundStyle(.secondary)
                 if uncertain {
                     Text("上次申请结果待核对。安全重试会使用原申请编号，不会重复创建提现。").font(.footnote).foregroundStyle(.secondary)
@@ -108,10 +151,10 @@ struct WalletTransferView: View {
                         Button("核对并结束上次申请") { recover(close: true) }.disabled(busy)
                     } else { Button("我已核对旧版记录，解除保护") { unlock = true } }
                 }
-                else { Button(busy ? "正在提交…" : withdrawal ? "提交提现" : "提交充值核验") { confirmation = true }.disabled(busy || !Money.positive(amount, scale: 18) || info["bound_address"].string.isEmpty || (!withdrawal && hash.count != 66)) }
+
             }
             if let error { ErrorBanner(message: error) }
-        }.navigationTitle(withdrawal ? "提现" : "充值").task { await load() }
+        }.safeAreaInset(edge: .bottom, spacing: 0) { if !uncertain { SPXBottomAction { Button(busy ? "正在提交…" : withdrawal ? "提交提现" : "提交充值核验") { confirmation = true }.disabled(busy || !Money.positive(amount, scale: 18) || info["bound_address"].string.isEmpty || (!withdrawal && hash.count != 66)) } } }.navigationTitle(withdrawal ? "提现" : "充值").task { await load() }
             .confirmationDialog(withdrawal ? "确认提现 \(DisplayLabels.amount(amount)) \(symbol)？" : "确认提交链上充值记录？", isPresented: $confirmation, titleVisibility: .visible) { Button("确认提交") { submit() } }
             .confirmationDialog("请确认已在交易记录核实结果；解除后再次提交会创建新申请", isPresented: $unlock, titleVisibility: .visible) { Button("已核实，解除保护") { Task { await LocalStore.shared.remove("withdraw-pending", userID: session.user?.id ?? 0); uncertain = false; amount = "" } } }
     }
@@ -193,9 +236,10 @@ struct ExchangeView: View {
     @State private var confirm = false
     @State private var error: String?
     var body: some View {
-        Form {
-            Section("USDT → SPX001") {
-                TextField("USDT 数量", text: $amount).keyboardType(.decimalPad).disabled(frozen || busy || !restored)
+        SPXDetailPage {
+            SPXPageHeading(title: "资产兑换", subtitle: "USDT 兑换 SPX001", icon: "arrow.left.arrow.right", color: SPXColor.success)
+            SPXPanel("兑换数量与行情") {
+                SPXField("支付 USDT") { TextField("请输入兑换数量", text: $amount).keyboardType(.decimalPad).font(.system(size: 28, weight: .semibold, design: .rounded)) }.disabled(frozen || busy || !restored)
                 InfoRow(title: "每 USDT 预计获得", value: DisplayLabels.amount(quote["spx_per_usdt"].string) + " SPX001")
                 InfoRow(title: "参考单价 USD", value: DisplayLabels.amount(quote["exchange_price_usd"].string))
                 InfoRow(title: "行情时间", value: quote["updated_at"].string)
@@ -203,8 +247,8 @@ struct ExchangeView: View {
             }
             if !restored { ProgressView("正在恢复上次兑换…") }
             if let error { ErrorBanner(message: error); Button("重新加载") { Task { await load() } }.disabled(busy) }
-            Section {
-                Button(frozen ? "核对 / 重试该次兑换" : "确认兑换") { confirm = true }
+            SPXPanel("兑换操作") {
+                Button(busy ? "处理中…" : frozen ? "核对 / 重试该次兑换" : "确认兑换") { confirm = true }.buttonStyle(SPXPrimaryButtonStyle())
                     .disabled(!restored || busy || (!frozen && quote.object.isEmpty) || !Money.positive(amount, scale: 18))
                 NavigationLink("兑换与交易记录") { WalletTransactionsView() }
             }
@@ -257,13 +301,14 @@ struct WalletTransactionsView: View {
     @State private var error: String?
     @State private var cancel: Record?
     var body: some View {
-        List {
-            Picker("资产", selection: $filter) { Text("全部").tag("all"); Text("SPX001").tag("SPX001"); Text("USDT").tag("USDT") }
+        SPXDetailPage {
+            SPXFilterTabs(options: [("all", "全部"), ("SPX001", "SPX001"), ("USDT", "USDT")], selection: $filter)
             ForEach(state.rows) { row in
-                DisclosureGroup {
+                SPXCard { DisclosureGroup {
                     ForEach(["id", "chain", "address", "tx_hash", "fee_amount", "created_at"], id: \.self) { key in if !row[key].string.isEmpty { InfoRow(title: ["id": "流水号", "chain": "网络", "address": "钱包地址", "tx_hash": "交易哈希", "fee_amount": "手续费", "created_at": "创建时间"][key] ?? key, value: key == "fee_amount" ? DisplayLabels.amount(row[key].string) : row[key].string) } }
                     if row["type"].string == "withdraw", row["status"].string == "pending" { Button("取消提现", role: .destructive) { cancel = row } }
                 } label: { HStack { VStack(alignment: .leading, spacing: 5) { Text(DisplayLabels.transaction(row["type"].string)).font(.subheadline.weight(.medium)); Text(DisplayLabels.transactionStatus(row["status"].string)).font(.caption).foregroundStyle(.secondary) }; Spacer(); Text("\(DisplayLabels.amount(row["amount"].string)) \(row["symbol"].string)").font(.subheadline.weight(.semibold)) } }
+                }
             }
             if state.busy { ProgressView().frame(maxWidth: .infinity) }
             if state.more { Button("加载更多") { Task { await load(reset: false) } }.disabled(state.busy) }
@@ -298,9 +343,10 @@ struct StakingView: View {
     @State private var uncertain = false
     @State private var unlock = false
     var body: some View {
-        Form {
+        SPXDetailPage {
+            SPXPageHeading(title: "锁仓质押", subtitle: "查看可用方案、质押记录与到期本金", icon: "lock.shield", color: SPXColor.success)
             if uncertain {
-                Section("提交结果待核对") {
+                SPXPanel("提交结果待核对") {
                     Text("上次质押申请结果待核对。安全重试沿用原申请编号，避免重复质押。")
                     NavigationLink("交易记录") { WalletTransactionsView() }
                     Button("重新核对质押记录") { Task { await load() } }
@@ -310,15 +356,15 @@ struct StakingView: View {
                     } else { Button("已核实旧版记录，解除保护") { unlock = true } }
                 }
             }
-            Section("当前方案") {
+            SPXPanel("当前方案") {
                 Text(phase["name"].string).font(.headline)
                 InfoRow(title: "可质押 SPX001", value: DisplayLabels.amount(assets.first(where: { $0["symbol"].string == "SPX001" })?["stakeable_balance"].string ?? "—"))
                 Picker("选择期限", selection: $selected) { Text("请选择").tag(0); ForEach(plans) { plan in Text("\(plan.name) · \(plan["plan_days"].string) 天 · \(DisplayLabels.amount(plan["apy"].string))%").tag(plan.id) } }
-                TextField("质押数量", text: $amount).keyboardType(.numberPad)
+                SPXField("质押数量 · SPX001") { TextField("请输入质押数量", text: $amount).keyboardType(.numberPad).font(.system(size: 26, weight: .semibold, design: .rounded)) }
                 Text("须为 100000 的整数倍，单人累计上限与可质押余额由服务器核对。").font(.caption).foregroundStyle(.secondary)
-                Button("确认质押") { confirm = "create" }.disabled(busy || selected == 0 || Int(amount).map { $0 < 100000 || $0 > 10000000 || $0 % 100000 != 0 } != false)
+                Button(busy ? "处理中…" : "确认质押") { confirm = "create" }.buttonStyle(SPXPrimaryButtonStyle()).disabled(busy || selected == 0 || Int(amount).map { $0 < 100000 || $0 > 10000000 || $0 % 100000 != 0 } != false)
             }.disabled(uncertain)
-            Section("我的质押") { ForEach(records) { record in VStack(alignment: .leading, spacing: 8) { Text(record.text("plan_name", "name", "amount")).font(.headline); InfoRow(title: "本金", value: DisplayLabels.amount(record["amount"].string)); InfoRow(title: "已发分红", value: DisplayLabels.amount(record["paid_dividend"].string)); InfoRow(title: "状态", value: DisplayLabels.transactionStatus(record["status"].string)); if record["can_redeem"].flag { Button("赎回到期本金") { redeemID = record.id; confirm = "redeem" } } } } }
+            SPXPanel("我的质押") { if records.isEmpty { Text("暂无质押记录").foregroundStyle(SPXColor.muted) }; ForEach(records) { record in VStack(alignment: .leading, spacing: 8) { Text(record.text("plan_name", "name", "amount")).font(.headline); InfoRow(title: "本金", value: DisplayLabels.amount(record["amount"].string)); InfoRow(title: "已发分红", value: DisplayLabels.amount(record["paid_dividend"].string)); InfoRow(title: "状态", value: DisplayLabels.transactionStatus(record["status"].string)); if record["can_redeem"].flag { Button("赎回到期本金") { redeemID = record.id; confirm = "redeem" } } } } }
             if let error { ErrorBanner(message: error) }
         }.navigationTitle("锁仓质押").task { await load() }.refreshable { await load() }.disabled(busy)
             .confirmationDialog(confirm == "create" ? "确认质押 \(DisplayLabels.amount(amount)) SPX001？" : "确认赎回到期本金？", isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }), titleVisibility: .visible) { Button("确认") { let action = confirm; confirm = nil; submit(create: action == "create") } }

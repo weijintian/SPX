@@ -1,8 +1,8 @@
 {
-  "swift_files": 60,
-  "lines": 8804,
+  "swift_files": 67,
+  "lines": 10621,
   "syntax_errors": [],
-  "literal_api_actions": 98,
+  "literal_api_actions": 97,
   "actions_not_found_in_local_backend": [],
   "api_action_validation_source": "local_backend",
   "policy_resources": [

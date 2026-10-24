@@ -35,7 +35,9 @@ for file in files:
             failures.append({"file": str(file.relative_to(ROOT)), "line": line, "kind": "invalid-environment-keypath", "text": value.strip()})
 
 components = (ROOT / "SpxChatIOS" / "Design" / "Components.swift").read_text(encoding="utf8")
-declared_colors = set(re.findall(r"static let (\w+)", components.split("enum SPXColor", 1)[1].split("struct SPXCard", 1)[0]))
+color_declarations = components.split("enum SPXColor", 1)[1].split("struct SPXCard", 1)[0]
+declared_colors = set(re.findall(r"static let (\w+)", color_declarations))
+declared_colors.update(re.findall(r"static func (\w+)\([^)]*\) -> Color", color_declarations))
 for file in files:
     source = file.read_text(encoding="utf8")
     for match in re.finditer(r"SPXColor\.(\w+)", source):

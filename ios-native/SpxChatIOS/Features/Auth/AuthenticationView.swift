@@ -106,18 +106,19 @@ struct PasswordResetView: View {
     @State private var cooldown = 0
     var body: some View {
         NavigationStack {
-            Form {
-                Section("邮箱验证") {
-                    TextField("注册邮箱", text: $email).keyboardType(.emailAddress).textInputAutocapitalization(.never)
-                    HStack {
-                        TextField("验证码", text: $code).keyboardType(.numberPad)
-                        Button(cooldown > 0 ? "\(cooldown)s" : "发送") { send() }.disabled(busy || cooldown > 0 || !email.contains("@"))
-                    }
-                    SecureField("新密码（至少六位）", text: $password)
-                }
-                if let error { Section { ErrorBanner(message: error) } }
-                Section { Button("重置密码") { save() }.disabled(busy || code.count != 6 || password.count < 6) }
+            SPXDetailPage {
+                SPXPageHeading(title: "找回密码", subtitle: "通过注册邮箱验证身份，设置新的登录密码", icon: "lock.shield")
+                SPXCard { VStack(alignment: .leading, spacing: 18) {
+                    SPXField("注册邮箱") { TextField("请输入邮箱", text: $email).keyboardType(.emailAddress).textContentType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled() }
+                    SPXField("邮箱验证码") { HStack(spacing: 12) {
+                        TextField("六位验证码", text: $code).keyboardType(.numberPad).textContentType(.oneTimeCode)
+                        Button(cooldown > 0 ? "\(cooldown)s" : "获取验证码") { send() }.font(.system(size: 13, weight: .semibold)).frame(minHeight: 44).disabled(busy || cooldown > 0 || !email.contains("@"))
+                    } }
+                    SPXField("新密码") { SecureField("至少六位", text: $password).textContentType(.newPassword) }
+                }.disabled(busy) }
+                if let error { ErrorBanner(message: error) }
             }.navigationTitle("重置密码").navigationBarTitleDisplayMode(.inline)
+                .safeAreaInset(edge: .bottom) { SPXBottomAction { Button(busy ? "提交中…" : "重置密码") { save() }.disabled(busy || !email.contains("@") || code.count != 6 || password.count < 6) } }
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
                 .task(id: cooldown) { guard cooldown > 0 else { return }; do { try await Task.sleep(for: .seconds(1)); cooldown -= 1 } catch { } }
         }

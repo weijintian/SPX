@@ -197,7 +197,7 @@ final class BackgroundMediaTransfer: NSObject, URLSessionDataDelegate, URLSessio
             do {
                 if let error { throw error }
                 let result = try Self.decodeResponse(body, response: task.response)
-                if !result["url"].string.isEmpty {
+                if !UploadedMedia.url(in: result).isEmpty {
                     self.complete(tag.key, result: result)
                     return
                 }
@@ -331,7 +331,7 @@ final class BackgroundMediaTransfer: NSObject, URLSessionDataDelegate, URLSessio
                     defer { self.finishBackgroundEventsIfReady() }
                     guard !self.canceledJobs.contains(key), self.records[key]?.paused != true,
                           self.records[key] != nil else { return }
-                    if !status["result"]["url"].string.isEmpty { self.complete(key, result: status["result"]) }
+                    if !UploadedMedia.url(in: status["result"]).isEmpty { self.complete(key, result: status["result"]) }
                     else {
                         var recovery = record
                         recovery.completedChunks = status["received_chunks"].array.map(\.int)

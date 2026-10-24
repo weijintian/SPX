@@ -97,6 +97,7 @@ def profile_settings(profile, requested_bundle="", now=None):
         "expiration": expiration.isoformat(), "deviceCount": len(devices),
         "debugAllowed": bool(entitlements.get("get-task-allow")),
         "certificateSHA1s": certificates,
+        "pushEnvironment": entitlements.get("aps-environment", ""),
     }
 
 
@@ -150,6 +151,8 @@ def verify_ipa(ipa, settings, build_number):
             raise BuildFailure("Exported IPA has the wrong build number.")
         if info.get("SPXNetworkTrust") != "system-public-ip-v1":
             raise BuildFailure("Exported IPA does not contain the public HTTPS login fix.")
+        if settings.get("pushEnvironment") and info.get("SPXPushEnvironment") != settings["pushEnvironment"]:
+            raise BuildFailure("Exported IPA does not contain the expected push environment.")
         if "NSAppTransportSecurity" in info:
             raise BuildFailure("Exported IPA unexpectedly relaxes system transport security.")
         embedded = entries[0].removesuffix("Info.plist") + "embedded.mobileprovision"
@@ -214,6 +217,11 @@ def build():
             "PROVISIONING_PROFILE_SPECIFIER": settings["name"],
             "OTHER_CODE_SIGN_FLAGS": "--keychain " + shlex.quote(str(keychain)),
         }
+        if settings["pushEnvironment"] in {"development", "production"}:
+            push_entitlements = temporary / "SpxChatIOS.entitlements"
+            push_entitlements.write_bytes(plistlib.dumps({"aps-environment": settings["pushEnvironment"]}))
+            release["CODE_SIGN_ENTITLEMENTS"] = str(push_entitlements)
+            release["INFOPLIST_KEY_SPXPushEnvironment"] = settings["pushEnvironment"]
         if build_number:
             release["CURRENT_PROJECT_VERSION"] = build_number
         spec = ROOT / "project.signing.generated.json"
@@ -258,6 +266,8 @@ def build():
             raise BuildFailure("Exported signing application identifier is incorrect.")
         if bool(entitlements.get("get-task-allow")) != settings["debugAllowed"]:
             raise BuildFailure("Exported debugging entitlement does not match the profile.")
+        if entitlements.get("aps-environment", "") != settings["pushEnvironment"]:
+            raise BuildFailure("Exported push entitlement does not match the profile.")
         name = f"SPX-{info['CFBundleShortVersionString']}-{info['CFBundleVersion']}.ipa"
         target = output / name
         if ipas[0] != target:

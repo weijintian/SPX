@@ -23,12 +23,13 @@ struct MerchantProfileEditor: View {
     }
     private let fields = [("name", "店铺名称"), ("description", "店铺介绍"), ("category", "经营分类"), ("contact_name", "联系人"), ("contact_phone", "联系电话"), ("address", "门店地址"), ("business_hours", "营业时间"), ("qualification", "经营资质说明"), ("latitude", "纬度"), ("longitude", "经度")]
     var body: some View {
-        Form {
-            Section("店铺资料") {
+        SPXDetailPage {
+            SPXPageHeading(title: application ? "商家入驻" : "店铺资料", subtitle: "完善经营资料与资质，展示真实可信的店铺信息", icon: "store", color: SPXColor.commerce)
+            SPXPanel("店铺资料") {
                 if !(values["logo_url"] ?? "").isEmpty { Avatar(url: values["logo_url"] ?? "", name: values["name"] ?? "", size: 72) }
                 PhotosPicker(selection: $logo, matching: .images) { Label("设置店铺头像", systemImage: "camera") }
-                ForEach(fields, id: \.0) { key, title in
-                    TextField(title, text: binding(key), axis: ["description", "qualification"].contains(key) ? .vertical : .horizontal)
+                ForEach(fields.filter { !["latitude", "longitude"].contains($0.0) }, id: \.0) { key, title in
+                    SPXField(title) { TextField(title, text: binding(key), axis: ["description", "qualification"].contains(key) ? .vertical : .horizontal) }
                         .keyboardType(["latitude", "longitude"].contains(key) ? .numbersAndPunctuation : key == "contact_phone" ? .phonePad : .default)
                         .disabled(!application && ["category", "qualification"].contains(key))
                 }
@@ -36,7 +37,7 @@ struct MerchantProfileEditor: View {
                 Button("在地图选择门店位置", systemImage: "map") { locationPicker = true }
                 if application { Picker("商家等级", selection: $level) { Text("普通商家").tag("basic"); Text("金牌商家").tag("gold") } }
             }
-            Section("经营资质") {
+            SPXPanel("经营资质") {
                 if application { PhotosPicker(selection: $qualifications, maxSelectionCount: max(1, 6 - qualificationURLs.count), matching: .images) { Label("添加资质图片", systemImage: "doc.viewfinder") }.disabled(qualificationURLs.count >= 6) }
                 if !qualificationURLs.isEmpty {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
@@ -68,10 +69,10 @@ struct MerchantProfileEditor: View {
                 Text("已上传 \(qualificationURLs.count) 张 · 最多 6 张").foregroundStyle(.secondary)
                 if !application { Text("经营分类和已审核资质变更请通过客服工单申请。").font(.footnote).foregroundStyle(.secondary) }
             }
-            if let error { Section { ErrorBanner(message: error) } }
-            Section { Button(busy ? "正在保存…" : application ? "提交入驻申请" : "保存店铺资料") { save() }.disabled(busy) }
-            if !application { Section { Button("申请关闭店铺", role: .destructive) { closing = true } } }
-        }.navigationTitle(application ? "申请开店" : "店铺资料").disabled(busy)
+            if let error { SPXCard { ErrorBanner(message: error) } }
+
+            if !application { SPXPanel("店铺管理") { Button("申请关闭店铺", role: .destructive) { closing = true } } }
+        }.safeAreaInset(edge: .bottom, spacing: 0) { SPXBottomAction { Button(busy ? "正在保存…" : application ? "提交入驻申请" : "保存店铺资料") { save() }.disabled(busy) } }.navigationTitle(application ? "申请开店" : "店铺资料").disabled(busy)
             .onAppear {
                 if values.isEmpty { for (key, _) in fields { values[key] = merchant[key].string }; values["logo_url"] = merchant["logo_url"].string; values["coordinate_system"] = merchant["coordinate_system"].string.isEmpty ? "wgs84" : merchant["coordinate_system"].string; qualificationURLs = merchant["qualification_images"].array.map(\.string); level = merchant["level"].string.isEmpty ? "basic" : merchant["level"].string }
             }
@@ -150,14 +151,15 @@ struct InventoryEditor: View {
     @State private var busy = false
     @State private var error: String?
     var body: some View {
-        Form {
-            Section { Text(product.name).font(.headline); InfoRow(title: "当前库存", value: product["stock"].string)
+        SPXDetailPage {
+            SPXPageHeading(title: "调整库存", subtitle: "库存增减会记录调整原因", icon: "shippingbox", color: SPXColor.commerce)
+            SPXPanel("商品库存") { Text(product.name).font(.headline); InfoRow(title: "当前库存", value: product["stock"].string)
                 if !product["variants"].array.isEmpty { Picker("规格", selection: $variant) { Text("请选择规格").tag(""); ForEach(product["variants"].array, id: \.self) { v in Text("\(v["name"].string) · \(v["stock"].string)").tag(v["id"].string) } } }
-                TextField("增减数量，例如 10 或 -5", text: $delta).keyboardType(.numbersAndPunctuation)
-                TextField("调整原因", text: $reason)
+                SPXField("增减数量") { TextField("例如 10 或 -5", text: $delta).keyboardType(.numbersAndPunctuation) }
+                SPXField("调整原因") { TextField("请输入调整原因", text: $reason) }
             }
             if let error { ErrorBanner(message: error) }
-            Button("确认调整库存") { save() }.disabled(busy || Int(delta) == nil || Int(delta) == 0 || reason.isEmpty || (!product["variants"].array.isEmpty && variant.isEmpty))
+            Button(busy ? "提交中…" : "确认调整库存") { save() }.buttonStyle(SPXPrimaryButtonStyle()).disabled(busy || Int(delta) == nil || Int(delta) == 0 || reason.isEmpty || (!product["variants"].array.isEmpty && variant.isEmpty))
         }.navigationTitle("调整库存")
     }
     private func save() { busy = true; Task { defer { busy = false }; do { try await APIClient.shared.post("merchant.inventory.adjust", ["product_id": product["id"], "inventory_version": product["inventory_version"], "variant_id": .string(variant), "delta": .number(Decimal(Int(delta) ?? 0)), "reason": .string(reason)]); dismiss() } catch { self.error = error.localizedDescription } } }
@@ -172,7 +174,7 @@ struct MerchantOrdersView: View {
     @State private var busy = false
     @State private var error: String?
     var body: some View {
-        List { ForEach(rows.filter { !onlyAfterSale || !["none", ""].contains($0["after_sale_status"].string) }) { order in NavigationLink { MerchantFulfillmentView(order: order, sourcePage: (rows.firstIndex(where: { $0.id == order.id }) ?? 0) / 30 + 1) } label: { OrderSummary(order: order) } }; if more { Button(busy ? "正在加载…" : "加载更多") { Task { await load(reset: false) } }.disabled(busy) } }
+        SPXDetailPage { ForEach(rows.filter { !onlyAfterSale || !["none", ""].contains($0["after_sale_status"].string) }) { order in NavigationLink { MerchantFulfillmentView(order: order, sourcePage: (rows.firstIndex(where: { $0.id == order.id }) ?? 0) / 30 + 1) } label: { SPXCard { OrderSummary(order: order) } }.buttonStyle(.plain) }; if rows.isEmpty && !busy { EmptyState(title: onlyAfterSale ? "暂无售后申请" : "暂无订单", icon: "shippingbox") }; if busy && rows.isEmpty { ProgressView("正在加载订单…").frame(maxWidth: .infinity) }; if more { Button(busy ? "正在加载…" : "加载更多") { Task { await load(reset: false) } }.disabled(busy) } }
             .navigationTitle(onlyAfterSale ? "售后管理" : "订单管理").task { await load(reset: true) }.refreshable { await load(reset: true) }.errorAlert($error)
             .onReceive(NotificationCenter.default.publisher(for: .spxOrdersChanged).debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { event in
                 Task { if await AccountMutation.isCurrent(event) { await load(reset: true) } }
@@ -209,11 +211,11 @@ struct MerchantFulfillmentView: View {
     init(order: Record, sourcePage: Int = 1) { _order = State(initialValue: order); _sourcePage = State(initialValue: sourcePage) }
     private var activeAfterSale: Bool { ["requested", "return_approved", "return_shipped"].contains(order["after_sale_status"].string) }
     var body: some View {
-        Form {
-            Section { OrderSummary(order: order); InfoRow(title: "订单编号", value: order["id"].string); InfoRow(title: "买家备注", value: order["buyer_note"].string) }
-            if loading { Section { ProgressView("正在核对订单状态…") } }
+        SPXDetailPage {
+            SPXPanel("订单信息") { OrderSummary(order: order, showDetail: false); InfoRow(title: "订单编号", value: order["id"].string); InfoRow(title: "买家备注", value: order["buyer_note"].string) }
+            if loading { SPXCard { ProgressView("正在核对订单状态…") } }
             if !OrderPresentation.address(order).fields.isEmpty {
-                Section("收货信息") {
+                SPXPanel("收货信息") {
                     let address = OrderPresentation.address(order)
                     InfoRow(title: "收货人", value: address["name"].string)
                     InfoRow(title: "联系电话", value: address["phone"].string)
@@ -221,22 +223,22 @@ struct MerchantFulfillmentView: View {
                 }
             }
             if order["status"].string == "pending", !activeAfterSale {
-                Section(order["order_type"].string == "physical" ? "发货" : order["order_type"].string == "digital" ? "数字交付" : "到店核销") {
+                SPXPanel(order["order_type"].string == "physical" ? "发货" : order["order_type"].string == "digital" ? "数字交付" : "到店核销") {
                     if order["order_type"].string == "physical" {
-                        TextField("承运商", text: $carrier); TextField("物流单号", text: $tracking)
+                        SPXField("承运商") { TextField("请输入承运商", text: $carrier) }; SPXField("物流单号") { TextField("请输入物流单号", text: $tracking) }
                         Button("确认发货") { confirmation = "merchant.order.ship" }.disabled(carrier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || tracking.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     } else if order["order_type"].string == "digital" {
                         TextField("填写交付内容 / 使用说明", text: $delivery, axis: .vertical).lineLimit(4...12)
                         Button("完成数字交付") { confirmation = "merchant.order.deliver" }.disabled(delivery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     } else {
-                        TextField("输入买家出示的核销码", text: $code).textInputAutocapitalization(.characters)
+                        SPXField("买家核销码") { TextField("输入买家出示的核销码", text: $code).textInputAutocapitalization(.characters) }
                         Button("核销服务") { confirmation = "merchant.order.redeem" }.disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         Text("核销码由买家主动出示，商家端无法查询该码。").font(.caption).foregroundStyle(.secondary)
                     }
                 }.disabled(!verified || loading)
             }
             if activeAfterSale {
-                Section("售后协商") {
+                SPXPanel("售后协商") {
                     InfoRow(title: "申请类型", value: DisplayLabels.afterSaleType(order["after_sale_type"].string))
                     Text(order["after_sale_reason"].string)
                     TextField("给买家的回复", text: $reply, axis: .vertical).lineLimit(3...10)
@@ -244,7 +246,7 @@ struct MerchantFulfillmentView: View {
                     Text("退款审核按平台流程处理。").font(.caption).foregroundStyle(.secondary)
                 }.disabled(!verified || loading)
             }
-            if let error { Section { ErrorBanner(message: error); Button("重新读取订单") { Task { await load() } }.disabled(loading) } }
+            if let error { SPXPanel("加载提示") { ErrorBanner(message: error); Button("重新读取订单") { Task { await load() } }.disabled(loading) } }
         }.navigationTitle("订单处理").disabled(busy)
             .task { await load() }.refreshable { await load() }
             .confirmationDialog("确认提交此订单操作？", isPresented: Binding(get: { confirmation != nil }, set: { if !$0 { confirmation = nil } }), titleVisibility: .visible) {

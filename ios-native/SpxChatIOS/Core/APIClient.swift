@@ -136,11 +136,14 @@ actor APIClient {
     }
     func upload(_ action: String, body: Data, boundary: String, expectedSession: UUID? = nil) async throws -> JSON {
         if let expectedSession, expectedSession != generation { throw APIError.staleSession }
-        let epoch = generation
         let request = try uploadRequest(action, boundary: boundary)
+        return try await uploadPrepared(request, body: body, expectedSession: expectedSession ?? generation)
+    }
+    func uploadPrepared(_ request: URLRequest, body: Data, expectedSession: UUID) async throws -> JSON {
+        guard expectedSession == generation else { throw APIError.staleSession }
         let (data, response) = try await session.upload(for: request, from: body)
         try Task.checkCancellation()
-        guard epoch == generation else { throw APIError.staleSession }
+        guard expectedSession == generation else { throw APIError.staleSession }
         return try decode(data, response: response)
     }
 }

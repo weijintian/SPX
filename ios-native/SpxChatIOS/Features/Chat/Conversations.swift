@@ -10,6 +10,7 @@ struct ChatListView: View {
     @State private var chats: [Record] = []
     @State private var groups: [Record] = []
     @State private var search = ""
+    @State private var filter = 0
     @State private var error: String?
     @State private var loadID = UUID()
     @State private var listVisible = false
@@ -25,11 +26,16 @@ struct ChatListView: View {
         }
     }
     var body: some View {
-        List {
+        SPXList(plain: true) {
             ForEach(conversations, id: \.key) { item in row(item, group: item.isGroup) }
-            if chats.isEmpty && groups.isEmpty { EmptyState(title: "还没有会话", description: "添加朋友，开始第一段聊天", icon: "bubble.left.and.bubble.right") }
+            if !loadingList && chats.isEmpty && groups.isEmpty { EmptyState(title: "还没有会话", description: "添加朋友，开始第一段聊天", icon: "bubble.left.and.bubble.right") }
             if let error { ErrorBanner(message: error); Button("重新加载") { Task { await load() } } }
-        }.listStyle(.plain).navigationTitle("聊天").searchable(text: $search, prompt: "搜索会话")
+        }.navigationTitle("聊天").safeAreaInset(edge: .top, spacing: 0) {
+                VStack(spacing: 12) {
+                    HStack(spacing: 10) { SPXIcon("search").frame(width: 18, height: 18).foregroundStyle(SPXColor.muted); TextField("搜索会话", text: $search).font(.system(size: 14)); if !search.isEmpty { Button { search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(SPXColor.muted) } } }.padding(11).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 12))
+                    HStack(spacing: 8) { ForEach(Array(["全部", "未读", "私聊", "群聊"].enumerated()), id: \.offset) { index, title in Button { filter = index } label: { Text(title).font(.system(size: 13, weight: filter == index ? .semibold : .regular)).foregroundStyle(filter == index ? SPXColor.primary : SPXColor.muted).frame(maxWidth: .infinity).padding(.vertical, 8).background(filter == index ? SPXColor.tint : Color.clear, in: Capsule()) }.buttonStyle(.plain) } }
+                }.padding(.horizontal, 18).padding(.vertical, 10).background(SPXColor.surface)
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -37,7 +43,7 @@ struct ChatListView: View {
                         NavigationLink { ScanCodeView() } label: { Label("扫一扫", systemImage: "qrcode.viewfinder") }
                         NavigationLink { GroupJoinView() } label: { Label("加入群组", systemImage: "person.2.badge.plus") }
                         NavigationLink { GroupCreateView() } label: { Label("创建群聊", systemImage: "bubble.left.and.bubble.right") }
-                    } label: { Image(systemName: "plus.circle").font(.title3) }
+                    } label: { SPXIcon("plus").frame(width: 23, height: 23).frame(width: 44, height: 44) }
                 }
             }.refreshable { await load() }.spxPage()
             .onReceive(NotificationCenter.default.publisher(for: .spxRealtime)
@@ -60,7 +66,7 @@ struct ChatListView: View {
                 while !Task.isCancelled { await load(); do { try await Task.sleep(for: .seconds(20)) } catch { return } }
             }
     }
-    private func filtered(_ items: [Record]) -> [Record] { items.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) } }
+    private func filtered(_ items: [Record]) -> [Record] { items.filter { (search.isEmpty || $0.name.localizedCaseInsensitiveContains(search)) && (filter != 1 || $0["unread_count"].int > 0) && (filter != 2 || !$0.isGroup) && (filter != 3 || $0.isGroup) } }
     private func row(_ item: Record, group: Bool) -> some View {
         NavigationLink { ChatDetailView(item: item, isGroup: group) } label: {
             HStack(spacing: 12) {
@@ -70,8 +76,11 @@ struct ChatListView: View {
                     Text((group && item["unread_count"].int > 0 && (item["mention_unread"].int > 0 || sounds.pendingMentions[item.id] != nil) ? "[有人@我] " : "") + item.text("last_message", "last_message_type")).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 4)
+                VStack(alignment: .trailing, spacing: 7) {
+                Text(MessageTimeline.conversationLabel(item.text("last_message_at", "updated_at"))).font(.system(size: 11)).foregroundStyle(SPXColor.muted)
                 if item["mute"].flag { Image(systemName: "bell.slash").font(.caption).foregroundStyle(.secondary) }
                 if item["unread_count"].int > 0 { Text(item["unread_count"].int > 99 ? "99+" : item["unread_count"].string).font(.caption2.bold()).padding(6).foregroundStyle(.white).background(.red, in: Capsule()) }
+                }
             }.padding(.vertical, 5)
         }
         .listRowBackground(item["pinned"].flag ? SPXColor.primary.opacity(0.035) : Color.clear)
@@ -192,6 +201,7 @@ struct ChatListView: View {
     }
     func setReadVisibility(_ visible: Bool) {
         readingLatest = visible
+        MessageNotifications.shared.setVisible(target: target, group: group, readingLatest: visible, userID: userID)
         if visible { Task { await reportReadIfNeeded() } }
     }
     private func reportReadIfNeeded() async {
@@ -202,8 +212,11 @@ struct ChatListView: View {
         let currentRevision = revision
         reportingRead = true; defer { reportingRead = false }
         do {
-            try await post(action + ".read", [key: .number(Decimal(target)), "through_id": .number(Decimal(boundary))])
-            if currentRevision == revision { lastReadID = max(lastReadID, boundary) }
+            let receipt = try await post(action + ".read", [key: .number(Decimal(target)), "through_id": .number(Decimal(boundary))])
+            if currentRevision == revision {
+                lastReadID = max(lastReadID, boundary)
+                MessageNotifications.shared.acknowledged(target: target, group: group, remaining: receipt["unread_count"].int, userID: userID)
+            }
         } catch { /* Receipt failures retry on the next visible sync. */ }
     }
     private func persistIfNeeded() async {
@@ -288,6 +301,21 @@ struct ChatDetailView: View {
     @EnvironmentObject private var session: SessionStore
     var body: some View {
         ConversationView(item: item, isGroup: isGroup, userID: session.user?.id ?? 0)
+            .toolbar(.hidden, for: .tabBar)
+    }
+}
+
+private struct ConversationScrollMetrics: Equatable {
+    var bottomY: CGFloat?
+    var viewportHeight: CGFloat?
+}
+
+private struct ConversationScrollMetricsKey: PreferenceKey {
+    static var defaultValue = ConversationScrollMetrics()
+    static func reduce(value: inout ConversationScrollMetrics, nextValue: () -> ConversationScrollMetrics) {
+        let next = nextValue()
+        if let bottom = next.bottomY { value.bottomY = bottom }
+        if let height = next.viewportHeight { value.viewportHeight = height }
     }
 }
 
@@ -314,7 +342,9 @@ struct ConversationView: View {
     @State private var forward: Record?
     @State private var filePreview: Record?
     @State private var error: String?
-    @State private var scrollTarget: String?
+    @State private var pendingScrollToBottom = false
+    @State private var didInitialScroll = false
+    @State private var oldestDisplayedID: Int?
     @State private var atBottom = true
     @State private var latestSeenID = 0
     @State private var replied: Record?
@@ -358,7 +388,16 @@ struct ConversationView: View {
         _model = StateObject(wrappedValue: ConversationStore(target: item.id, group: isGroup, userID: userID))
     }
     private var pending: [PendingMessage] { outbox.items.filter { $0.targetID == item.id && $0.scope == (isGroup ? "group" : "chat") } }
-    private var timeline: [ChatTimelineEntry] { ChatTimelineEntry.merge(messages: model.messages, pending: pending, userID: userID) }
+    // Keep the initial layout bounded even when a long offline history is cached.
+    private var displayedMessages: [Record] {
+        guard let oldestDisplayedID else { return Array(model.messages.suffix(100)) }
+        return model.messages.filter { $0.id >= oldestDisplayedID }
+    }
+    private var timeline: [ChatTimelineEntry] { ChatTimelineEntry.merge(messages: displayedMessages, pending: pending, userID: userID) }
+    private var firstDisplayedID: Int? {
+        guard let oldestDisplayedID else { return model.messages.dropFirst(max(0, model.messages.count - 100)).first?.id }
+        return model.messages.first { $0.id >= oldestDisplayedID }?.id
+    }
     private var media: [Record] { model.messages.filter { ["image", "video"].contains($0["message_type"].string) } }
     private var newMessageCount: Int { model.messages.filter { $0.id > latestSeenID && $0["sender_id"].int != userID }.count }
     private var conversationContent: some View {
@@ -367,19 +406,20 @@ struct ConversationView: View {
             if isGroup, !groupInfo["announcement"].string.isEmpty { Button { announcement = true } label: { HStack(spacing: 8) { Image(systemName: "megaphone"); Text(groupInfo["announcement"].string).lineLimit(1); Spacer(); Image(systemName: "chevron.right").font(.caption2) }.font(.caption).foregroundStyle(SPXColor.primary).padding(.horizontal, 16).padding(.vertical, 10).background(SPXColor.card) } }
             if model.initialLoading, model.messages.isEmpty { HStack(spacing: 8) { ProgressView(); Text("正在同步消息…").font(.caption).foregroundStyle(.secondary) }.padding(10) }
             if processingPhotos { HStack(spacing: 8) { ProgressView(); Text("正在从相册准备附件…").font(.caption); Spacer() }.padding(.horizontal, 16).padding(.vertical, 8) }
-            ScrollView {
-                LazyVStack(spacing: 12) {
-                    if model.hasOlder, !model.messages.isEmpty {
-                        Button(model.loadingOlder ? "加载中…" : "查看更早消息") { Task { await model.older() } }.font(.caption).disabled(model.loadingOlder)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                    if (model.hasOlder || firstDisplayedID != model.messages.first?.id), !model.messages.isEmpty {
+                        Button(model.loadingOlder ? "加载中…" : "查看更早消息") { Task { await loadEarlier(proxy) } }.font(.caption).disabled(model.loadingOlder)
                     }
                     ForEach(timeline) { entry in
                         if let message = entry.message {
-                        if model.timeBoundaryIDs.contains(message.id) {
+                        if model.timeBoundaryIDs.contains(message.id) || message.id == firstDisplayedID {
                             Text(MessageTimeline.label(message["created_at"].string)).font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 4)
                         }
                         HStack(spacing: 10) {
                             if selecting { Button { toggleSelection(message.id) } label: { Image(systemName: selectedMessages.contains(message.id) ? "checkmark.circle.fill" : "circle").font(.title3).foregroundStyle(SPXColor.primary) }.disabled(!MessageContent.canForward(message)) }
-                            MessageBubble(message: message, currentUserID: userID, open: { if selecting { toggleSelection(message.id) } else { open(message) } }, reply: { contextMessage = Record(["id": message["reply"]["id"]]) }, mention: isGroup ? { insertMention(id: message["sender_id"].int, name: message.name) } : nil)
+                            MessageBubble(message: message, currentUserID: userID, isGroup: isGroup, open: { if selecting { toggleSelection(message.id) } else { open(message) } }, reply: { contextMessage = Record(["id": message["reply"]["id"]]) }, mention: isGroup ? { insertMention(id: message["sender_id"].int, name: message.name) } : nil)
                         }
                             .id(entry.id)
                             .contextMenu {
@@ -393,28 +433,30 @@ struct ConversationView: View {
                                 }
                             }
                         } else if let entry = entry.pending {
-                        HStack {
-                            Spacer(minLength: 50)
-                            VStack(alignment: .trailing, spacing: 5) {
-                                if let local = entry.localURL { LocalAttachmentPreview(url: local, kind: entry.body["message_type"]?.string ?? "file") }
-                                Text(entry.body["content"]?.string.isEmpty == false ? entry.body["content"]!.string : "正在发送附件")
-                                if entry.state == .uploading { ProgressView(value: entry.progress).tint(.white); Text("\(Int(entry.progress * 100))%").font(.caption2) }
-                                if entry.state == .failed {
-                                    Text(entry.error ?? "发送失败").font(.caption)
-                                    HStack { Button("重试") { outbox.retry(entry.id) }; Button("删除") { Task { await outbox.discard(entry.id) } } }.font(.caption).tint(.white)
-                                } else { Text(entry.state == .queued ? "等待发送" : "发送中…").font(.caption2) }
-                            }.padding(12).foregroundStyle(.white).background(SPXColor.primary.opacity(0.8), in: RoundedRectangle(cornerRadius: 16))
-                        }.id(entry.id)
+                        PendingMessageBubble(entry: entry, retry: { outbox.retry(entry.id) }, discard: { Task { await outbox.discard(entry.id) } }).id(entry.id)
                     }
                     }
-                    Color.clear.frame(height: 1).id("bottom").onAppear { atBottom = true; latestSeenID = model.messages.last?.id ?? latestSeenID }.onDisappear { atBottom = false }
-                }.padding(16).scrollTargetLayout()
-            }.defaultScrollAnchor(.bottom).scrollPosition(id: $scrollTarget, anchor: .bottom)
-                .background { if !backgroundURL.isEmpty { CachedImage(source: backgroundURL, fit: false).opacity(0.22).clipped().allowsHitTesting(false) } }
+                        Color.clear.frame(height: 1).id("bottom")
+                            .background { GeometryReader { geometry in Color.clear.preference(key: ConversationScrollMetricsKey.self, value: ConversationScrollMetrics(bottomY: geometry.frame(in: .named("conversation-viewport")).maxY)) } }
+                    }.padding(.horizontal, 12).padding(.vertical, 14)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .coordinateSpace(name: "conversation-viewport")
+                .clipped()
+                .background {
+                    GeometryReader { geometry in Color.clear.preference(key: ConversationScrollMetricsKey.self, value: ConversationScrollMetrics(viewportHeight: geometry.size.height)) }
+                    if !backgroundURL.isEmpty { CachedImage(source: backgroundURL, fit: false).opacity(0.22).clipped().allowsHitTesting(false) }
+                }
+                .onPreferenceChange(ConversationScrollMetricsKey.self) { metrics in
+                    guard let height = metrics.viewportHeight, height > 0 else { return }
+                    let visible = metrics.bottomY.map { $0 >= 0 && $0 <= height + 24 } ?? false
+                    if atBottom != visible { atBottom = visible }
+                    if visible { latestSeenID = model.messages.last?.id ?? latestSeenID }
+                }
                 .scrollDismissesKeyboard(.interactively)
                 .overlay(alignment: .bottomTrailing) {
                     if !atBottom {
-                        Button { scrollTarget = "bottom"; latestSeenID = model.messages.last?.id ?? latestSeenID } label: {
+                        Button { scrollToLatest(proxy, animated: true) } label: {
                             Label(newMessageCount > 0 ? "\(newMessageCount) 条新消息" : "回到最新", systemImage: "arrow.down")
                                 .font(.caption.weight(.semibold)).padding(.horizontal, 13).padding(.vertical, 10)
                                 .background(.regularMaterial, in: Capsule()).overlay(Capsule().stroke(SPXColor.line))
@@ -422,9 +464,23 @@ struct ConversationView: View {
                     }
                 }
                 .onChange(of: model.messages.last?.id) { old, last in
-                    if old == nil || atBottom { scrollTarget = "bottom"; latestSeenID = last ?? latestSeenID }
+                    guard old != last else { return }
+                    if !didInitialScroll || atBottom { scrollToLatest(proxy, animated: didInitialScroll); latestSeenID = last ?? latestSeenID }
+                }
+                .onChange(of: model.messages.count) { _, _ in
+                    if !didInitialScroll, !model.messages.isEmpty { scrollToLatest(proxy, animated: false) }
+                }
+                .onChange(of: pendingScrollToBottom) { _, requested in
+                    guard requested else { return }
+                    scrollToLatest(proxy, animated: true)
+                    pendingScrollToBottom = false
+                }
+                .onAppear {
+                    guard !didInitialScroll, !model.messages.isEmpty else { return }
+                    scrollToLatest(proxy, animated: false)
                 }
                 .onChange(of: outbox.acknowledgements) { _, map in model.merge(Array(map.values.filter { $0[isGroup ? "group_id" : "chat_id"].int == item.id })) }
+            }
             if let replied { HStack { Text("回复：\(replied["content"].string)").lineLimit(1); Spacer(); Button { self.replied = nil } label: { Image(systemName: "xmark.circle.fill") } }.font(.caption).padding(10).background(.thinMaterial) }
             if !mentions.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) { HStack { ForEach(mentions.keys.sorted(), id: \.self) { id in Button { removeMention(id) } label: { Label("@\(mentions[id] ?? "")", systemImage: "xmark.circle.fill").font(.caption).padding(7).background(SPXColor.primary.opacity(0.08), in: Capsule()) } } } }.padding(.horizontal, 12)
@@ -434,7 +490,7 @@ struct ConversationView: View {
                 HStack { Button("取消多选") { selecting = false; selectedMessages = [] }; Spacer(); Button("逐条转发 (\(selectedMessages.count))", systemImage: "arrowshape.turn.up.right") { forwardingSelected = true }.disabled(selectedMessages.isEmpty) }.font(.subheadline).padding(16).background(.bar)
             } else {
             HStack(alignment: .bottom, spacing: 10) {
-                Button { voiceMode.toggle(); if !voiceMode { stopRecording(cancel: true) } } label: { Image(systemName: voiceMode ? "keyboard" : "waveform.circle").font(.title2) }.accessibilityLabel(voiceMode ? "切换文字输入" : "切换语音输入")
+                Button { voiceMode.toggle(); plus = false; emoji = false; composerFocused = !voiceMode; if !voiceMode { stopRecording(cancel: true) } } label: { Image(systemName: voiceMode ? "keyboard" : "waveform.circle").font(.system(size: 25, weight: .regular)).frame(width: 32, height: 40) }.accessibilityLabel(voiceMode ? "切换文字输入" : "切换语音输入")
                 if voiceMode {
                     Text(recordingGesture ? (cancelRecording ? "松开取消" : "松开发送，上滑取消") : "按住说话")
                         .font(.subheadline.weight(.medium)).frame(maxWidth: .infinity).padding(.vertical, 12)
@@ -443,15 +499,15 @@ struct ConversationView: View {
                         .gesture(DragGesture(minimumDistance: 0).onChanged { value in beginRecording(); cancelRecording = value.translation.height < -70 }.onEnded { _ in stopRecording(cancel: cancelRecording) })
                         .accessibilityAction(named: "开始或结束录音") { if recorder.recording { stopRecording(cancel: false) } else { beginRecording() } }
                 } else {
-                    TextField("输入消息", text: $text, axis: .vertical).focused($composerFocused).lineLimit(1...5).padding(10).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 16))
+                    TextField("输入消息", text: $text, axis: .vertical).font(.system(size: 16)).focused($composerFocused).lineLimit(1...5).padding(.horizontal, 12).padding(.vertical, 10).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 10))
                 }
-                Button { emoji.toggle(); plus = false } label: { Image(systemName: "face.smiling").font(.title2) }.accessibilityLabel("表情")
+                Button { emoji.toggle(); plus = false; composerFocused = false } label: { Image(systemName: "face.smiling").font(.system(size: 25, weight: .regular)).frame(width: 32, height: 40) }.accessibilityLabel("表情")
                 if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Button { withAnimation(.easeInOut(duration: 0.18)) { plus.toggle() } } label: { Image(systemName: "plus.circle").font(.title2) }.accessibilityLabel("更多功能")
+                    Button { composerFocused = false; emoji = false; withAnimation(.easeInOut(duration: 0.18)) { plus.toggle() } } label: { Image(systemName: "plus.circle").font(.system(size: 25, weight: .regular)).frame(width: 32, height: 40) }.accessibilityLabel("更多功能")
                 } else {
-                    Button { sendText() } label: { Image(systemName: "arrow.up.circle.fill").font(.title2) }.accessibilityLabel("发送")
+                    Button { sendText() } label: { Text("发送").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white).padding(.horizontal, 12).frame(height: 36).background(SPXColor.primary, in: RoundedRectangle(cornerRadius: 8)) }.accessibilityLabel("发送")
                 }
-            }.padding(12).background(.bar)
+            }.padding(.horizontal, 10).padding(.vertical, 8).background(SPXColor.surface)
             if plus { plusGrid.padding(.horizontal, 16).padding(.vertical, 18).background(.bar) }
             if emoji { EmojiPanel { text += $0 } }
             }
@@ -459,6 +515,8 @@ struct ConversationView: View {
     }
     private var navigationContent: some View {
         conversationContent.navigationTitle(title).navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(SPXColor.surface, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { NavigationLink { ConversationSettingsView(item: item, isGroup: isGroup) } label: { Image(systemName: "ellipsis") } } }
             .toolbar(.hidden, for: .tabBar)
             .spxPage().errorAlert($error)
@@ -475,6 +533,7 @@ struct ConversationView: View {
                 let index = value.index(value.startIndex, offsetBy: prefix)
                 if value[index] == "@" { mentionTrigger = prefix; mentioning = true }
             }
+            .onChange(of: composerFocused) { _, focused in if focused { plus = false; emoji = false } }
             .onReceive(NotificationCenter.default.publisher(for: .spxMentionReceived)) { event in if let value = event.object as? Record, isGroup, value["group_id"].int == item.id { mentionNotice = "有人 @ 了你"; ChatSoundEffects.shared.readGroup(item.id) } }
             .onReceive(NotificationCenter.default.publisher(for: .spxRealtime)) { notification in if let event = notification.object as? JSON { model.receive(event) } }
             .onReceive(NotificationCenter.default.publisher(for: .spxConversationRemoved)) { event in if let value = event.object as? Record, value["target"].int == item.id, value["group"].flag == isGroup { dismiss() } }
@@ -528,6 +587,9 @@ struct ConversationView: View {
             .onReceive(CallCoordinator.shared.$call) { call in if call != nil { stopRecording(cancel: true) } }
             .onChange(of: recorder.completedURL) { _, url in if let url { ChatSoundEffects.recording = false; recordingGesture = false; recordingRequest = UUID(); recorder.completedURL = nil; Task { do { try await queue(file: url, kind: "voice", name: "语音") } catch { self.error = error.localizedDescription } } } }
             .onChange(of: recorder.errorMessage) { _, message in if let message { ChatSoundEffects.recording = false; error = message; recorder.errorMessage = nil } }
+            .onReceive(CallCoordinator.shared.$call) { call in
+                if call != nil, recorder.recording || recordingGesture { stopRecording(cancel: true) }
+            }
             .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { notification in
                 guard let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
                       AVAudioSession.InterruptionType(rawValue: raw) == .began, recorder.recording || recordingGesture else { return }
@@ -543,11 +605,11 @@ struct ConversationView: View {
                 Task { await sendPhotos(items) }
             }
             .fileImporter(isPresented: $documents, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
-                Task { do { for source in try result.get() { try await queue(file: MediaFiles.keep(source, userID: userID), kind: "file", name: source.lastPathComponent) } } catch { self.error = error.localizedDescription } }
+                Task { do { for source in try result.get() { let file = try await MediaFiles.keepForSending(source, userID: userID); try await queue(file: file, kind: "file", name: source.lastPathComponent) } } catch { self.error = error.localizedDescription } }
             }
             .fullScreenCover(isPresented: $camera) { NativeCamera { image, video in
                 camera = false
-                Task { do { if let video { try await queue(file: MediaFiles.keep(video, userID: userID), kind: "video", name: "视频") } else if let image { try await queue(file: MediaFiles.jpeg(image, userID: userID), kind: "image", name: "图片") } } catch { self.error = error.localizedDescription } }
+                Task { do { if let video { let file = try await MediaFiles.keepForSending(video, userID: userID); try await queue(file: file, kind: "video", name: "视频") } else if let image { let file = try await MediaFiles.preparePhoto(image, userID: userID); try await queue(file: file, kind: "image", name: "图片") } } catch { self.error = error.localizedDescription } }
             }.ignoresSafeArea() }
             .fullScreenCover(item: $selectedMedia) { selected in MediaPreview(messages: media, initialID: selected.id) }
     }
@@ -606,7 +668,7 @@ struct ConversationView: View {
         let savedTokens = mentionTokens, savedReply = replied
         mentionTokens = []; mentionSourceText = ""; text = ""; replied = nil
         Task {
-            do { try await outbox.enqueue(scope: isGroup ? "group" : "chat", id: item.id, body: body, expectedUserID: userID); scrollTarget = "bottom" }
+            do { try await outbox.enqueue(scope: isGroup ? "group" : "chat", id: item.id, body: body, expectedUserID: userID); pendingScrollToBottom = true }
             catch { if text.isEmpty { mentionTokens = savedTokens; mentionSourceText = source; text = source; replied = savedReply }; self.error = error.localizedDescription }
         }
     }
@@ -656,13 +718,37 @@ struct ConversationView: View {
             content = "语音 · \(seconds)秒"
         }
         try await outbox.enqueue(scope: isGroup ? "group" : "chat", id: item.id, body: ["content": .string(content), "message_type": .string(kind)], localURL: file, expectedUserID: userID)
-        scrollTarget = "bottom"
+        pendingScrollToBottom = true
     }
     private func sendPhotos(_ items: [PhotosPickerItem]) async {
         defer { processingPhotos = false; plus = false }
         for selected in items {
             do { let file = try await MediaFiles.select(selected, userID: userID, original: sendOriginal); let video = selected.supportedContentTypes.contains { $0.conforms(to: .movie) }; try await queue(file: file, kind: video ? "video" : "image", name: video ? "视频" : "图片") }
             catch { self.error = error.localizedDescription }
+        }
+    }
+    private func scrollToLatest(_ proxy: ScrollViewProxy, animated: Bool) {
+        let action = {
+            proxy.scrollTo("bottom", anchor: .bottom)
+            if oldestDisplayedID == nil { oldestDisplayedID = firstDisplayedID }
+            atBottom = true
+            didInitialScroll = true
+            latestSeenID = model.messages.last?.id ?? latestSeenID
+        }
+        if animated { withAnimation(.easeOut(duration: 0.2), action) } else { action() }
+    }
+    private func loadEarlier(_ proxy: ScrollViewProxy) async {
+        let anchor = timeline.first?.id
+        let firstIndex = model.messages.firstIndex { $0.id == firstDisplayedID } ?? 0
+        if firstIndex > 0 { oldestDisplayedID = model.messages[max(0, firstIndex - 100)].id }
+        else {
+            await model.older()
+            oldestDisplayedID = model.messages.first?.id
+        }
+        // Prepending history keeps the original first message in the same reading position.
+        if let anchor {
+            var transaction = Transaction(); transaction.disablesAnimations = true
+            withTransaction(transaction) { proxy.scrollTo(anchor, anchor: .top) }
         }
     }
     private func beginRecording() {
@@ -699,31 +785,71 @@ struct ConversationView: View {
 struct MessageBubble: View {
     let message: Record
     let currentUserID: Int
+    var isGroup = false
     let open: () -> Void
     var reply: (() -> Void)? = nil
     var mention: (() -> Void)? = nil
     private var mine: Bool { message["sender_id"].int == currentUserID }
+    private var isMedia: Bool { ["image", "video"].contains(message["message_type"].string) }
     private var greeting: String { guard let data = message["content"].string.data(using: .utf8), let json = try? JSONDecoder().decode(JSON.self, from: data) else { return "恭喜发财，大吉大利" }; return json["greeting"].string }
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            if mine { Spacer(minLength: 48) } else { Avatar(url: message.avatar, name: message.name, size: 34).onLongPressGesture { mention?() }.accessibilityAction(named: "提醒这位成员") { mention?() } }
+        HStack(alignment: .top, spacing: 10) {
+            if mine { Spacer(minLength: 52) } else { Avatar(url: message.avatar, name: message.name, size: 36).onLongPressGesture { mention?() }.accessibilityAction(named: "提醒这位成员") { mention?() } }
+            VStack(alignment: mine ? .trailing : .leading, spacing: 5) {
+            if !mine, isGroup { Text(message.name).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1) }
             Button(action: open) {
                 VStack(alignment: .leading, spacing: 6) {
-                    if !mine { Text(message.name).font(.caption2).foregroundStyle(.secondary) }
                     if message["reply"]["id"].int > 0 { Text("\(message["reply"]["nickname"].string)：\(message["reply"]["preview"].string)").font(.caption).lineLimit(2).padding(8).background(.black.opacity(0.07), in: RoundedRectangle(cornerRadius: 6)).onTapGesture { reply?() }.accessibilityAddTraits(.isButton).accessibilityLabel("查看引用消息") }
                     if MessageContent.product(message) != nil || MessageContent.groupCode(message) != nil { MessageCardContent(message: message) } else { switch message["message_type"].string {
-                    case "image": CachedImage(source: message["media_url"].string).frame(maxWidth: 210, maxHeight: 240).clipShape(RoundedRectangle(cornerRadius: 10))
-                    case "video": VideoMessagePreview(source: message["media_url"].string).frame(width: 190, height: 112)
+                    case "image": CachedImage(source: message["media_url"].string, messagePreview: true).background(SPXColor.card).clipShape(RoundedRectangle(cornerRadius: 12))
+                    case "video": VideoMessagePreview(source: message["media_url"].string).frame(width: ChatMediaLayout.width, height: ChatMediaLayout.height)
                     case "voice": VoiceMessageLabel(url: message["media_url"].string, content: message["content"].string, incoming: !mine, userID: currentUserID)
                     case "file": Label(message["content"].string, systemImage: "doc.fill")
                     case "red_packet": Label(greeting, systemImage: "gift.fill").padding(.vertical, 20)
                     case "call": Label(message["content"].string, systemImage: "phone.fill")
                     default: MessageText(content: message["content"].string, mine: mine)
                     } }
-                }.padding(12).foregroundStyle(mine ? .white : SPXColor.ink)
-                    .background(message["message_type"].string == "red_packet" ? Color.orange : (mine ? SPXColor.primary : SPXColor.card), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }.font(.system(size: 16)).padding(isMedia ? 0 : 12).foregroundStyle(mine ? .white : SPXColor.ink)
+                    .background(isMedia ? Color.clear : (message["message_type"].string == "red_packet" ? Color.orange : (mine ? SPXColor.primary : SPXColor.card)), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay { if !mine, !isMedia { RoundedRectangle(cornerRadius: 12).stroke(SPXColor.line, lineWidth: 0.5) } }
             }.buttonStyle(.plain)
-            if !mine { Spacer(minLength: 48) }
+            }
+            if !mine { Spacer(minLength: 44) }
+        }
+    }
+}
+
+struct PendingMessageBubble: View {
+    let entry: PendingMessage
+    let retry: () -> Void
+    let discard: () -> Void
+    private var kind: String { entry.body["message_type"]?.string ?? "text" }
+    private var isMedia: Bool { ["image", "video"].contains(kind) }
+    private var status: String {
+        switch entry.state {
+        case .queued: return "等待发送"
+        case .uploading: return "上传中 \(Int(entry.progress * 100))%"
+        case .sending: return "发送中…"
+        case .failed: return entry.error ?? "发送失败"
+        }
+    }
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Spacer(minLength: 52)
+            VStack(alignment: .trailing, spacing: 6) {
+                Group {
+                    if isMedia, let local = entry.localURL { LocalAttachmentPreview(url: local, kind: kind) }
+                    else { Label(entry.body["content"]?.string ?? "附件", systemImage: kind == "file" ? "doc.fill" : (kind == "voice" ? "waveform" : "bubble.right")).font(.system(size: 16)).padding(12).foregroundStyle(.white).background(SPXColor.primary, in: RoundedRectangle(cornerRadius: 12)) }
+                }
+                if entry.state == .uploading { ProgressView(value: entry.progress).frame(width: 180).tint(SPXColor.primary) }
+                Text(status).font(.system(size: 11)).foregroundStyle(entry.state == .failed ? Color.red : .secondary).lineLimit(3).frame(maxWidth: ChatMediaLayout.width, alignment: .trailing)
+                if entry.state == .failed {
+                    HStack(spacing: 16) {
+                        Button("重试", systemImage: "arrow.clockwise", action: retry)
+                        Button("删除", role: .destructive, action: discard)
+                    }.font(.caption).buttonStyle(.plain)
+                }
+            }
         }
     }
 }

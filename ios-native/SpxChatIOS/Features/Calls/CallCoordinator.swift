@@ -11,11 +11,19 @@ struct ActiveCall: Identifiable {
     let avatar: String
     let outgoing: Bool
     let video: Bool
-    let room: UInt32
+    var room: UInt32
     var connected = false
     var startedAt: Date?
     var sdkID: String?
     var systemID: UUID { UUID(uuidString: id)! }
+    func matchesSDK(_ sdkID: String, sessionID: String, room: UInt32, retired: Set<String>) -> Bool {
+        guard !sdkID.isEmpty, !retired.contains(sdkID) else { return false }
+        if let existing = self.sdkID { return existing == sdkID }
+        return sessionID == id || (outgoing && room > 0 && room == self.room)
+    }
+    func canRetryOffline(reason: UInt, deadline: Date?, now: Date = Date()) -> Bool {
+        reason == 4 && outgoing && !connected && deadline.map { now < $0 } == true
+    }
 }
 
 /// The authenticated backend session also travels in Tencent userData.
@@ -36,13 +44,19 @@ struct ActiveCall: Identifiable {
     private var epoch = UUID()
     private var tickerID = UUID()
     private var active = true
-    private var preparing = false
+    private var preparingID: String?
+    private var preparing: Bool { preparingID != nil }
     private var receiving = false
     private var finishing = false
     private var front = true
     private var systemCallID: UUID?
     private var connectingID: String?
-    private var answering = false
+    @Published private(set) var answering = false
+    private var answerRequested = false
+    private var dialTask: Task<Void, Never>?
+    private var ringingTimeout: Task<Void, Never>?
+    private var ringingDeadline: Date?
+    private var retiredSDKIDs = Set<String>()
     private let controller = CXCallController()
     private var observer = TencentCallObserver()
     private lazy var provider: CXProvider = {
@@ -59,19 +73,21 @@ struct ActiveCall: Identifiable {
     func stop(resetSounds: Bool = true) {
         if resetSounds { ChatSoundEffects.shared.reset() } else { ChatSoundEffects.shared.stopCall() }
         epoch = UUID(); tickerID = UUID(); ticker?.cancel(); ticker = nil
+        dialTask?.cancel(); dialTask = nil; ringingTimeout?.cancel(); ringingTimeout = nil
         let pendingInitialization = initializing; pendingInitialization?.cancel(); initializing = nil
         let pendingTeardown = sdkTeardown
         let oldObserver = observer; oldObserver.enabled = false; observer = TencentCallObserver()
         let hadSDK = ready || pendingInitialization != nil
-        if hadSDK { TUICallEngine.createInstance().closeMicrophone(); if call?.video == true { TUICallEngine.createInstance().closeCamera() } }
+        if hadSDK { TUICallEngine.createInstance().closeMicrophone(); if let call, call.video { TUICallEngine.createInstance().closeCamera(); TUICallEngine.createInstance().stopRemoteView(userId: call.peer) } }
         if let call, systemCallID == call.systemID { provider.reportCall(with: call.systemID, endedAt: Date(), reason: .remoteEnded) }
-        systemCallID = nil; connectingID = nil; answering = false
+        systemCallID = nil; connectingID = nil; answering = false; answerRequested = false
+        ringingDeadline = nil; retiredSDKIDs = []
         sdkTeardown = Task {
             await pendingTeardown?.value
             _ = try? await pendingInitialization?.value
             if hadSDK { _ = await Self.terminateSDK(reject: false); TUICallEngine.createInstance().removeObserver(oldObserver); TUICallEngine.destroyInstance() }
         }
-        ready = false; userID = 0; call = nil; preparing = false; receiving = false; finishing = false; minimized = false
+        ready = false; userID = 0; call = nil; preparingID = nil; receiving = false; finishing = false; minimized = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
     private func schedule() {
@@ -111,6 +127,10 @@ struct ActiveCall: Identifiable {
             guard generation == epoch else { throw APIError.staleSession }
             let sdk = Int32(credentials["sdk_app_id"].int), identity = credentials["user_id"].string, signature = credentials["user_sig"].string
             guard sdk > 0, identity == "spx_\(userID)", !signature.isEmpty else { throw APIError.invalidResponse }
+            // Register before login can deliver an invitation queued while this user was offline.
+            TUICallEngine.createInstance().removeObserver(observer)
+            TUICallEngine.createInstance().addObserver(observer)
+            defer { if generation == epoch, !ready { TUICallEngine.createInstance().removeObserver(observer) } }
             try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
                 let completion = SDKOperationCompletion(c)
                 TUILogin.login(sdk, userID: identity, userSig: signature) { Task { @MainActor in completion.succeed() } } fail: { code, message in Task { @MainActor in completion.resolve(.failure(APIError.server(Int(code), message ?? "通话登录失败"))) } }
@@ -121,7 +141,7 @@ struct ActiveCall: Identifiable {
                 TUICallEngine.createInstance().`init`(sdk, userId: identity, userSig: signature) { Task { @MainActor in completion.succeed() } } fail: { code, message in Task { @MainActor in completion.resolve(.failure(APIError.server(Int(code), message ?? "通话服务连接失败"))) } }
             }
             guard generation == epoch else { throw APIError.staleSession }
-            TUICallEngine.createInstance().addObserver(observer); ready = true
+            ready = true
         }
         initializing = task; defer { if generation == epoch { initializing = nil } }; try await task.value
     }
@@ -129,10 +149,11 @@ struct ActiveCall: Identifiable {
     func dial(chat: Record, video: Bool) {
         guard call == nil, !preparing, !receiving, !finishing else { toast("当前已有通话，请先结束"); return }
         guard chat.id > 0 else { toast("会话不可用，请重新打开好友资料"); return }
-        preparing = true; let generation = epoch, id = UUID().uuidString.lowercased()
+        let generation = epoch, id = UUID().uuidString.lowercased()
+        preparingID = id
         VoicePlayback.shared.stop()
-        Task {
-            defer { if generation == epoch { preparing = false } }
+        dialTask = Task {
+            defer { if generation == epoch, preparingID == id { preparingID = nil } }
             do {
                 try await permissions(video: video)
                 guard generation == epoch else { return }
@@ -140,35 +161,66 @@ struct ActiveCall: Identifiable {
                 guard generation == epoch else { return }
                 try await presence()
                 guard generation == epoch else { return }
-                var data = try await APIClient.shared.post("calls.prepare", ["chat_id": chat["id"], "device_id": .string(Keychain.deviceID), "session_id": .string(id), "media": .string(video ? "video" : "audio")])
+                let data = try await APIClient.shared.post("calls.prepare", ["chat_id": chat["id"], "device_id": .string(Keychain.deviceID), "session_id": .string(id), "media": .string(video ? "video" : "audio")])
                 guard generation == epoch else { throw APIError.staleSession }
                 let room = UInt32.random(in: 1...UInt32(Int32.max))
                 call = ActiveCall(id: id, peer: data["peer_user_id"].string, name: data["peer_name"].string, avatar: data["peer_avatar"].string, outgoing: true, video: video, room: room)
                 resetControls(video: video)
+                let deadline = Date().addingTimeInterval(63)
+                ringingDeadline = deadline
+                startRingingTimeout(id: id, deadline: deadline)
                 try await systemStart()
                 guard call?.id == id, generation == epoch else { return }
                 if call?.connected == false { ChatSoundEffects.shared.beginCall(id) }
-                // Keep ringing while an offline recipient becomes ready, matching Android.
-                let deadline = Date().addingTimeInterval(63)
-                while !data["peer_ready"].flag {
-                    guard generation == epoch, call?.id == id else { return }
-                    guard Date() < deadline else { await finish(event: "timeout", message: "无人接听"); return }
-                    try await Task.sleep(for: .seconds(2))
-                    data = try await APIClient.shared.get("calls.session", ["session_id": id, "device_id": Keychain.deviceID])
-                    guard generation == epoch, call?.id == id else { return }
-                    if terminal.contains(data["state"].string) { await finish(event: "heartbeat", message: label(data["state"].string)); return }
-                }
-                guard call?.id == id, generation == epoch else { return }
-                let params = TUICallParams(); params.timeout = Int32(max(1, min(60, Int(deadline.timeIntervalSinceNow)))); params.userData = id
-                let roomID = TUIRoomId(); roomID.intRoomId = room; params.roomId = roomID
-                try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
-                    let completion = SDKOperationCompletion(c)
-                    TUICallEngine.createInstance().calls(userIdList: [data["peer_user_id"].string], callMediaType: video ? .video : .audio, params: params) { Task { @MainActor in completion.succeed() } } fail: { code, message in Task { @MainActor in completion.resolve(.failure(APIError.server(Int(code), message ?? "呼叫失败"))) } }
-                }
-            } catch { if generation == epoch { if call?.id == id { await finish(event: "failed", message: error.localizedDescription) } else if call == nil { toast(error.localizedDescription) } } }
+                try await sendInvitation(id: id, generation: generation, deadline: deadline, initial: data)
+            } catch is CancellationError { }
+            catch { if !Task.isCancelled, generation == epoch { if call?.id == id { await finish(event: "failed", message: error.localizedDescription) } else if call == nil { toast(error.localizedDescription) } } }
         }
     }
-    private func resetControls(video: Bool) { minimized = false; muted = false; speaker = video; cameraEnabled = video; front = true; systemCallID = nil; connectingID = nil; answering = false }
+    private func sendInvitation(id: String, generation: UUID, deadline: Date, initial: JSON? = nil) async throws {
+        var status = initial
+        while true {
+            try Task.checkCancellation()
+            guard generation == epoch, let current = call, current.id == id, !current.connected, !finishing else { return }
+            guard Date() < deadline else { await finish(event: "timeout", message: "无人接听"); return }
+            if status == nil {
+                do { status = try await APIClient.shared.get("calls.session", ["session_id": id, "device_id": Keychain.deviceID]) }
+                catch {
+                    guard error is URLError || (error as? APIError)?.retryable == true else { throw error }
+                    try await Task.sleep(for: .seconds(2)); continue
+                }
+            }
+            try Task.checkCancellation()
+            guard generation == epoch, call?.id == id, call?.connected == false else { return }
+            if let status, terminal.contains(status["state"].string) { await finish(event: "heartbeat", message: label(status["state"].string)); return }
+            guard status?["peer_ready"].flag == true else {
+                status = nil; try await Task.sleep(for: .seconds(2)); continue
+            }
+            let room = UInt32.random(in: 1...UInt32(Int32.max))
+            call?.room = room
+            let params = TUICallParams(); params.timeout = Int32(max(1, min(60, Int(deadline.timeIntervalSinceNow)))); params.userData = id
+            let roomID = TUIRoomId(); roomID.intRoomId = room; params.roomId = roomID
+            try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+                let completion = SDKOperationCompletion(c)
+                // Use the same 1:1 API as Android; calls() selects a different Tencent call scene.
+                TUICallEngine.createInstance().call(userId: current.peer, callMediaType: current.video ? .video : .audio, params: params) { Task { @MainActor in completion.succeed() } } fail: { code, message in Task { @MainActor in completion.resolve(.failure(APIError.server(Int(code), message ?? "呼叫失败"))) } }
+            }
+            try Task.checkCancellation()
+            return
+        }
+    }
+    private func startRingingTimeout(id: String, deadline: Date) {
+        ringingTimeout?.cancel()
+        let generation = epoch
+        ringingTimeout = Task {
+            do {
+                try await Task.sleep(for: .seconds(max(0, deadline.timeIntervalSinceNow)))
+                guard generation == epoch, call?.id == id, call?.connected == false else { return }
+                await finish(event: "timeout", message: "无人接听")
+            } catch { }
+        }
+    }
+    private func resetControls(video: Bool) { minimized = false; muted = false; speaker = video; cameraEnabled = video; front = true; systemCallID = nil; connectingID = nil; answering = false; answerRequested = false; retiredSDKIDs = []; ringingDeadline = nil }
     private func systemStart() async throws {
         guard let call else { return }
         let action = CXStartCallAction(call: call.systemID, handle: CXHandle(type: .generic, value: call.name)); action.isVideo = call.video
@@ -189,6 +241,8 @@ struct ActiveCall: Identifiable {
         defer { if generation == epoch { receiving = false } }
         VoicePlayback.shared.stop()
         do {
+            try await ensureReady()
+            guard generation == epoch else { return }
             try await presence()
             let data = try await APIClient.shared.get("calls.session", ["session_id": id, "device_id": Keychain.deviceID])
             guard generation == epoch, data["callee_id"].int == userID, data["peer_user_id"].string == caller, data["media"].string == (video ? "video" : "audio"), data["state"].string == "ringing" else { return }
@@ -210,19 +264,24 @@ struct ActiveCall: Identifiable {
         } catch { if call?.id == id { await finish(event: "failed", message: error.localizedDescription) } }
     }
     func answer() {
-        guard let current = call, !current.outgoing, !current.connected, !answering else { return }
+        guard let current = call, !current.outgoing, !current.connected, !answering, !answerRequested else { return }
+        answerRequested = true
         Task {
+            defer { if call?.id == current.id { answerRequested = false } }
             if systemCallID == current.systemID {
                 do { try await controller.request(CXTransaction(action: CXAnswerCallAction(call: current.systemID))); return }
                 catch { guard call?.id == current.id else { return }; systemCallID = nil }
             }
             do { try await acceptIncoming(current) }
+            catch is CancellationError { }
             catch { if call?.id == current.id { await finish(event: "failed", message: error.localizedDescription) } }
         }
     }
     private func acceptIncoming(_ current: ActiveCall) async throws {
-        guard !answering, call?.id == current.id else { throw CancellationError() }
-        answering = true; defer { if call?.id == current.id { answering = false } }
+        guard !current.outgoing, !current.connected, !answering, !finishing, call?.id == current.id, call?.connected == false else { throw CancellationError() }
+        answering = true
+        var accepted = false
+        defer { if !accepted, call?.id == current.id { answering = false } }
         try await permissions(video: current.video)
         guard call?.id == current.id, !finishing else { throw CancellationError() }
         try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
@@ -231,6 +290,7 @@ struct ActiveCall: Identifiable {
                 Task { @MainActor in completion.resolve(.failure(APIError.server(Int(code), message ?? "接听失败，请重试"))) }
             }
         }
+        accepted = true
     }
     func end() { guard let call else { return }; Task { if systemCallID != call.systemID { await finish(event: call.connected ? "ended" : (call.outgoing ? "canceled" : "rejected"), message: nil); return }; do { try await controller.request(CXTransaction(action: CXEndCallAction(call: call.systemID))) } catch { guard self.call?.id == call.id else { return }; await finish(event: call.connected ? "ended" : (call.outgoing ? "canceled" : "rejected"), message: nil) } } }
     private func permissions(video: Bool) async throws {
@@ -241,7 +301,14 @@ struct ActiveCall: Identifiable {
     func connected(sdkID: String, sessionID: String, room: UInt32) async {
         guard matches(sdkID: sdkID, sessionID: sessionID, room: room), let current = call, !current.connected else { return }
         guard connectingID != current.id else { return }
+        ringingTimeout?.cancel(); ringingTimeout = nil
         connectingID = current.id; call?.sdkID = sdkID
+        // SDK confirmation is authoritative. Do not leave the backend ringing while
+        // the microphone opens, or a near-timeout answer can expire on the server.
+        call?.connected = true; call?.startedAt = Date(); answering = false
+        ChatSoundEffects.shared.connected(current.id)
+        if current.outgoing, systemCallID == current.systemID { provider.reportOutgoingCall(with: current.systemID, connectedAt: Date()) }
+        reportStatus(current.id, event: "connected")
         defer { if connectingID == current.id { connectingID = nil } }
         do {
             if systemCallID == nil {
@@ -258,10 +325,6 @@ struct ActiveCall: Identifiable {
             }
             guard call?.id == current.id, !finishing else { return }
             TUICallEngine.createInstance().selectAudioPlaybackDevice(speaker ? .speakerphone : .earpiece)
-            call?.connected = true; call?.startedAt = Date()
-            ChatSoundEffects.shared.connected(current.id)
-            if current.outgoing, systemCallID == current.systemID { provider.reportOutgoingCall(with: current.systemID, connectedAt: Date()) }
-            reportStatus(current.id, event: "connected")
         } catch { if call?.id == current.id { await finish(event: "failed", message: error.localizedDescription) } }
     }
     private func reportStatus(_ id: String, event: String) {
@@ -275,11 +338,25 @@ struct ActiveCall: Identifiable {
         }
     }
     private func matches(sdkID: String, sessionID: String, room: UInt32) -> Bool {
-        guard let current = call else { return false }; if let existing = current.sdkID { return existing == sdkID }
-        return !sdkID.isEmpty && (sessionID == current.id || (current.outgoing && room > 0 && room == current.room))
+        call?.matchesSDK(sdkID, sessionID: sessionID, room: room, retired: retiredSDKIDs) == true
     }
     func sdkEnded(sdkID: String, sessionID: String, room: UInt32, reason: UInt) async {
         guard matches(sdkID: sdkID, sessionID: sessionID, room: room), let current = call else { return }
+        if let deadline = ringingDeadline, current.canRetryOffline(reason: reason, deadline: deadline) {
+            // Presence can briefly outlive an offline peer. Keep the business invitation
+            // alive and retry, without letting late callbacks from this attempt end it.
+            retiredSDKIDs.insert(sdkID); call?.sdkID = nil
+            dialTask?.cancel()
+            let generation = epoch
+            dialTask = Task {
+                do {
+                    try await Task.sleep(for: .seconds(8))
+                    try await sendInvitation(id: current.id, generation: generation, deadline: deadline)
+                } catch is CancellationError { }
+                catch { if !Task.isCancelled, generation == epoch, call?.id == current.id { await finish(event: "failed", message: error.localizedDescription) } }
+            }
+            return
+        }
         // TUICallDefine.h in pinned RTCRoomEngine 3.2.1 defines values 0...9.
         let mapped: (String, String?)
         switch reason {
@@ -334,13 +411,16 @@ struct ActiveCall: Identifiable {
     private func finish(event: String, message: String?, sdkAlreadyEnded: Bool = false) async {
         guard !finishing, let current = call else { return }
         finishing = true
+        preparingID = nil
+        dialTask?.cancel(); dialTask = nil; ringingTimeout?.cancel(); ringingTimeout = nil
+        ringingDeadline = nil; retiredSDKIDs = []
         ChatSoundEffects.shared.stopCall()
         TUICallEngine.createInstance().closeMicrophone()
-        if current.video { TUICallEngine.createInstance().closeCamera() }
+        if current.video { TUICallEngine.createInstance().closeCamera(); TUICallEngine.createInstance().stopRemoteView(userId: current.peer) }
         let generation = epoch
         call = nil; minimized = false
         if systemCallID == current.systemID { provider.reportCall(with: current.systemID, endedAt: Date(), reason: event == "failed" ? .failed : .remoteEnded) }
-        systemCallID = nil; connectingID = nil; answering = false
+        systemCallID = nil; connectingID = nil; answering = false; answerRequested = false
         reportStatus(current.id, event: event)
         let clean: Bool
         if sdkAlreadyEnded { clean = true }
@@ -370,7 +450,7 @@ struct ActiveCall: Identifiable {
     func toggleCamera() { guard call?.video == true else { return }; cameraEnabled.toggle(); if !cameraEnabled { TUICallEngine.createInstance().closeCamera() } }
     func attachVideo(_ view: UIView, local: Bool) {
         guard let call else { return }
-        if local, cameraEnabled { TUICallEngine.createInstance().openCamera(front ? .front : .back, videoView: view) {} fail: { _, message in Task { @MainActor in self.toast(message ?? "相机打开失败") } } }
+        if local, cameraEnabled { TUICallEngine.createInstance().openCamera(front ? .front : .back, videoView: view) {} fail: { _, message in Task { @MainActor in guard self.call?.id == call.id else { return }; self.cameraEnabled = false; self.toast(message ?? "相机打开失败") } } }
         else if !local { TUICallEngine.createInstance().startRemoteView(userId: call.peer, videoView: view) { _ in } onLoading: { _ in } onError: { _, _, message in Task { @MainActor in if self.call?.id == call.id { self.toast(message ?? "远端画面加载失败，请检查网络") } } } }
     }
     func toast(_ text: String) { notice = text; noticeTask?.cancel(); noticeTask = Task { do { try await Task.sleep(for: .seconds(2)); notice = nil } catch {} } }
@@ -383,6 +463,7 @@ extension CallCoordinator: CXProviderDelegate {
         Task { @MainActor in
             guard let current = call, current.systemID == action.callUUID else { action.fail(); return }
             do { try await acceptIncoming(current); action.fulfill() }
+            catch is CancellationError { action.fail() }
             catch { action.fail(); if call?.id == current.id { await finish(event: "rejected", message: error.localizedDescription) } }
         }
     }

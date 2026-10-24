@@ -10,7 +10,7 @@ struct MallHomeView: View {
     @State private var categories: [String] = []
     @State private var page = 1
     @State private var more = true
-    @State private var busy = false
+    @State private var busy = true
     @State private var error: String?
     @State private var loadID = UUID()
     @State private var usd = ""
@@ -18,7 +18,7 @@ struct MallHomeView: View {
     @Environment(\.scenePhase) private var phase
     private var catalogHeader: some View {
         VStack(alignment: .leading, spacing: 18) {
-        HStack { Text("发现心仪好物").font(.title2.bold()); Spacer(); NavigationLink { OrdersView() } label: { Image(systemName: "shippingbox").font(.title3) } }
+        HStack(spacing: 12) { SPXIcon("search").frame(width: 20, height: 20).foregroundStyle(SPXColor.muted); TextField("搜索商品", text: $search).font(.system(size: 14)); if !search.isEmpty { Button { search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(SPXColor.muted) } } }.padding(13).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 14))
         Picker("商品类型", selection: $kind) { Text("全部").tag("all"); Text("实物").tag("physical"); Text("数字").tag("digital"); Text("本地").tag("local") }.pickerStyle(.segmented)
         ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 10) { categoryButton("全部", value: ""); ForEach(categories, id: \.self) { categoryButton($0, value: $0) } } }
         }
@@ -30,6 +30,7 @@ struct MallHomeView: View {
     }
     @ViewBuilder private var catalogStatus: some View {
         if more { Button(busy ? "正在加载…" : "加载更多") { Task { await load(reset: false) } }.frame(maxWidth: .infinity).disabled(busy) }
+        if busy && products.isEmpty { ProgressView("正在加载商品…").frame(maxWidth: .infinity).padding(20) }
         if !busy && products.isEmpty { EmptyState(title: "暂无商品", description: "试试其他分类或关键词", icon: "bag") }
         if let error { ErrorBanner(message: error) }
     }
@@ -43,14 +44,14 @@ struct MallHomeView: View {
         }
     }
     private var navigatedCatalog: some View {
-        catalogContent.navigationTitle(merchantID > 0 ? "店铺商品" : "商城").searchable(text: $search, prompt: "搜索商品")
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { NavigationLink { ShopsView() } label: { Image(systemName: "storefront") } } }
+        catalogContent.navigationTitle(merchantID > 0 ? "店铺商品" : "商城")
+            .toolbar { ToolbarItemGroup(placement: .topBarTrailing) { NavigationLink { FavoritesView() } label: { Image(systemName: "heart") }; NavigationLink { OrdersView() } label: { SPXIcon("order").frame(width: 22, height: 22) }; NavigationLink { ShopsView() } label: { SPXIcon("store").frame(width: 22, height: 22) } } }
             .spxPage().refreshable { await load(reset: true) }
 
     }
     var body: some View {
         navigatedCatalog
-            .task { if let config = try? await APIClient.shared.get("mall.config") { categories = config["categories"].array.map(\.string) }; await load(reset: true) }
+            .task { if let config = try? await APIClient.shared.get("mall.config") { categories = config["categories"].array.map(\.string) } }
             .task(id: search + "|" + category + "|" + kind) { do { try await Task.sleep(for: .milliseconds(350)); await load(reset: true) } catch { } }
             .onAppear { visible = true }.onDisappear { visible = false }
             .task(id: String(describing: phase) + String(visible)) {
@@ -81,7 +82,7 @@ struct ProductCard: View {
     var usd = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            CachedImage(source: product.image).frame(height: 154).frame(maxWidth: .infinity).background(.white).clipped()
+            CachedImage(source: product.image).aspectRatio(1, contentMode: .fit).frame(maxWidth: .infinity).background(.white).clipped()
             VStack(alignment: .leading, spacing: 6) {
                 Text(product.name).font(.subheadline.weight(.medium)).lineLimit(2).frame(minHeight: 38, alignment: .topLeading)
                 PriceLabel(cny: product["cny_price"].string, estimate: Money.estimate(cny: product["cny_price"].string, usd: usd), legacy: product["spx_price"].string)
@@ -125,7 +126,7 @@ struct ProductDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 TabView { ForEach(images, id: \.self) { CachedImage(source: $0).frame(maxWidth: .infinity, maxHeight: .infinity).background(.white) } }
-                    .tabViewStyle(.page).frame(height: 340).background(.white)
+                    .tabViewStyle(.page).aspectRatio(1, contentMode: .fit).background(.white)
                 VStack(alignment: .leading, spacing: 18) {
                     PriceLabel(cny: current["cny_price"].string, estimate: Money.estimate(cny: current["cny_price"].string, usd: usd), legacy: current["spx_price"].string)
                     Text(current.name).font(.title2.bold())
@@ -148,7 +149,7 @@ struct ProductDetailView: View {
                 HStack(spacing: 18) {
                     Button { toggleFavorite() } label: { Image(systemName: favorite ? "heart.fill" : "heart").font(.title2) }.accessibilityLabel("收藏").disabled(favoriteBusy)
                     NavigationLink { CheckoutView(product: current) } label: { Text("立即购买").fontWeight(.semibold).frame(maxWidth: .infinity).padding(14).background(SPXColor.primary, in: RoundedRectangle(cornerRadius: 15)).foregroundStyle(.white) }.disabled(current["stock"].int < 1)
-                }.padding().background(.bar)
+                }.padding().background(SPXColor.card)
             }
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Menu { Button("分享给朋友", systemImage: "bubble.left") { shareInChat = true }; if let url = URL(string: "https://spx001.top/spxchat/product-share.php?id=\(current.id)") { ShareLink(item: url) }; Button("举报商品") { report = true } } label: { Image(systemName: "ellipsis") } } }
             .sheet(isPresented: $shareInChat) { ForwardMessageView(message: Record(["message_type": "product", "content": .string(String(data: (try? JSONEncoder().encode(Record(["product_id": current["id"]]))) ?? Data(), encoding: .utf8) ?? "")])) }
@@ -177,8 +178,24 @@ struct ShopsView: View {
     @State private var busy = false
     @State private var error: String?
     var body: some View {
-        List { ForEach(rows) { shop in NavigationLink { ShopDetailView(id: shop.id) } label: { HStack { Avatar(url: shop.avatar, name: shop.name); VStack(alignment: .leading) { Text(shop.name).font(.headline); Text(shop["category"].string).font(.caption).foregroundStyle(.secondary) } } } }; if more { Button(busy ? "正在加载…" : "加载更多") { Task { await load(reset: false) } }.disabled(busy) } }
-            .navigationTitle("优选店铺").searchable(text: $query).task(id: query) { do { try await Task.sleep(for: .milliseconds(300)); await load(reset: true) } catch { } }.errorAlert($error)
+        SPXDetailPage {
+            SPXPageHeading(title: "优选店铺", subtitle: "发现好店，浏览店铺商品与服务", icon: "store")
+            ForEach(rows) { shop in
+                NavigationLink { ShopDetailView(id: shop.id) } label: {
+                    SPXCard { HStack(spacing: 14) {
+                        Avatar(url: shop.avatar, name: shop.name, size: 56)
+                        VStack(alignment: .leading, spacing: 7) { Text(shop.name).font(.system(size: 17, weight: .semibold)).foregroundStyle(SPXColor.ink); if !shop["category"].string.isEmpty { Text(shop["category"].string).font(.system(size: 12)).foregroundStyle(SPXColor.muted) } }
+                        Spacer(minLength: 8); SPXIcon("chevron").frame(width: 14, height: 14).foregroundStyle(SPXColor.muted)
+                    } }
+                }.buttonStyle(.plain)
+            }
+            if busy && rows.isEmpty { ProgressView("正在加载店铺…").frame(maxWidth: .infinity).padding(24) }
+            if !busy && rows.isEmpty && error == nil { EmptyState(title: query.isEmpty ? "暂无店铺" : "没有找到相关店铺", description: "试试其他店铺名称或关键词", icon: "storefront") }
+            if more && !rows.isEmpty { Button(busy ? "正在加载…" : "加载更多") { Task { await load(reset: false) } }.frame(maxWidth: .infinity, minHeight: 44).disabled(busy) }
+            if let error { ErrorBanner(message: error); Button("重新加载") { Task { await load(reset: true) } }.frame(maxWidth: .infinity, minHeight: 44).disabled(busy) }
+        }.navigationTitle("优选店铺").searchable(text: $query, prompt: "搜索店铺")
+            .task(id: query) { do { try await Task.sleep(for: .milliseconds(300)); await load(reset: true) } catch { } }
+            .refreshable { await load(reset: true) }
     }
     private func load(reset: Bool) async {
         if !reset && busy { return }
@@ -198,11 +215,30 @@ struct ShopDetailView: View {
     let id: Int
     @State private var shop = Record()
     @State private var error: String?
+    @State private var loading = true
     var body: some View {
-        List {
-            Section { HStack { Avatar(url: shop.avatar, name: shop.name, size: 64); Text(shop.name).font(.title2.bold()) }; Text(shop["description"].string); InfoRow(title: "营业时间", value: shop["business_hours"].string); InfoRow(title: "地址", value: shop["address"].string) }
-            Section { NavigationLink("浏览店铺商品") { MallHomeView(merchantID: id) }; ShopNavigationButton(shop: shop); if let url = URL(string: "tel:\(shop["contact_phone"].string)"), !shop["contact_phone"].string.isEmpty { Link("联系店铺", destination: url) } }
-        }.navigationTitle("店铺").task { do { shop = try await APIClient.shared.get("shop", ["id": String(id)])["shop"].record } catch { self.error = error.localizedDescription } }.errorAlert($error)
+        SPXDetailPage {
+            if shop.id > 0 {
+                SPXCard { VStack(alignment: .leading, spacing: 18) {
+                    HStack(spacing: 16) { Avatar(url: shop.avatar, name: shop.name, size: 72); VStack(alignment: .leading, spacing: 8) { Text(shop.name).font(.system(size: 23, weight: .bold)).foregroundStyle(SPXColor.ink); if !shop["category"].string.isEmpty { SPXStatusPill(title: shop["category"].string, color: SPXColor.commerce) } } }
+                    if !shop["description"].string.isEmpty { Divider(); Text(shop["description"].string).font(.system(size: 14)).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true) }
+                } }
+                SPXSectionTitle(title: "门店信息")
+                SPXCard { VStack(alignment: .leading, spacing: 16) { InfoRow(title: "营业时间", value: shop["business_hours"].string); Divider(); InfoRow(title: "门店地址", value: shop["address"].string); ShopNavigationButton(shop: shop) } }
+                if let url = URL(string: "tel:\(shop["contact_phone"].string)"), !shop["contact_phone"].string.isEmpty {
+                    Link(destination: url) { SPXCard { SPXSettingsRow(title: "联系店铺", icon: "phone", detail: shop["contact_phone"].string) } }.buttonStyle(.plain)
+                }
+            } else if loading { ProgressView("正在读取店铺资料…").frame(maxWidth: .infinity).padding(32) }
+            if let error { ErrorBanner(message: error); Button("重新读取店铺") { Task { await load() } }.frame(maxWidth: .infinity, minHeight: 44).disabled(loading) }
+        }.navigationTitle("店铺").safeAreaInset(edge: .bottom) {
+            if shop.id > 0 { SPXBottomAction { NavigationLink { MallHomeView(merchantID: id) } label: { Label("浏览店铺商品", systemImage: "bag") } } }
+        }.task { await load() }.refreshable { await load() }
+    }
+    private func load() async {
+        loading = true; defer { loading = false }
+        do { shop = try await APIClient.shared.get("shop", ["id": String(id)])["shop"].record; error = nil }
+        catch is CancellationError { }
+        catch { self.error = error.localizedDescription }
     }
 }
 
@@ -210,5 +246,27 @@ struct ProductReviewsView: View {
     let productID: Int
     @State private var rows: [Record] = []
     @State private var error: String?
-    var body: some View { List { ForEach(rows.indices, id: \.self) { index in let review = rows[index]; VStack(alignment: .leading, spacing: 8) { HStack { Text(review["nickname"].string); Spacer(); Text(String(repeating: "★", count: min(5, max(0, review["rating"].int)))).foregroundStyle(.orange) }; Text(review["content"].string); Text(review["created_at"].string).font(.caption).foregroundStyle(.secondary) } }; if rows.isEmpty { EmptyState(title: "暂无评价") } }.navigationTitle("商品评价").task { do { rows = try await APIClient.shared.get("product.reviews", ["product_id": String(productID)]).list } catch { self.error = error.localizedDescription } }.errorAlert($error) }
+    @State private var loading = true
+    var body: some View {
+        SPXDetailPage {
+            SPXPageHeading(title: "商品评价", subtitle: "查看买家的使用反馈", icon: "star")
+            ForEach(rows.indices, id: \.self) { index in
+                let review = rows[index]
+                SPXCard { VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 12) { Avatar(url: review.avatar, name: review["nickname"].string, size: 40); VStack(alignment: .leading, spacing: 6) { Text(review["nickname"].string).font(.system(size: 14, weight: .semibold)); HStack(spacing: 3) { ForEach(0..<5, id: \.self) { star in Image(systemName: star < min(5, max(0, review["rating"].int)) ? "star.fill" : "star").font(.system(size: 11)).foregroundStyle(.orange) } }.accessibilityLabel("\(min(5, max(0, review["rating"].int))) 星评价") }; Spacer(minLength: 0) }
+                    Text(review["content"].string).font(.system(size: 15)).foregroundStyle(SPXColor.ink).fixedSize(horizontal: false, vertical: true)
+                    Text(review["created_at"].string).font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+                } }
+            }
+            if loading { ProgressView("正在读取评价…").frame(maxWidth: .infinity).padding(24) }
+            if !loading && rows.isEmpty && error == nil { EmptyState(title: "暂无评价", description: "买家完成订单后可留下评价", icon: "star.bubble") }
+            if let error { ErrorBanner(message: error); Button("重新读取评价") { Task { await load() } }.frame(maxWidth: .infinity, minHeight: 44).disabled(loading) }
+        }.navigationTitle("商品评价").task { await load() }.refreshable { await load() }
+    }
+    private func load() async {
+        loading = true; defer { loading = false }
+        do { rows = try await APIClient.shared.get("product.reviews", ["product_id": String(productID)]).list; error = nil }
+        catch is CancellationError { }
+        catch { self.error = error.localizedDescription }
+    }
 }

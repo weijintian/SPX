@@ -51,7 +51,7 @@ struct CallOverlay: View {
                             }
                             HStack(spacing: 90) {
                                 control(call.connected ? "挂断" : call.outgoing ? "取消" : "拒绝", icon: "phone.down.fill", color: .red) { model.end() }
-                                if !call.outgoing && !call.connected { control("接听", icon: call.video ? "video.fill" : "phone.fill", color: .green) { model.answer() } }
+                                if !call.outgoing && !call.connected { control(model.answering ? "接通中…" : "接听", icon: call.video ? "video.fill" : "phone.fill", color: .green) { model.answer() }.disabled(model.answering) }
                             }.padding(.top, 15).padding(.bottom, 45)
                         }.padding(.horizontal, 24).foregroundStyle(.white)
                     }
@@ -66,7 +66,7 @@ struct CallOverlay: View {
     }
     @ViewBuilder private func duration(_ call: ActiveCall) -> some View {
         if let start = call.startedAt { Text(start, style: .timer) }
-        else { Text(call.outgoing ? "正在等待对方接听…" : "邀请你进行\(call.video ? "视频" : "语音")通话") }
+        else { Text(model.answering ? "正在接通…" : call.outgoing ? "正在等待对方接听…" : "邀请你进行\(call.video ? "视频" : "语音")通话") }
     }
     private func control(_ title: String, icon: String, active: Bool = false, color: Color? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) { VStack(spacing: 10) { Image(systemName: icon).font(.system(size: 25)).frame(width: 64, height: 64).background(color ?? (active ? Color.white.opacity(0.35) : Color.white.opacity(0.14)), in: Circle()); Text(title).font(.caption) } }.buttonStyle(.plain).accessibilityLabel(title)

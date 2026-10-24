@@ -6,32 +6,39 @@ struct RedPacketHistoryView: View {
     @State private var filter = "all"
     @State private var error: String?
     var body: some View {
-        List {
-            Section { Picker("红包记录", selection: $filter) { Text("全部").tag("all"); Text("收到").tag("received"); Text("发出").tag("sent") }.pickerStyle(.segmented) }
+        SPXDetailPage {
+            SPXPageHeading(title: "红包记录", subtitle: "查看收发明细与领取状态", icon: "gift", color: .red)
+            SPXFilterTabs(options: [("all", "全部"), ("received", "收到"), ("sent", "发出")], selection: $filter)
             ForEach(state.rows, id: \.fields) { packet in
-                Button {
+                SPXCard { Button {
                     NotificationCenter.default.post(name: .spxOpenPacket, object: packet["id"].string)
                 } label: {
-                    HStack(spacing: 14) {
+                    VStack(alignment: .leading, spacing: 14) {
+                      HStack(spacing: 14) {
                         Image(systemName: "gift.fill").font(.title2).foregroundStyle(.red).frame(width: 48, height: 48)
                             .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(packet["greeting"].string).font(.subheadline.weight(.medium)).lineLimit(1).foregroundStyle(.primary)
+                            Text(packet["greeting"].string.isEmpty ? "恭喜发财，大吉大利" : packet["greeting"].string).font(.subheadline.weight(.medium)).lineLimit(2).foregroundStyle(SPXColor.ink)
                             Text(detail(packet)).font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 4)
-                        VStack(alignment: .trailing, spacing: 6) {
-                            Text(DisplayLabels.amount(packet[filter == "received" ? "my_amount" : "total_amount"].string) + " SPX001").font(.caption.weight(.semibold)).foregroundStyle(.primary)
-                            Text(status(packet)).font(.caption2).foregroundStyle(.secondary)
-                        }
-                    }.padding(.vertical, 5)
-                }.buttonStyle(.plain)
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(SPXColor.muted)
+                      }
+                      Divider()
+                      HStack(alignment: .firstTextBaseline) {
+                          Text(DisplayLabels.amount(packet[filter == "received" ? "my_amount" : "total_amount"].string)).font(.system(size: 21, weight: .semibold)).foregroundStyle(SPXColor.ink).monospacedDigit()
+                          Text("SPX001").font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+                          Spacer()
+                          SPXStatusPill(title: status(packet), color: packet["status"].string == "active" ? .red : SPXColor.muted)
+                      }
+                    }.contentShape(Rectangle())
+                }.buttonStyle(.plain) }
             }
             if state.busy { ProgressView().frame(maxWidth: .infinity) }
             else if state.page > 0, state.rows.isEmpty, error == nil { EmptyState(title: "暂无红包记录", icon: "gift") }
             if let error { ErrorBanner(message: error); Button("重新加载") { Task { await load(reset: state.page == 0) } } }
-            if state.more { Button("加载更多") { Task { await load(reset: false) } }.disabled(state.busy) }
-            Section { Text("向下加载可查看更早的红包记录。点击可查看领取情况，金额与退款以服务器记录为准。").font(.footnote).foregroundStyle(.secondary) }
+            if state.more && !state.rows.isEmpty { Button("加载更多") { Task { await load(reset: false) } }.disabled(state.busy).frame(maxWidth: .infinity, minHeight: 44) }
+            Text("点击红包查看领取情况，金额与退款以服务器记录为准。").font(.footnote).foregroundStyle(SPXColor.muted)
         }.navigationTitle("红包记录").spxPage().task(id: filter) { await load(reset: true) }.refreshable { await load(reset: true) }
     }
     private func detail(_ packet: Record) -> String {

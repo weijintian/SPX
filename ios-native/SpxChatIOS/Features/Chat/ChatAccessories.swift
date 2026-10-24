@@ -22,16 +22,23 @@ struct MemberMentionPicker: View {
     @State private var error: String?
     var body: some View {
         NavigationStack {
-            List {
-                Button { selected(Record(["id": -1, "nickname": "全体成员"])) } label: { Label("全体成员", systemImage: "person.3.fill").padding(.vertical, 10) }
-                Section(query.isEmpty ? "群成员 · 默认显示前 5 位" : "搜索结果") {
+            SPXDetailPage {
+                SPXCard { Button { selected(Record(["id": -1, "nickname": "全体成员"])) } label: {
+                    SPXSettingsRow(title: "全体成员", icon: "person.3.fill", detail: "提醒群内成员")
+                }.buttonStyle(.plain) }
+                SPXSectionTitle(title: query.isEmpty ? "群成员" : "搜索结果", detail: query.isEmpty ? "默认显示前 5 位" : "按名字查找")
                 ForEach(results, id: \.fields) { member in
-                    Button { selected(member) } label: { HStack(spacing: 12) { Avatar(url: member.avatar, name: member.name, size: 42); Text(member.name).foregroundStyle(.primary); Spacer(); Image(systemName: "at").foregroundStyle(SPXColor.primary) }.padding(.vertical, 4) }
+                    SPXCard { Button { selected(member) } label: {
+                        HStack(spacing: 12) {
+                            Avatar(url: member.avatar, name: member.name, size: 44)
+                            Text(member.name).font(.system(size: 15)).foregroundStyle(SPXColor.ink).frame(maxWidth: .infinity, alignment: .leading)
+                            Image(systemName: "at").font(.system(size: 18, weight: .medium)).foregroundStyle(SPXColor.primary)
+                        }.frame(minHeight: 44).contentShape(Rectangle())
+                    }.buttonStyle(.plain) }
                 }
-                }
-                if loading { ProgressView().frame(maxWidth: .infinity) }
-                if let error { Text(error).font(.footnote).foregroundStyle(.secondary) }
-                if !loading && results.isEmpty { Text("没有找到匹配的群友").foregroundStyle(.secondary) }
+                if loading { ProgressView("正在查找群友…").frame(maxWidth: .infinity).padding() }
+                if let error { ErrorBanner(message: error) }
+                if !loading && results.isEmpty { EmptyState(title: "没有找到匹配的群友", description: "试试其他名字或备注", icon: "person.crop.circle.badge.questionmark") }
             }.navigationTitle("选择提醒的成员").searchable(text: $query).toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
                 .task(id: query) {
                     let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
