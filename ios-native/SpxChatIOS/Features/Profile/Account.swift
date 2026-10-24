@@ -128,13 +128,18 @@ struct BenefitsView: View {
 }
 
 struct UpdateHistoryView: View {
-    private var version: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.1" }
+    private var version: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.2" }
     private var build: String { Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "" }
     var body: some View {
         List {
             Section("当前安装版本") {
                 InfoRow(title: "iOS", value: "\(version) (\(build))")
                 Text("新版本请通过官方发布渠道重新下载安装。").font(.footnote).foregroundStyle(.secondary)
+            }
+            Section("1.0.2 · 2026-10-24") {
+                Label("修复登录连接的系统 HTTPS 信任校验", systemImage: "lock.shield")
+                Label("完善资金请求恢复、分页和历史记录展示", systemImage: "arrow.clockwise")
+                Label("优化商品价格、经营记录与报价到期提示", systemImage: "bag")
             }
             Section("1.0.1 · 2026-10-24") {
                 Label("使用系统公信 HTTPS 校验登录连接", systemImage: "lock.shield")
