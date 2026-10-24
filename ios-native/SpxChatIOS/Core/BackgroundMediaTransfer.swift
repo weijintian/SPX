@@ -3,7 +3,7 @@ import Foundation
 private struct BackgroundUploadRecord: Codable {
     let userID: Int
     let uploadID: String
-    let filePath: String
+    var filePath: String
     let totalBytes: Int
     let chunkSize: Int
     let totalChunks: Int
@@ -134,6 +134,19 @@ final class BackgroundMediaTransfer: NSObject, URLSessionDataDelegate, URLSessio
                           uploadID == nil || tag.uploadID == uploadID else { continue }
                     task.cancel()
                 }
+            }
+        }
+    }
+
+    func discard(userID: Int, uploadID: String) {
+        cancel(userID: userID, uploadID: uploadID)
+        stateQueue.async {
+            let key = "\(userID):\(uploadID)"
+            self.records[key] = nil; self.progressHandlers[key] = nil
+            if let url = try? self.recordURL(userID: userID, uploadID: uploadID) { try? FileManager.default.removeItem(at: url) }
+            if let directory = try? MediaFiles.directory(userID: userID, component: "upload-parts"),
+               let parts = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
+                for part in parts where part.lastPathComponent.hasPrefix(uploadID + "-") { try? FileManager.default.removeItem(at: part) }
             }
         }
     }
@@ -402,7 +415,8 @@ final class BackgroundMediaTransfer: NSObject, URLSessionDataDelegate, URLSessio
 
     private func loadRecord(at url: URL, userID: Int, uploadID: String) throws -> BackgroundUploadRecord? {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        let record = try JSONDecoder().decode(BackgroundUploadRecord.self, from: Data(contentsOf: url))
+        var record = try JSONDecoder().decode(BackgroundUploadRecord.self, from: Data(contentsOf: url))
+        record.filePath = try MediaFiles.restoredAttachment(URL(fileURLWithPath: record.filePath), userID: userID).path
         let attachmentRoot = try MediaFiles.directory(userID: userID, component: "attachments").standardizedFileURL
         let source = URL(fileURLWithPath: record.filePath).standardizedFileURL
         guard record.userID == userID, record.uploadID == uploadID,

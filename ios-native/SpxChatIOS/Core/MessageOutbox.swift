@@ -76,7 +76,11 @@ struct LiveOutboxTransport: OutboxTransport {
             let activeEpoch = epoch
             let restored: [PendingMessage] = await LocalStore.shared.read("outbox", userID: userID) ?? []
             guard activeEpoch == epoch else { return }
-            items = restored
+            items = restored.map { entry in
+                var value = entry
+                if let source = value.localURL { value.localURL = (try? MediaFiles.restoredAttachment(source, userID: userID)) ?? source }
+                return value
+            }
             durableIDs = Set(restored.map(\.id))
             for index in items.indices where items[index].state != .failed { items[index].state = .queued }
             acknowledgements = [:]
@@ -126,6 +130,7 @@ struct LiveOutboxTransport: OutboxTransport {
         guard let item = items.first(where: { $0.id == id }), item.state == .failed else { return }
         items.removeAll { $0.id == id }
         durableIDs.remove(id)
+        BackgroundMediaTransfer.shared.discard(userID: item.userID, uploadID: item.uploadID)
         if let url = item.localURL { try? FileManager.default.removeItem(at: url) }
         await persist()
     }
@@ -175,7 +180,14 @@ struct LiveOutboxTransport: OutboxTransport {
             update(item.id, state: .sending)
             let result = try await transport.send(scope: item.scope, body: payload)
             guard activeEpoch == epoch else { return }
-            let message = result["message"].object.isEmpty ? result.record : result["message"].record
+            var message = result["message"].object.isEmpty ? result.record : result["message"].record
+            // Send endpoints may return only an ID. Preserve the local content and media URL.
+            for (key, value) in payload where message[key] == .null { message[key] = value }
+            // Complete compact receipts for immediate local rendering.
+            message[item.scope == "group" ? "group_id" : "chat_id"] = .number(Decimal(item.targetID))
+            message["sender_id"] = .number(Decimal(item.userID))
+            message["client_message_id"] = .string(item.id)
+            message["local_created_at"] = .string(ISO8601DateFormatter().string(from: item.createdAt))
             guard message.id > 0 else { throw APIError.invalidResponse }
             acknowledgements[item.id] = message
             if acknowledgements.count > 200 { acknowledgements = [item.id: message] }

@@ -83,12 +83,21 @@ private struct LinkedUserView: View {
 }
 
 struct MainTabView: View {
+    @State private var selected = 0
+    @State private var roots = [UUID(), UUID(), UUID(), UUID()]
+    private var selection: Binding<Int> {
+        Binding(get: { selected }, set: { value in
+            // A tab tap always has a predictable destination: its root page.
+            roots[value] = UUID()
+            selected = value
+        })
+    }
     var body: some View {
-        TabView {
-            NavigationStack { ChatListView() }.tabItem { Label("聊天", systemImage: "bubble.left.and.bubble.right") }
-            NavigationStack { ContactsView() }.tabItem { Label("通讯录", systemImage: "person.crop.rectangle.stack") }
-            NavigationStack { EcosystemView() }.tabItem { Label("生态", systemImage: "square.grid.2x2") }
-            NavigationStack { ProfileView() }.tabItem { Label("我的", systemImage: "person.crop.circle") }
+        TabView(selection: selection) {
+            NavigationStack { ChatListView().toolbar(.visible, for: .tabBar) }.id(roots[0]).tabItem { Label("聊天", systemImage: "bubble.left.and.bubble.right") }.tag(0)
+            NavigationStack { ContactsView().toolbar(.visible, for: .tabBar) }.id(roots[1]).tabItem { Label("通讯录", systemImage: "person.crop.rectangle.stack") }.tag(1)
+            NavigationStack { EcosystemView().toolbar(.visible, for: .tabBar) }.id(roots[2]).tabItem { Label("生态", systemImage: "square.grid.2x2") }.tag(2)
+            NavigationStack { ProfileView().toolbar(.visible, for: .tabBar) }.id(roots[3]).tabItem { Label("我的", systemImage: "person.crop.circle") }.tag(3)
         }.tint(SPXColor.primary)
     }
 }

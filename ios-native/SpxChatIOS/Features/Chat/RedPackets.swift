@@ -17,6 +17,7 @@ struct RedPacketSendView: View {
     @State private var uncertain = false
     @State private var error: String?
     @State private var confirm = false
+    @State private var restored = false
     var body: some View {
         NavigationStack {
             Form {
@@ -26,21 +27,21 @@ struct RedPacketSendView: View {
                     TextField("总金额（SPX001）", text: $amount).keyboardType(.decimalPad)
                     TextField("祝福语", text: $greeting)
                     SecureField("账号密码", text: $password).textContentType(.password)
-                }.disabled(uncertain || busy)
+                }.disabled(!restored || uncertain || busy)
                 Section {
                     Text("红包到账至 SPX001 资产。普通红包按六位小数均分，未领取部分由服务器按到期规则退回。").font(.footnote).foregroundStyle(.secondary)
                     if uncertain { Button("核对上次发送结果") { resolve() } }
-                    else { Button(busy ? "发送中…" : "塞钱进红包") { confirm = true }.disabled(busy || !Money.positive(amount, scale: 6) || password.isEmpty) }
+                    else { Button(busy ? "发送中…" : "塞钱进红包") { confirm = true }.disabled(!restored || busy || !Money.positive(amount, scale: 6) || password.isEmpty) }
                 }
             }.navigationTitle("发红包").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() }.disabled(busy) } }
                 .tint(.red).errorAlert($error)
                 .confirmationDialog("确认发送 \(DisplayLabels.amount(amount)) SPX001，分为 \(count) 个红包？", isPresented: $confirm, titleVisibility: .visible) { Button("确认发送") { send() } }
-                .task { if let saved: String = await LocalStore.shared.read("redpacket-pending-\(scope)-\(targetID)", userID: session.user?.id ?? 0) { requestID = saved; uncertain = true } }
+                .task { if let saved: String = await LocalStore.shared.read("redpacket-pending-\(scope)-\(targetID)", userID: session.user?.id ?? 0) { requestID = saved; uncertain = true }; restored = true }
         }
     }
     private func send() {
-        guard !busy, let owner = session.user?.id, owner > 0 else { return }
+        guard restored, !busy, !uncertain, let owner = session.user?.id, owner > 0 else { return }
         guard greeting.count <= 50 else { error = "祝福语最多 50 字"; return }
         guard let total = Decimal(string: amount), total >= Decimal(count) * Decimal(string: "0.000001")! else { error = "每个红包至少 0.000001 SPX001"; return }
         if mode == "ordinary" { let each = total / Decimal(count); var raw = each; var rounded = Decimal(); NSDecimalRound(&rounded, &raw, 6, .down); guard rounded * Decimal(count) == total else { error = "普通红包需可按六位小数平均分配，请调整总额或个数"; return } }
@@ -48,8 +49,8 @@ struct RedPacketSendView: View {
         let payload: [String: JSON] = ["request_id": .string(requestID), "scope": .string(scope), "target_id": .number(Decimal(targetID)), "mode": .string(mode), "count": .number(Decimal(count)), "amount": .string(amount), "greeting": .string(greeting), "password": .string(password)]
         Task {
             defer { busy = false; password = "" }
-            do { try await LocalStore.shared.save(requestID, key: "redpacket-pending-\(scope)-\(targetID)", userID: owner) }
-            catch { self.error = "无法保存红包恢复记录，请检查设备存储后重试"; return }
+            do { try await LocalStore.shared.reservePending(requestID, key: "redpacket-pending-\(scope)-\(targetID)", userID: owner) }
+            catch { if let saved: String = await LocalStore.shared.read("redpacket-pending-\(scope)-\(targetID)", userID: owner) { requestID = saved; uncertain = true }; self.error = "已有待核对红包或存储不可用，请先核对结果"; return }
             do { guard session.user?.id == owner else { throw APIError.staleSession }; let result = try await APIClient.shared.post("redpackets.create", payload); guard session.user?.id == owner else { throw APIError.staleSession }; ChatSoundEffects.shared.packet(result["message"].record); await LocalStore.shared.remove("redpacket-pending-\(scope)-\(targetID)", userID: owner); dismiss() }
             catch {
                 if (error as? APIError)?.definitiveRejection == true { await LocalStore.shared.remove("redpacket-pending-\(scope)-\(targetID)", userID: owner); requestID = UUID().uuidString.lowercased(); self.error = error.localizedDescription }
@@ -80,7 +81,9 @@ struct RedPacketPopup: View {
                 Image(systemName: "gift.fill").font(.system(size: 38)).foregroundStyle(.yellow)
                 Text(packet["sender_name"].string.isEmpty ? "红包" : packet["sender_name"].string).font(.headline)
                 Text(packet["greeting"].string.isEmpty ? "恭喜发财，大吉大利" : packet["greeting"].string).font(.title3.weight(.medium)).multilineTextAlignment(.center)
-                if claimCompleted {
+                if !packet["my_amount"].string.isEmpty {
+                    Text("\(DisplayLabels.amount(packet["my_amount"].string)) SPX001").font(.title2.bold()).foregroundStyle(.yellow); Text("已存入资产").font(.footnote)
+                } else if claimCompleted {
                     Label("领取成功，正在更新状态", systemImage: "checkmark.circle.fill").foregroundStyle(.yellow)
                     Button(loading ? "正在刷新…" : "刷新领取状态") { load() }.font(.footnote.weight(.semibold)).disabled(loading || busy)
                 } else if packet["can_claim"].flag {

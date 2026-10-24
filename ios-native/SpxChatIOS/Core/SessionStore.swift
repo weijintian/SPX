@@ -161,8 +161,10 @@ import UIKit
     }
     func logout() async {
         guard !loading else { return }; loading = true; defer { loading = false }
-        do {try await APIClient.shared.post("auth.logout")} catch { }
+        let credential = token
         expire()
+        // Local logout is immediate, even when the server cannot be reached.
+        if let credential { await APIClient.shared.revokeSession(credential) }
     }
     func expire() {
         lifecycle = UUID()

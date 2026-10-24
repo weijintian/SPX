@@ -54,7 +54,7 @@ struct ProfileEditView: View {
             Section { Button(busy ? "保存中…" : "保存资料") { save() }.disabled(busy || nickname.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
         }.navigationTitle("个人资料").disabled(busy)
             .onAppear { nickname = session.user?["nickname"].string ?? ""; remark = session.user?["remark"].string ?? ""; avatar = session.user?.avatar ?? "" }
-            .onChange(of: selected) { _, item in guard let item else { return }; busy = true; Task { defer { busy = false }; do { let file = try await MediaFiles.select(item, userID: session.user?.id ?? 0); avatar = try await MediaUploader.shared.uploadForm(file: file, action: "upload.avatar"); try? FileManager.default.removeItem(at: file) } catch { self.error = error.localizedDescription } } }
+            .onChange(of: selected) { _, item in guard let item else { return }; busy = true; Task { defer { busy = false }; do { let file = try await MediaFiles.select(item, userID: session.user?.id ?? 0); defer { try? FileManager.default.removeItem(at: file) }; avatar = try await MediaUploader.shared.uploadForm(file: file, action: "upload.avatar"); try? FileManager.default.removeItem(at: file) } catch { self.error = error.localizedDescription } } }
     }
     private func save() { busy = true; Task { defer { busy = false }; do { try await APIClient.shared.post("profile.update", ["nickname": .string(nickname), "remark": .string(remark), "avatar_url": .string(avatar)]); try await session.refreshProfile(); dismiss() } catch { self.error = error.localizedDescription } } }
 }

@@ -189,34 +189,63 @@ struct ExchangeView: View {
     @State private var requestID = UUID().uuidString.lowercased()
     @State private var busy = false
     @State private var frozen = false
+    @State private var restored = false
     @State private var confirm = false
     @State private var error: String?
     var body: some View {
         Form {
-            Section("USDT → SPX001") { TextField("USDT 数量", text: $amount).keyboardType(.decimalPad).disabled(frozen || busy); InfoRow(title: "每 USDT 预计获得", value: DisplayLabels.amount(quote["spx_per_usdt"].string) + " SPX001"); InfoRow(title: "参考单价 USD", value: DisplayLabels.amount(quote["exchange_price_usd"].string)); InfoRow(title: "行情时间", value: quote["updated_at"].string); Text("实际成交由服务器按提交时行情计算。").font(.footnote).foregroundStyle(.secondary) }
-            if let error { ErrorBanner(message: error) }
-            Section { Button(frozen ? "核对 / 重试该次兑换" : "确认兑换") { confirm = true }.disabled(busy || !Money.positive(amount, scale: 18)); NavigationLink("兑换与交易记录") { WalletTransactionsView() } }
-        }.navigationTitle("兑换")
-            .task { do { quote = try await APIClient.shared.get("wallet.exchange.quote"); if let saved: Record = await LocalStore.shared.read("exchange-pending", userID: session.user?.id ?? 0) { requestID = saved["request_id"].string; amount = saved["amount"].string; frozen = true } } catch { self.error = error.localizedDescription } }
+            Section("USDT → SPX001") {
+                TextField("USDT 数量", text: $amount).keyboardType(.decimalPad).disabled(frozen || busy || !restored)
+                InfoRow(title: "每 USDT 预计获得", value: DisplayLabels.amount(quote["spx_per_usdt"].string) + " SPX001")
+                InfoRow(title: "参考单价 USD", value: DisplayLabels.amount(quote["exchange_price_usd"].string))
+                InfoRow(title: "行情时间", value: quote["updated_at"].string)
+                Text("实际成交由服务器按提交时行情计算。").font(.footnote).foregroundStyle(.secondary)
+            }
+            if !restored { ProgressView("正在恢复上次兑换…") }
+            if let error { ErrorBanner(message: error); Button("重新加载") { Task { await load() } }.disabled(busy) }
+            Section {
+                Button(frozen ? "核对 / 重试该次兑换" : "确认兑换") { confirm = true }
+                    .disabled(!restored || busy || (!frozen && quote.object.isEmpty) || !Money.positive(amount, scale: 18))
+                NavigationLink("兑换与交易记录") { WalletTransactionsView() }
+            }
+        }.navigationTitle("兑换").task { await load() }
             .confirmationDialog("确认将 \(DisplayLabels.amount(amount)) USDT 兑换为 SPX001？", isPresented: $confirm, titleVisibility: .visible) { Button("确认兑换") { exchange() } }
     }
+    private func load() async {
+        guard let owner = session.user?.id else { return }
+        // Recovery is independent of market availability and always runs first.
+        if let saved: Record = await LocalStore.shared.read("exchange-pending", userID: owner) {
+            guard session.user?.id == owner else { return }
+            requestID = saved["request_id"].string; amount = saved["amount"].string; frozen = true
+        }
+        restored = true
+        do { let result = try await APIClient.shared.get("wallet.exchange.quote"); guard session.user?.id == owner else { return }; quote = result; error = nil }
+        catch { if session.user?.id == owner { self.error = error.localizedDescription } }
+    }
     private func exchange() {
-        guard !busy, let owner = session.user?.id, owner > 0 else { return }
-        busy = true; frozen = true
+        guard restored, !busy, let owner = session.user?.id, owner > 0 else { return }
+        let wasFrozen = frozen
         let pending = Record(["request_id": .string(requestID), "amount": .string(amount)])
-        Task { defer { busy = false }
+        busy = true
+        Task {
+            defer { busy = false }
             do {
-                try await LocalStore.shared.save(pending, key: "exchange-pending", userID: owner)
-            } catch { frozen = false; self.error = "无法保存兑换恢复记录，请检查设备存储"; return }
+                if wasFrozen {
+                    let saved: Record? = await LocalStore.shared.read("exchange-pending", userID: owner)
+                    guard saved == pending else { throw APIError.server(409, "兑换记录已变化，请重新加载") }
+                } else { try await LocalStore.shared.reservePending(pending, key: "exchange-pending", userID: owner) }
+                frozen = true
+            } catch { self.error = error.localizedDescription; await load(); return }
             do {
                 guard session.user?.id == owner else { throw APIError.staleSession }
                 try await APIClient.shared.post("wallet.exchange", ["usdt_amount": pending["amount"], "request_id": pending["request_id"]])
-                await LocalStore.shared.remove("exchange-pending", userID: owner)
+                await LocalStore.shared.completePending(pending, key: "exchange-pending", userID: owner)
+                guard session.user?.id == owner else { return }
                 frozen = false; amount = ""; requestID = UUID().uuidString.lowercased(); error = "兑换已完成，请查看资产余额"
-            }
-            catch {
-                if (error as? APIError)?.definitiveRejection == true { await LocalStore.shared.remove("exchange-pending", userID: owner); frozen = false; requestID = UUID().uuidString.lowercased(); self.error = error.localizedDescription }
-                else { self.error = "兑换结果待核对，重试将沿用同一请求编号。\(error.localizedDescription)" }
+            } catch {
+                guard session.user?.id == owner else { return }
+                // An old delayed request may still complete. Never replace its ID after a retry fails.
+                self.error = "兑换结果待核对，重试将沿用同一请求编号。\(error.localizedDescription)"
             }
         }
     }

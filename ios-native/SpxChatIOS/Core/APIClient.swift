@@ -31,6 +31,13 @@ actor APIClient {
         configuration.timeoutIntervalForResource = 300
         session = URLSession(configuration:configuration, delegate: ServerTrustDelegate.shared, delegateQueue: nil)
     }
+    func revokeSession(_ credential: String) async {
+        guard var request = try? URLRequest(url: requestURL("auth.logout")) else { return }
+        request.httpMethod = "POST"; request.timeoutInterval = 8
+        request.setValue("Bearer \(credential)", forHTTPHeaderField: "Authorization")
+        // This is the old credential. Never decode its 401 as a logout of the next account.
+        _ = try? await session.data(for: request)
+    }
     func setToken(_ value:String?) { guard token != value else { return }; token = value; generation = UUID() }
     func sessionIdentity() -> UUID { generation }
     func endpoint() throws -> URL {

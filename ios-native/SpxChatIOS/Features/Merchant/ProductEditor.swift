@@ -1,6 +1,13 @@
 import SwiftUI
 import PhotosUI
 
+struct ProductVideoPending: Codable, Equatable {
+    let userID: Int
+    let uploadID: String
+    let source: URL
+    var file: URL { (try? MediaFiles.restoredAttachment(source, userID: userID)) ?? source }
+}
+
 struct ProductVariant: Identifiable {
     var id = UUID().uuidString.lowercased()
     var name = ""
@@ -25,6 +32,8 @@ struct PublishProductView: View {
     @State private var mainPicker: [PhotosPickerItem] = []
     @State private var detailPicker: [PhotosPickerItem] = []
     @State private var videoPicker: PhotosPickerItem?
+    @State private var pendingVideo: ProductVideoPending?
+    private var videoRecoveryKey: String { localKey + "-video-upload" }
     @State private var variants: [ProductVariant] = []
     @State private var appointment = false
     @State private var draft = 0
@@ -121,6 +130,7 @@ struct PublishProductView: View {
         savedFingerprint = snapshot
         recovery = await LocalStore.shared.read(localKey, userID: session.user?.id ?? 0)
         restored = true
+        pendingVideo = await LocalStore.shared.read(videoRecoveryKey, userID: session.user?.id ?? 0)
         if let config = try? await APIClient.shared.get("mall.config") {
             let configured = config["categories"].array.map(\.string)
             if !configured.isEmpty { categories = configured }
@@ -177,6 +187,7 @@ struct PublishProductView: View {
         let owner = session.user?.id ?? 0
         Task {
             await LocalStore.shared.remove(localKey, userID: owner)
+            if let pendingVideo { await discardVideo(pendingVideo) }
             dismiss()
         }
     }
@@ -228,7 +239,15 @@ struct PublishProductView: View {
             PhotosPicker(selection: $detailPicker, maxSelectionCount: max(1, 20 - detailImages.count), matching: .images) { Label("批量添加详情图", systemImage: "photo.stack") }.disabled(detailImages.count >= 20)
             imageStrip($detailImages)
             field("video_url", "商品视频 URL（选填）")
-            PhotosPicker(selection: $videoPicker, matching: .videos) { Label("从相册选择商品视频", systemImage: "video.badge.plus") }
+            PhotosPicker(selection: $videoPicker, matching: .videos) { Label("从相册选择商品视频", systemImage: "video.badge.plus") }.disabled(pendingVideo != nil)
+            if let pendingVideo {
+                Label("有未完成的商品视频上传", systemImage: "arrow.triangle.2.circlepath").font(.subheadline)
+                HStack {
+                    Button("继续上传") { Task { await resumeVideo(pendingVideo) } }
+                    Spacer()
+                    Button("放弃视频", role: .destructive) { Task { await discardVideo(pendingVideo) } }
+                }
+            }
             if !(values["video_url"] ?? "").isEmpty { Button("移除商品视频", role: .destructive) { values["video_url"] = "" } }
             field("parameters", "商品参数", multiline: true)
             field("service_terms", "售后与服务条款", multiline: true)
@@ -281,23 +300,49 @@ struct PublishProductView: View {
         guard !busy else { return }; busy = true; defer { busy = false; progress = ""; if detail { detailPicker = [] } else { mainPicker = [] } }
         for (index, item) in selected.enumerated() {
             if detail ? detailImages.count >= 20 : images.count >= 8 { break }
-            do { progress = "正在上传 \(index + 1)/\(selected.count)"; let file = try await MediaFiles.select(item, userID: session.user?.id ?? 0); let remote = try await MediaUploader.shared.uploadForm(file: file, action: "merchant.media.upload"); if detail { detailImages.append(remote) } else { images.append(remote) }; try? FileManager.default.removeItem(at: file) }
+            do { progress = "正在上传 \(index + 1)/\(selected.count)"; let file = try await MediaFiles.select(item, userID: session.user?.id ?? 0); defer { try? FileManager.default.removeItem(at: file) }; let remote = try await MediaUploader.shared.uploadForm(file: file, action: "merchant.media.upload"); if detail { detailImages.append(remote) } else { images.append(remote) }; try? FileManager.default.removeItem(at: file) }
             catch { self.error = error.localizedDescription; break }
         }
     }
-    private func uploadVideo(_ item: PhotosPickerItem) async {
-        guard !busy else { return }; busy = true; progress = "正在准备商品视频…"
+    @MainActor private func uploadVideo(_ item: PhotosPickerItem) async {
+        guard !busy, pendingVideo == nil, let owner = session.user?.id, owner > 0 else { return }
+        busy = true; progress = "正在准备商品视频…"
         defer { busy = false; progress = ""; videoPicker = nil }
         do {
-            let file = try await MediaFiles.select(item, userID: session.user?.id ?? 0)
-            defer { try? FileManager.default.removeItem(at: file) }
-            let result = try await MediaUploader.shared.upload(file: file, userID: session.user?.id ?? 0, uploadID: UUID().uuidString.lowercased()) { value in Task { @MainActor in progress = "商品视频上传 \(Int(value * 100))%" } }
-            guard result["message_type"].string == "video" else { throw APIError.server(422, "请选择支持的视频格式") }
-            values["video_url"] = result["url"].string
+            let file = try await MediaFiles.select(item, userID: owner)
+            let pending = ProductVideoPending(userID: owner, uploadID: UUID().uuidString.lowercased(), source: file)
+            do { try await LocalStore.shared.save(pending, key: videoRecoveryKey, userID: owner) }
+            catch { try? FileManager.default.removeItem(at: file); throw error }
+            pendingVideo = pending
+            try await transferVideo(pending)
         } catch { self.error = error.localizedDescription }
+    }
+    @MainActor private func resumeVideo(_ pending: ProductVideoPending) async {
+        guard !busy, session.user?.id == pending.userID else { return }
+        busy = true; progress = "正在恢复商品视频上传…"; error = nil
+        defer { busy = false; progress = "" }
+        do { try await transferVideo(pending) } catch { self.error = error.localizedDescription }
+    }
+    @MainActor private func transferVideo(_ pending: ProductVideoPending) async throws {
+        let result = try await MediaUploader.shared.upload(file: pending.file, userID: pending.userID, uploadID: pending.uploadID) { value in
+            Task { @MainActor in if pendingVideo?.uploadID == pending.uploadID { progress = "商品视频上传 \(Int(value * 100))%" } }
+        }
+        guard session.user?.id == pending.userID else { throw APIError.staleSession }
+        guard result["message_type"].string == "video", !result["url"].string.isEmpty else { throw APIError.server(422, "请选择支持的视频格式") }
+        values["video_url"] = result["url"].string
+        // Persist the remote URL before removing the recoverable source and upload ID.
+        try await LocalStore.shared.save(snapshot, key: localKey, userID: pending.userID)
+        await discardVideo(pending)
+    }
+    @MainActor private func discardVideo(_ pending: ProductVideoPending) async {
+        BackgroundMediaTransfer.shared.discard(userID: pending.userID, uploadID: pending.uploadID)
+        await LocalStore.shared.remove(videoRecoveryKey, userID: pending.userID)
+        try? FileManager.default.removeItem(at: pending.file)
+        if pendingVideo?.uploadID == pending.uploadID { pendingVideo = nil }
     }
     private func save(publishing: Bool) {
         guard !busy else { return }
+        guard pendingVideo == nil else { error = "请先继续上传或放弃未完成的商品视频"; return }
         if publishing {
             guard (values["name"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).count <= 150 else { error = "商品名称最多 150 字"; return }
             guard !(values["name"] ?? "").isEmpty, !(values["description"] ?? "").isEmpty, Money.positive(values["cny_price"] ?? ""), let stock = Int(values["stock"] ?? ""), (0...1_000_000).contains(stock), values["consultation_group_code"]?.count == 6, !images.isEmpty else { error = "请完善名称、描述、人民币售价、库存、咨询群号及至少一张主图"; return }

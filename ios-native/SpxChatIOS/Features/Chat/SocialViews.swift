@@ -141,13 +141,54 @@ struct GroupJoinView: View {
     var initialCode = ""
     @State private var code = ""
     @State private var result: Record?
+    @State private var resultCode = ""
+    @State private var requestID = UUID()
+    @State private var searching = false
+    @State private var joining = false
     @State private var chat: Record?
     @State private var error: String?
+    private var normalizedCode: String { code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() }
     var body: some View {
         Form {
-            Section { TextField("六位群号", text: $code).textInputAutocapitalization(.characters); Button("查找群组") { Task { do { result = try await APIClient.shared.get("groups.search", ["group_code": code.uppercased()]).record } catch { self.error = error.localizedDescription } } }.disabled(code.count != 6) }
-            if let result { Section { HStack { Avatar(url: result.avatar, name: result.name); Text(result.name) }; Text(result["announcement"].string); Button("加入群组") { Task { do { let response = try await APIClient.shared.post("groups.join", ["group_code": .string(code.uppercased())]); var item = result; item["id"] = response["group_id"].int > 0 ? response["group_id"] : result["id"]; chat = item } catch { self.error = error.localizedDescription } } } } }
-        }.navigationTitle("加入群组").navigationDestination(item: $chat) { ChatDetailView(item: $0, isGroup: true) }.onAppear { if code.isEmpty { code = initialCode } }.errorAlert($error)
+            Section {
+                TextField("六位群号", text: $code).textInputAutocapitalization(.characters).autocorrectionDisabled().disabled(joining)
+                Button(searching ? "查找中…" : "查找群组") { search() }.disabled(searching || joining || normalizedCode.count != 6)
+            }
+            if let result, resultCode == normalizedCode {
+                Section {
+                    HStack { Avatar(url: result.avatar, name: result.name); Text(result.name) }
+                    Text(result["announcement"].string)
+                    Button(joining ? "加入中…" : "加入群组") { join(result, code: resultCode) }.disabled(joining)
+                }
+            }
+        }.navigationTitle("加入群组").navigationDestination(item: $chat) { ChatDetailView(item: $0, isGroup: true) }
+            .onAppear { if code.isEmpty { code = initialCode } }
+            .onChange(of: code) { _, _ in result = nil; resultCode = ""; requestID = UUID(); searching = false }
+            .errorAlert($error)
+    }
+    private func search() {
+        let query = normalizedCode, identity = UUID(); requestID = identity; searching = true
+        Task {
+            defer { if requestID == identity { searching = false } }
+            do {
+                let value = try await APIClient.shared.get("groups.search", ["group_code": query]).record
+                guard requestID == identity, query == normalizedCode else { return }
+                guard value.id > 0 else { throw APIError.server(404, "未找到该群组") }
+                result = value; resultCode = query
+            } catch { if requestID == identity { self.error = error.localizedDescription } }
+        }
+    }
+    private func join(_ result: Record, code query: String) {
+        guard !joining, query == normalizedCode, query == resultCode else { return }
+        joining = true
+        Task {
+            defer { joining = false }
+            do {
+                let response = try await APIClient.shared.post("groups.join", ["group_code": .string(query)])
+                var item = result; item["id"] = response["group_id"].int > 0 ? response["group_id"] : result["id"]
+                chat = item
+            } catch { self.error = error.localizedDescription }
+        }
     }
 }
 

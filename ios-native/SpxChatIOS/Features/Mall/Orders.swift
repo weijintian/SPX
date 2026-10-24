@@ -1,7 +1,7 @@
 import SwiftUI
 import PhotosUI
 
-struct PendingCheckout: Codable {
+struct PendingCheckout: Codable, Equatable {
     let quoteID: String
     let requestID: String
 }
@@ -17,6 +17,7 @@ struct CheckoutView: View {
     @State private var quote: JSON = .null
     @State private var quoteExpiresAt: Date?
     @State private var pending: PendingCheckout?
+    @State private var restored = false
     @State private var orderID = 0
     @State private var busy = false
     @State private var confirm = false
@@ -59,37 +60,44 @@ struct CheckoutView: View {
             if let error { Section { ErrorBanner(message: error) } }
             Section {
                 if pending != nil { Button(busy ? "正在核对…" : "核对上次支付结果") { resolve() }.disabled(busy) }
-                else { Button(busy ? "请稍候…" : "核对报价并继续") { prepare() }.disabled(busy || availableStock < 1 || (physical && addressID == 0) || (!variants.isEmpty && variantID.isEmpty)) }
+                else { Button(busy ? "请稍候…" : "核对报价并继续") { prepare() }.disabled(!restored || busy || availableStock < 1 || (physical && addressID == 0) || (!variants.isEmpty && variantID.isEmpty)) }
             }
         }.navigationTitle("确认订单").navigationBarTitleDisplayMode(.inline)
             .onChange(of: variantID) { _, _ in quantity = min(quantity, max(1, min(99, availableStock))); quote = .null }
             .onChange(of: quantity) { _, _ in quote = .null }
             .onChange(of: addressID) { _, _ in quote = .null }
-            .task { await loadAddresses(); pending = await LocalStore.shared.read("checkout-pending", userID: session.user?.id ?? 0) }
-            .onAppear { Task { await loadAddresses() } }
+            .task {
+                guard let owner = session.user?.id else { return }
+                pending = await LocalStore.shared.read("checkout-pending", userID: owner)
+                guard session.user?.id == owner else { return }
+                restored = true
+                await loadAddresses()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .spxAddressChanged)) { _ in Task { await loadAddresses() } }
             .confirmationDialog("确认支付 \(DisplayLabels.amount(quote["total_spx"].string)) SPX001？", isPresented: $confirm, titleVisibility: .visible) { Button("确认支付") { pay() }; Button("取消", role: .cancel) { } }
             .navigationDestination(isPresented: Binding(get: { orderID > 0 }, set: { if !$0 { orderID = 0 } })) { OrderDetailView(id: orderID) }
     }
     private func loadAddresses() async { guard physical else { return }; do { addresses = try await APIClient.shared.get("wallet.address").list; if addressID == 0 { addressID = addresses.first(where: { $0["is_default"].flag })?.id ?? addresses.first?.id ?? 0 } } catch { self.error = error.localizedDescription } }
     private func prepare() {
+        guard restored, !busy, pending == nil else { return }
         busy = true; error = nil
         Task { defer { busy = false }; do { let quoteStarted = Date(); quote = try await APIClient.shared.post("checkout.quote", ["product_id": .number(Decimal(product.id)), "variant_id": .string(variantID), "quantity": .number(Decimal(quantity)), "address_id": .number(Decimal(addressID)), "buyer_note": .string(note)]); guard quote["quote_id"].string.count == 32 else { throw APIError.invalidResponse }; quoteExpiresAt = quoteStarted.addingTimeInterval(TimeInterval(quote["expires_in"].int)); confirm = true } catch { self.error = error.localizedDescription } }
     }
     private func pay() {
-        guard !busy, pending == nil, let owner = session.user?.id, owner > 0 else { return }
+        guard restored, !busy, pending == nil, let owner = session.user?.id, owner > 0 else { return }
         guard let quoteExpiresAt, quoteExpiresAt > Date() else { quote = .null; error = "报价已到期，请重新核对后支付。"; return }
         let transaction = PendingCheckout(quoteID: quote["quote_id"].string, requestID: UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())
         pending = transaction; busy = true
         Task {
             defer { busy = false }
-            do { try await LocalStore.shared.save(transaction, key: "checkout-pending", userID: owner) } catch { pending = nil; self.error = "无法保存支付恢复记录，请检查设备存储后重试。"; return }
+            do { try await LocalStore.shared.reservePending(transaction, key: "checkout-pending", userID: owner) } catch { pending = await LocalStore.shared.read("checkout-pending", userID: owner); self.error = "无法创建新的支付，请先核对上次结果或检查设备存储。"; return }
             do { guard session.user?.id == owner else { throw APIError.staleSession }; let result = try await APIClient.shared.post("orders.redeem", ["quote_id": .string(transaction.quoteID), "client_request_id": .string(transaction.requestID)]); guard result["order_id"].int > 0 else { throw APIError.invalidResponse }; await complete(result["order_id"].int, owner: owner) }
             catch { self.error = "支付结果需要核对，请勿重复提交。\(error.localizedDescription)" }
         }
     }
     private func resolve() {
         guard !busy, let pending, let owner = session.user?.id else { return }; busy = true
-        Task { defer { busy = false }; do { let result = try await APIClient.shared.post("checkout.resolve", ["quote_id": .string(pending.quoteID)]); if result["found"].flag { await complete(result["order_id"].int, owner: owner) } else if result["voided"].flag { await LocalStore.shared.remove("checkout-pending", userID: owner); self.pending = nil; quote = .null; error = "订单未创建，原报价已作废，请重新核对报价" } else { throw APIError.invalidResponse } } catch { self.error = error.localizedDescription } }
+        Task { defer { busy = false }; do { let result = try await APIClient.shared.post("checkout.resolve", ["quote_id": .string(pending.quoteID)]); if result["found"].flag { await complete(result["order_id"].int, owner: owner) } else if result["voided"].flag { await LocalStore.shared.completePending(pending, key: "checkout-pending", userID: owner); self.pending = nil; quote = .null; error = "订单未创建，原报价已作废，请重新核对报价" } else { throw APIError.invalidResponse } } catch { self.error = error.localizedDescription } }
     }
     private func complete(_ id: Int, owner: Int) async { await LocalStore.shared.remove("checkout-pending", userID: owner); guard session.user?.id == owner else { return }; pending = nil; orderID = id }
 }

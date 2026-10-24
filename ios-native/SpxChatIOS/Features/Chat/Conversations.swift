@@ -26,9 +26,6 @@ struct ChatListView: View {
     }
     var body: some View {
         List {
-            Section {
-                NavigationLink { ContactsView() } label: { Label("通讯录", systemImage: "person.crop.rectangle.stack") }
-            }
             ForEach(conversations, id: \.key) { item in row(item, group: item.isGroup) }
             if chats.isEmpty && groups.isEmpty { EmptyState(title: "还没有会话", description: "添加朋友，开始第一段聊天", icon: "bubble.left.and.bubble.right") }
             if let error { ErrorBanner(message: error); Button("重新加载") { Task { await load() } } }
@@ -116,6 +113,9 @@ struct ChatListView: View {
     private var legacyIDs: Set<Int> = []
     private var persisted: ConversationSnapshot?
     private var lastReadID = 0
+    private var readingLatest = false
+    private var reportingRead = false
+    @Published private(set) var initialLoading = true
     @Published var error: String?
     @Published var loadingOlder = false
     @Published var hasOlder = true
@@ -169,6 +169,7 @@ struct ChatListView: View {
                         syncCursor = max(cursor ?? 0, last)
                     }
                     merge(fresh)
+                    initialLoading = false
                     more = (cursor ?? 0) > 0 && fresh.count == 100 && (syncCursor ?? 0) > (cursor ?? 0)
                     await persistIfNeeded()
                 }
@@ -180,20 +181,30 @@ struct ChatListView: View {
                     if !removed.isEmpty { messages.removeAll { removed.contains($0.id) } }
                     merge(sync["messages"].list)
                 }
-                // Realtime inserts cannot acknowledge a missing REST interval as read.
-                let boundary = min(messages.last?.id ?? 0, syncCursor ?? 0)
-                if boundary > lastReadID {
-                    try await post(action + ".read", [key: .number(Decimal(target)), "through_id": .number(Decimal(boundary))])
-                    guard currentRevision == revision else { throw CancellationError() }
-                    lastReadID = boundary
-                }
+                await reportReadIfNeeded()
                 await persistIfNeeded()
                 guard currentRevision == revision, !Task.isCancelled else { throw CancellationError() }
                 error = nil; round += 1
             } catch is CancellationError { if Task.isCancelled { return }; if currentRevision != revision { continue }; return }
-            catch { if currentRevision == revision { self.error = error.localizedDescription } }
+            catch { if currentRevision == revision { initialLoading = false; self.error = error.localizedDescription } }
             do { try await Task.sleep(for: .seconds(3)) } catch { return }
         }
+    }
+    func setReadVisibility(_ visible: Bool) {
+        readingLatest = visible
+        if visible { Task { await reportReadIfNeeded() } }
+    }
+    private func reportReadIfNeeded() async {
+        guard readingLatest, !reportingRead else { return }
+        // An out-of-order realtime event cannot acknowledge a missing REST interval.
+        let boundary = min(messages.last?.id ?? 0, syncCursor ?? 0)
+        guard boundary > lastReadID else { return }
+        let currentRevision = revision
+        reportingRead = true; defer { reportingRead = false }
+        do {
+            try await post(action + ".read", [key: .number(Decimal(target)), "through_id": .number(Decimal(boundary))])
+            if currentRevision == revision { lastReadID = max(lastReadID, boundary) }
+        } catch { /* Receipt failures retry on the next visible sync. */ }
     }
     private func persistIfNeeded() async {
         guard let cursor = syncCursor else { return }
@@ -222,7 +233,9 @@ struct ChatListView: View {
         var map = Dictionary(uniqueKeysWithValues: messages.map { ($0.id, $0) })
         var changed = false
         for row in rows where row.id > clearedThrough && row.id > 0 {
-            if map[row.id] != row { map[row.id] = row; changed = true }
+            var value = row
+            if value["local_created_at"].string.isEmpty, let local = map[row.id], local["client_message_id"] == value["client_message_id"] { value["local_created_at"] = local["local_created_at"] }
+            if map[row.id] != value { map[row.id] = value; changed = true }
         }
         if changed { messages = map.values.sorted { $0.id < $1.id } }
     }
@@ -286,6 +299,7 @@ struct ConversationView: View {
     @State private var plus = false
     @State private var photos: [PhotosPickerItem] = []
     @State private var processingPhotos = false
+    @State private var sendOriginal = false
     @State private var documents = false
     @State private var camera = false
     @State private var packet = false
@@ -293,7 +307,7 @@ struct ConversationView: View {
     @State private var location = false
     @State private var selectedMedia: Record?
     @State private var forward: Record?
-    @State private var filePreview: URL?
+    @State private var filePreview: Record?
     @State private var error: String?
     @State private var scrollTarget: String?
     @State private var atBottom = true
@@ -339,18 +353,22 @@ struct ConversationView: View {
         _model = StateObject(wrappedValue: ConversationStore(target: item.id, group: isGroup, userID: userID))
     }
     private var pending: [PendingMessage] { outbox.items.filter { $0.targetID == item.id && $0.scope == (isGroup ? "group" : "chat") } }
+    private var timeline: [ChatTimelineEntry] { ChatTimelineEntry.merge(messages: model.messages, pending: pending, userID: userID) }
     private var media: [Record] { model.messages.filter { ["image", "video"].contains($0["message_type"].string) } }
     private var newMessageCount: Int { model.messages.filter { $0.id > latestSeenID && $0["sender_id"].int != userID }.count }
     private var conversationContent: some View {
         VStack(spacing: 0) {
             if let value = model.error { ErrorBanner(message: value).padding(.horizontal).padding(.vertical, 5) }
             if isGroup, !groupInfo["announcement"].string.isEmpty { Button { announcement = true } label: { HStack(spacing: 8) { Image(systemName: "megaphone"); Text(groupInfo["announcement"].string).lineLimit(1); Spacer(); Image(systemName: "chevron.right").font(.caption2) }.font(.caption).foregroundStyle(SPXColor.primary).padding(.horizontal, 16).padding(.vertical, 10).background(SPXColor.card) } }
+            if model.initialLoading, model.messages.isEmpty { HStack(spacing: 8) { ProgressView(); Text("正在同步消息…").font(.caption).foregroundStyle(.secondary) }.padding(10) }
+            if processingPhotos { HStack(spacing: 8) { ProgressView(); Text("正在从相册准备附件…").font(.caption); Spacer() }.padding(.horizontal, 16).padding(.vertical, 8) }
             ScrollView {
                 LazyVStack(spacing: 12) {
                     if model.hasOlder, !model.messages.isEmpty {
                         Button(model.loadingOlder ? "加载中…" : "查看更早消息") { Task { await model.older() } }.font(.caption).disabled(model.loadingOlder)
                     }
-                    ForEach(model.messages) { message in
+                    ForEach(timeline) { entry in
+                        if let message = entry.message {
                         if model.timeBoundaryIDs.contains(message.id) {
                             Text(MessageTimeline.label(message["created_at"].string)).font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 4)
                         }
@@ -358,7 +376,7 @@ struct ConversationView: View {
                             if selecting { Button { toggleSelection(message.id) } label: { Image(systemName: selectedMessages.contains(message.id) ? "checkmark.circle.fill" : "circle").font(.title3).foregroundStyle(SPXColor.primary) }.disabled(!MessageContent.canForward(message)) }
                             MessageBubble(message: message, currentUserID: userID, open: { if selecting { toggleSelection(message.id) } else { open(message) } }, reply: { contextMessage = Record(["id": message["reply"]["id"]]) }, mention: isGroup ? { insertMention(id: message["sender_id"].int, name: message.name) } : nil)
                         }
-                            .id("m-\(message.id)")
+                            .id(entry.id)
                             .contextMenu {
                                 Button("复制", systemImage: "doc.on.doc") { UIPasteboard.general.string = message["content"].string }
                                 Button("引用", systemImage: "arrowshape.turn.up.left") { replied = message }
@@ -369,8 +387,7 @@ struct ConversationView: View {
                                     if message["message_type"].string != "red_packet" { Button("为所有人删除", systemImage: "trash", role: .destructive) { deleting = message } }
                                 }
                             }
-                    }
-                    ForEach(pending) { entry in
+                        } else if let entry = entry.pending {
                         HStack {
                             Spacer(minLength: 50)
                             VStack(alignment: .trailing, spacing: 5) {
@@ -383,6 +400,7 @@ struct ConversationView: View {
                                 } else { Text(entry.state == .queued ? "等待发送" : "发送中…").font(.caption2) }
                             }.padding(12).foregroundStyle(.white).background(SPXColor.primary.opacity(0.8), in: RoundedRectangle(cornerRadius: 16))
                         }.id(entry.id)
+                    }
                     }
                     Color.clear.frame(height: 1).id("bottom").onAppear { atBottom = true; latestSeenID = model.messages.last?.id ?? latestSeenID }.onDisappear { atBottom = false }
                 }.padding(16).scrollTargetLayout()
@@ -498,9 +516,10 @@ struct ConversationView: View {
     }
     private var recordingContent: some View {
         messageEditorContent
-            .task(id: String(describing: phase) + String(visible)) { if phase == .active && visible { await model.run() } else { stopRecording(cancel: true) } }
+            .task(id: String(describing: phase) + String(visible)) { model.setReadVisibility(phase == .active && visible && atBottom); if phase == .active && visible { await model.run() } else { stopRecording(cancel: true) } }
+            .onChange(of: atBottom) { _, value in model.setReadVisibility(value && visible && phase == .active) }
             .onAppear { visible = true; if isGroup { ChatSoundEffects.shared.readGroup(item.id) } }
-            .onDisappear { visible = false; stopRecording(cancel: true); let snapshot = draftSnapshot; Task { await LocalStore.shared.write(snapshot, key: draftKey, userID: userID) } }
+            .onDisappear { visible = false; model.setReadVisibility(false); stopRecording(cancel: true); let snapshot = draftSnapshot; Task { await LocalStore.shared.write(snapshot, key: draftKey, userID: userID) } }
             .onReceive(CallCoordinator.shared.$call) { call in if call != nil { stopRecording(cancel: true) } }
             .onChange(of: recorder.completedURL) { _, url in if let url { ChatSoundEffects.recording = false; recordingGesture = false; recordingRequest = UUID(); recorder.completedURL = nil; Task { do { try await queue(file: url, kind: "voice", name: "语音") } catch { self.error = error.localizedDescription } } } }
             .onChange(of: recorder.errorMessage) { _, message in if let message { ChatSoundEffects.recording = false; error = message; recorder.errorMessage = nil } }
@@ -542,11 +561,12 @@ struct ConversationView: View {
             .sheet(isPresented: $packet) { RedPacketSendView(scope: isGroup ? "group" : "chat", targetID: item.id) }
             .sheet(isPresented: $schedule) { ScheduledMessageView(scope: isGroup ? "group" : "chat", targetID: item.id) }
             .sheet(isPresented: $location) { SendLocationView(scope: isGroup ? "group" : "chat", targetID: item.id) }
-            .sheet(isPresented: Binding(get: { filePreview != nil }, set: { if !$0 { filePreview = nil } })) { if let filePreview { DocumentPreview(url: filePreview) } }
+            .sheet(item: $filePreview) { message in FileAttachmentView(message: message, userID: userID) }
     }
     private var plusGrid: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 20) {
-            PhotosPicker(selection: $photos, maxSelectionCount: 9, matching: .any(of: [.images, .videos])) { PlusAction(title: "相册", icon: "photo.on.rectangle") }
+            PhotosPicker(selection: $photos, maxSelectionCount: 9, matching: .any(of: [.images, .videos])) { PlusAction(title: sendOriginal ? "相册 · 原图" : "相册", icon: "photo.on.rectangle") }
+                .contextMenu { Toggle("发送原图", isOn: $sendOriginal) }
                 .disabled(processingPhotos)
             Button { if UIImagePickerController.isSourceTypeAvailable(.camera) { camera = true } else { error = "当前设备没有可用相机" } } label: { PlusAction(title: "拍摄", icon: "camera") }
             if !isGroup {
@@ -625,13 +645,18 @@ struct ConversationView: View {
         if selectedMessages.contains(id) { selectedMessages.remove(id) } else if selectedMessages.count < 100 { selectedMessages.insert(id) } else { error = "一次最多选择 100 条消息" }
     }
     private func queue(file: URL, kind: String, name: String) async throws {
-        try await outbox.enqueue(scope: isGroup ? "group" : "chat", id: item.id, body: ["content": .string(name), "message_type": .string(kind)], localURL: file, expectedUserID: userID)
+        var content = name
+        if kind == "voice", let duration = try? await AVURLAsset(url: file).load(.duration), duration.seconds.isFinite {
+            let seconds = max(1, Int(ceil(duration.seconds)))
+            content = "语音 · \(seconds)秒"
+        }
+        try await outbox.enqueue(scope: isGroup ? "group" : "chat", id: item.id, body: ["content": .string(content), "message_type": .string(kind)], localURL: file, expectedUserID: userID)
         scrollTarget = "bottom"
     }
     private func sendPhotos(_ items: [PhotosPickerItem]) async {
         defer { processingPhotos = false; plus = false }
         for selected in items {
-            do { let file = try await MediaFiles.select(selected, userID: userID); let video = selected.supportedContentTypes.contains { $0.conforms(to: .movie) }; try await queue(file: file, kind: video ? "video" : "image", name: video ? "视频" : "图片") }
+            do { let file = try await MediaFiles.select(selected, userID: userID, original: sendOriginal); let video = selected.supportedContentTypes.contains { $0.conforms(to: .movie) }; try await queue(file: file, kind: video ? "video" : "image", name: video ? "视频" : "图片") }
             catch { self.error = error.localizedDescription }
         }
     }
@@ -658,7 +683,7 @@ struct ConversationView: View {
         switch message["message_type"].string {
         case "image", "video": selectedMedia = message
         case "voice": Task { do { try await VoicePlayback.shared.toggle(message["media_url"].string, userID: userID) } catch { self.error = error.localizedDescription } }
-        case "file": Task { do { filePreview = try await MediaCache.shared.file(message["media_url"].string, userID: userID) } catch { self.error = error.localizedDescription } }
+        case "file": filePreview = message
         case "red_packet": NotificationCenter.default.post(name: .spxOpenPacket, object: message)
         case "call": CallCoordinator.shared.dial(chat: item, video: message["content"].string.contains("视频"))
         default: break
@@ -684,7 +709,7 @@ struct MessageBubble: View {
                     if MessageContent.product(message) != nil || MessageContent.groupCode(message) != nil { MessageCardContent(message: message) } else { switch message["message_type"].string {
                     case "image": CachedImage(source: message["media_url"].string).frame(maxWidth: 210, maxHeight: 240).clipShape(RoundedRectangle(cornerRadius: 10))
                     case "video": VideoMessagePreview(source: message["media_url"].string).frame(width: 190, height: 112)
-                    case "voice": VoiceMessageLabel(url: message["media_url"].string)
+                    case "voice": VoiceMessageLabel(url: message["media_url"].string, content: message["content"].string, incoming: !mine, userID: currentUserID)
                     case "file": Label(message["content"].string, systemImage: "doc.fill")
                     case "red_packet": Label(greeting, systemImage: "gift.fill").padding(.vertical, 20)
                     case "call": Label(message["content"].string, systemImage: "phone.fill")

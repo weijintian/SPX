@@ -11,12 +11,17 @@ struct MerchantOverviewView: View {
     @State private var stats = Record()
     @State private var required = ""
     @State private var loaded = false
+    @State private var loading = false
+    @State private var loadID = UUID()
     @State private var error: String?
     @State private var deposit = false
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                if !loaded { ProgressView("加载经营数据…").frame(maxWidth: .infinity) }
+                if !loaded {
+                    if loading { ProgressView("加载经营数据…").frame(maxWidth: .infinity) }
+                    else if error != nil { EmptyState(title: "经营数据暂时无法加载", description: "请检查网络后重试", icon: "wifi.exclamationmark") }
+                }
                 else if merchant.id == 0 {
                     SPXCard { VStack(alignment: .leading, spacing: 16) { Image(systemName: "storefront").font(.system(size: 42)).foregroundStyle(SPXColor.primary); Text("把好商品带给更多人").font(.title2.bold()); Text("提交店铺资料，审核通过后开启经营。").foregroundStyle(.secondary); NavigationLink("申请开店") { MerchantProfileEditor(merchant: merchant, application: true) }.buttonStyle(.borderedProminent) } }
                 } else {
@@ -51,8 +56,20 @@ struct MerchantOverviewView: View {
             .confirmationDialog("确认缴纳开店保证金？", isPresented: $deposit, titleVisibility: .visible) { Button("确认缴纳") { Task { do { try await APIClient.shared.post("merchant.deposit.pay", ["level": merchant["level"]]); await load() } catch { self.error = error.localizedDescription } } } }
     }
     private func load() async {
-        do { let data = try await APIClient.shared.get("merchant.me"); merchant = data["merchant"].record; stats = data["statistics"].record; required = data["required_deposit"].string; loaded = true; if merchant.id > 0 { performance = try await APIClient.shared.get("merchant.performance").record }; error = nil }
-        catch { loaded = true; self.error = error.localizedDescription }
+        let identity = UUID(); loadID = identity; loading = true
+        defer { if loadID == identity { loading = false } }
+        do {
+            let data = try await APIClient.shared.get("merchant.me")
+            guard loadID == identity, !Task.isCancelled else { return }
+            merchant = data["merchant"].record; stats = data["statistics"].record
+            required = DisplayLabels.amount(data["required_deposit"].string); loaded = true; error = nil
+            if merchant.id > 0 {
+                let value = try await APIClient.shared.get("merchant.performance").record
+                guard loadID == identity, !Task.isCancelled else { return }
+                performance = value
+            }
+        } catch is CancellationError { }
+        catch { if loadID == identity { self.error = error.localizedDescription } }
     }
 }
 

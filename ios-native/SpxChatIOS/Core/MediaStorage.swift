@@ -16,11 +16,29 @@ enum MediaFiles {
         try url.setResourceValues(values)
         return root
     }
+    static let maximumBytes = 1_073_741_824
+    static func preflight(_ source: URL, copies: Int = 1) throws {
+        let size = try source.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        guard size > 0, size <= maximumBytes else { throw APIError.server(413, "附件不能为空且不能超过 1 GB") }
+        let volume = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        if let free = try? volume.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage,
+           free < Int64(size) * Int64(copies) + 67_108_864 {
+            throw APIError.server(507, "设备存储不足，请清理空间后再选择附件")
+        }
+    }
+    static func restoredAttachment(_ source: URL, userID: Int) throws -> URL {
+        let current = try directory(userID: userID, component: "attachments")
+        // App updates can change the sandbox prefix; only rebase an account's own attachment.
+        guard source.deletingLastPathComponent().lastPathComponent == "attachments",
+              source.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent == "u\(userID)" else { return source }
+        return current.appendingPathComponent(source.lastPathComponent)
+    }
     static func keep(_ source: URL, userID: Int) throws -> URL {
         let directory = try directory(userID: userID, component: "attachments")
         let target = directory.appendingPathComponent(UUID().uuidString).appendingPathExtension(source.pathExtension)
         let granted = source.startAccessingSecurityScopedResource()
         defer { if granted { source.stopAccessingSecurityScopedResource() } }
+        try preflight(source)
         try FileManager.default.copyItem(at: source, to: target)
         try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: target.path)
         return target
@@ -35,15 +53,27 @@ enum MediaFiles {
         try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         return url
     }
-    static func select(_ item: PhotosPickerItem, userID: Int) async throws -> URL {
+    static func select(_ item: PhotosPickerItem, userID: Int, original: Bool = false) async throws -> URL {
         if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) }) {
             guard let picked = try await item.loadTransferable(type: PickedMovie.self) else { throw APIError.invalidResponse }
             defer { try? FileManager.default.removeItem(at: picked.url) }
-            return try keep(picked.url, userID: userID)
+            let target = try directory(userID: userID, component: "attachments").appendingPathComponent(picked.url.lastPathComponent)
+            try FileManager.default.moveItem(at: picked.url, to: target)
+            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: target.path)
+            return target
         }
         guard let data = try await item.loadTransferable(type: Data.self),
               let source = CGImageSourceCreateWithData(data as CFData, nil),
               let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 2048] as CFDictionary) else { throw APIError.invalidResponse }
+        // Preserve animation and alpha instead of flattening every image to JPEG.
+        let imageType = CGImageSourceGetType(source) as String? ?? ""
+        if imageType == UTType.gif.identifier || imageType == UTType.png.identifier || (original && imageType == UTType.jpeg.identifier) {
+            guard data.count <= 52_428_800 else { throw APIError.server(413, "图片不能超过 50 MB") }
+            let ext = imageType == UTType.gif.identifier ? "gif" : imageType == UTType.png.identifier ? "png" : "jpg"
+            let target = try directory(userID: userID, component: "attachments").appendingPathComponent(UUID().uuidString + "." + ext)
+            try data.write(to: target, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            return target
+        }
         let image = UIImage(cgImage: thumbnail)
         return try jpeg(image, userID: userID)
     }
@@ -53,6 +83,7 @@ struct PickedMovie: Transferable {
     let url: URL
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(importedContentType: .movie) { received in
+            try MediaFiles.preflight(received.file)
             let target = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension(received.file.pathExtension)
             try FileManager.default.copyItem(at: received.file, to: target)
             return PickedMovie(url: target)
@@ -151,19 +182,29 @@ enum Multipart {
 
 actor MediaCache {
     static let shared = MediaCache()
-    private var tasks: [String: Task<URL, Error>] = [:]
+    private var tasks: [String: (id: UUID, task: Task<URL, Error>)] = [:]
     private var generations: [Int: UUID] = [:]
-    func file(_ source: String, userID: Int) async throws -> URL {
+    private var observers: [String: [UUID: @Sendable (Double) -> Void]] = [:]
+    private let session: URLSession
+    init(session: URLSession = NetworkSession.shared) { self.session = session }
+    func file(_ source: String, userID: Int, progress: (@Sendable (Double) -> Void)? = nil) async throws -> URL {
         let endpoint = try await APIClient.shared.endpoint()
         guard let remote = URL(string: source, relativeTo: endpoint)?.absoluteURL, ["https", "http"].contains(remote.scheme ?? ""), !source.isEmpty else { throw APIError.invalidURL }
         let generation = generations[userID] ?? UUID(); generations[userID] = generation
         let key = "\(userID):\(source)"
+        let observer = UUID()
+        observers[key, default: [:]][observer] = progress ?? { _ in }
+        defer { observers[key]?[observer] = nil; if observers[key]?.isEmpty == true { observers[key] = nil } }
         let hash = SHA256.hash(data: Data(source.utf8)).map { String(format: "%02x", $0) }.joined()
         let target = try MediaFiles.directory(userID: userID, component: "media").appendingPathComponent(hash).appendingPathExtension(remote.pathExtension)
         if FileManager.default.fileExists(atPath: target.path) { try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: target.path); return target }
-        if let task = tasks[key] { return try await task.value }
+        if let entry = tasks[key] { return try await waitForDownload(entry, key: key, observer: observer) }
+        let taskID = UUID()
         let task = Task<URL, Error> {
-            let (temporary, response) = try await NetworkSession.shared.download(from: remote)
+            let delegate = MediaDownloadProgress { fraction in
+                Task { await self.publishDownload(fraction, key: key, taskID: taskID) }
+            }
+            let (temporary, response) = try await session.download(from: remote, delegate: delegate)
             defer { try? FileManager.default.removeItem(at: temporary) }
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw APIError.invalidResponse }
             let bytes = try temporary.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
@@ -172,11 +213,30 @@ actor MediaCache {
             guard generations[userID] == generation else { throw CancellationError() }
             if !FileManager.default.fileExists(atPath: target.path) { try FileManager.default.moveItem(at: temporary, to: target) }
             try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: target.path)
+            publishDownload(1, key: key, taskID: taskID)
+            try? trim(userID: userID, excluding: [target])
             return target
         }
-        tasks[key] = task
-        defer { if generations[userID] == generation { tasks[key] = nil } }
-        return try await task.value
+        tasks[key] = (taskID, task)
+        defer { if tasks[key]?.id == taskID { tasks[key] = nil } }
+        return try await waitForDownload((taskID, task), key: key, observer: observer)
+    }
+    private func waitForDownload(_ entry: (id: UUID, task: Task<URL, Error>), key: String, observer: UUID) async throws -> URL {
+        try await withTaskCancellationHandler(operation: {
+            let file = try await entry.task.value
+            try Task.checkCancellation(); return file
+        }, onCancel: { Task { await self.cancelWaiter(observer, key: key, taskID: entry.id) } })
+    }
+    private func cancelWaiter(_ observer: UUID, key: String, taskID: UUID) {
+        observers[key]?[observer] = nil
+        if tasks[key]?.id == taskID, observers[key]?.isEmpty != false { tasks.removeValue(forKey: key)?.task.cancel() }
+    }
+    private func publishDownload(_ fraction: Double, key: String, taskID: UUID) {
+        guard tasks[key]?.id == taskID, let callbacks = observers[key] else { return }
+        for callback in callbacks.values { callback(fraction) }
+    }
+    func cancelDownload(_ source: String, userID: Int) {
+        tasks.removeValue(forKey: "\(userID):\(source)")?.task.cancel()
     }
     /// Inspect the disk cache without starting a network transfer.
     func cachedFile(_ source: String, userID: Int) async throws -> URL? {
@@ -190,7 +250,8 @@ actor MediaCache {
     }
     func clear(userID: Int) async throws {
         generations[userID] = UUID()
-        for (key, task) in tasks where key.hasPrefix("\(userID):") { task.cancel() }
+        let keys = tasks.keys.filter { $0.hasPrefix("\(userID):") }
+        for key in keys { tasks.removeValue(forKey: key)?.task.cancel() }
         try await VideoRangeCache.shared.clear(userID: userID)
         try await ImageThumbnailCache.shared.clear(userID: userID)
         let directory = try MediaFiles.directory(userID: userID, component: "media")
@@ -209,7 +270,7 @@ actor MediaCache {
         try FileManager.default.copyItem(at: local, to: target)
         try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: target.path)
     }
-    func trim(userID: Int, maximumBytes: Int = 536_870_912) throws {
+    func trim(userID: Int, maximumBytes: Int = 536_870_912, excluding: Set<URL> = []) throws {
         var files: [(URL, Int, Date)] = []
         for component in ["media", "media-ranges", "media-thumbnails"] {
             let directory = try MediaFiles.directory(userID: userID, component: component)
@@ -221,8 +282,8 @@ actor MediaCache {
         }
         files.sort { $0.2 < $1.2 }
         var size = files.reduce(0) { $0 + $1.1 }
-        for (url, bytes, modified) in files where size > maximumBytes && modified < Date().addingTimeInterval(-86400) {
-            try? FileManager.default.removeItem(at: url); size -= bytes
+        for (url, bytes, _) in files where size > maximumBytes && !excluding.contains(url) {
+            do { try FileManager.default.removeItem(at: url); size -= bytes } catch { }
         }
     }
 }
