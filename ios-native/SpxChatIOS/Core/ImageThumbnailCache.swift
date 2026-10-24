@@ -58,6 +58,9 @@ actor ImageThumbnailCache {
             if !FileManager.default.fileExists(atPath: file.path), let data = video ? image.jpegData(compressionQuality: 0.85) : image.pngData() {
                 try? data.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
             }
+            try? await MediaCache.shared.trim(userID: userID, excluding: [file])
+            try Task.checkCancellation()
+            guard generations[userID] == generation else { throw CancellationError() }
             let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? pixels * pixels * 4
             memory.setObject(image, forKey: key as NSString, cost: cost)
             return image

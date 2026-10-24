@@ -22,6 +22,7 @@ enum VoiceMessageMetadata {
     private var player: AVAudioPlayer?
     private var download: Task<URL, Error>?
     private var generation = UUID()
+    private var ownsAudioSession = false
     private var observers: [NSObjectProtocol] = []
     override init() {
         super.init()
@@ -74,7 +75,8 @@ enum VoiceMessageMetadata {
             guard CallCoordinator.shared.call == nil else { stop(); return }
             let audio = AVAudioSession.sharedInstance()
             try audio.setCategory(.playAndRecord, mode: .default, options: [.allowBluetooth, .allowBluetoothA2DP])
-            try audio.setActive(true); UIDevice.current.isProximityMonitoringEnabled = true; try applyRoute()
+            try audio.setActive(true); ownsAudioSession = true
+            UIDevice.current.isProximityMonitoringEnabled = true; try applyRoute()
             let next = try AVAudioPlayer(contentsOf: file); next.delegate = self; next.prepareToPlay(); player = next
             guard next.play() else { throw APIError.invalidResponse }
             if next.duration.isFinite { durations[source] = max(1, Int(ceil(next.duration))) }
@@ -82,7 +84,8 @@ enum VoiceMessageMetadata {
         } catch { if epoch == generation { stop() }; if !(error is CancellationError) { throw error } }
     }
     func stop() {
-        generation = UUID(); let owned = playing || player != nil
+        generation = UUID(); let owned = ownsAudioSession
+        ownsAudioSession = false
         download?.cancel(); download = nil
         player?.delegate = nil; player?.stop(); player = nil; source = nil; loading = false; playing = false
         if owned, CallCoordinator.shared.call == nil {

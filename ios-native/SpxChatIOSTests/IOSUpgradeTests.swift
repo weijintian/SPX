@@ -34,7 +34,7 @@ final class IOSUpgradeTests: XCTestCase {
         catch APIError.server(let status, _) { XCTAssertEqual(status, 409) }
         let clearedWrong = await LocalStore.shared.completeFinancial(key, userID: owner, requestID: "wrong")
         XCTAssertFalse(clearedWrong)
-        let recovered: Record? = await LocalStore.shared.read(key, userID: owner)
+        let recovered: SpxChatIOS.Record? = await LocalStore.shared.read(key, userID: owner)
         XCTAssertEqual(recovered, original)
         let directory = try MediaFiles.directory(userID: owner, component: "")
         let encoded = Data(key.utf8).base64EncodedString().replacingOccurrences(of: "/", with: "_") + ".json"
@@ -57,12 +57,32 @@ final class IOSUpgradeTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: old.path)); XCTAssertTrue(FileManager.default.fileExists(atPath: current.path))
         try await cache.clear(userID: owner)
     }
+
+    func testCacheTrimProtectsAnActiveRangeDirectoryWithoutKeepingUnrelatedFiles() async throws {
+        let owner = 2_147_479_979
+        let cache = MediaCache()
+        try await cache.clear(userID: owner)
+        let directory = try MediaFiles.directory(userID: owner, component: "media-ranges")
+        let active = directory.appendingPathComponent("active", isDirectory: true)
+        try FileManager.default.createDirectory(at: active, withIntermediateDirectories: true)
+        let chunk = active.appendingPathComponent("0.bin"), manifest = active.appendingPathComponent("manifest.json")
+        let expired = directory.appendingPathComponent("unused.bin")
+        try Data(repeating: 1, count: 40).write(to: chunk)
+        try Data(repeating: 2, count: 20).write(to: manifest)
+        try Data(repeating: 3, count: 60).write(to: expired)
+        try await cache.trim(userID: owner, maximumBytes: 60, excluding: [active])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: chunk.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: manifest.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: expired.path))
+        try await cache.clear(userID: owner)
+    }
+
     @MainActor func testCompactMediaReceiptRetainsContentAndURL() async throws {
         let owner = 2_147_479_980
         let outbox = Outbox(transport: CompactReceiptTransport(), observeNetwork: false)
         await LocalStore.shared.remove("outbox", userID: owner); await outbox.start(userID: owner)
         let complete = expectation(description: "Receipt contains the original attachment")
-        var received: Record?
+        var received: SpxChatIOS.Record?
         let subscription = outbox.$acknowledgements.sink { map in
             guard received == nil, let message = map.values.first else { return }; received = message; complete.fulfill()
         }

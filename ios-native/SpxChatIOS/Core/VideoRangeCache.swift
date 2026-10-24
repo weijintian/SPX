@@ -92,6 +92,9 @@ actor VideoRangeCache {
                     }
                 } catch { /* Disk pressure must not prevent a validated network chunk from playing. */ }
             }
+            try? await MediaCache.shared.trim(userID: userID, excluding: [directory])
+            try Task.checkCancellation()
+            guard generations[userID] == generation, versions[ownerKey] == version else { throw CancellationError() }
             return VideoChunk(data: bytes, offset: start, total: range.total, mimeType: http.mimeType)
         }
         tasks[key] = (id, task)

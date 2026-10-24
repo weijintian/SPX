@@ -269,6 +269,7 @@ actor MediaCache {
         guard !FileManager.default.fileExists(atPath: target.path) else { return }
         try FileManager.default.copyItem(at: local, to: target)
         try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: target.path)
+        try? trim(userID: userID, excluding: [target])
     }
     func trim(userID: Int, maximumBytes: Int = 536_870_912, excluding: Set<URL> = []) throws {
         var files: [(URL, Int, Date)] = []
@@ -282,7 +283,7 @@ actor MediaCache {
         }
         files.sort { $0.2 < $1.2 }
         var size = files.reduce(0) { $0 + $1.1 }
-        for (url, bytes, _) in files where size > maximumBytes && !excluding.contains(url) {
+        for (url, bytes, _) in files where size > maximumBytes && !excluding.contains(where: { url == $0 || url.path.hasPrefix($0.path + "/") }) {
             do { try FileManager.default.removeItem(at: url); size -= bytes } catch { }
         }
     }

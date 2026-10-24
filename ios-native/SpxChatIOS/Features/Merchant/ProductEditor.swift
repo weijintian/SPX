@@ -31,8 +31,13 @@ struct PublishProductView: View {
     @State private var detailImages: [String] = []
     @State private var mainPicker: [PhotosPickerItem] = []
     @State private var detailPicker: [PhotosPickerItem] = []
+    @State private var failedMainImages: [PhotosPickerItem] = []
+    @State private var failedDetailImages: [PhotosPickerItem] = []
     @State private var videoPicker: PhotosPickerItem?
     @State private var pendingVideo: ProductVideoPending?
+    @State private var pendingPublication: Record?
+    @State private var recoverySupported = false
+    private var publicationKey: String { localKey + "-publication" }
     private var videoRecoveryKey: String { localKey + "-video-upload" }
     @State private var variants: [ProductVariant] = []
     @State private var appointment = false
@@ -60,9 +65,11 @@ struct PublishProductView: View {
     var body: some View {
         editorWithDialogs
             .onChange(of: mainPicker) { _, selected in
+                guard !selected.isEmpty else { return }
                 Task { await upload(selected, detail: false) }
             }
             .onChange(of: detailPicker) { _, selected in
+                guard !selected.isEmpty else { return }
                 Task { await upload(selected, detail: true) }
             }
             .onChange(of: videoPicker) { _, item in
@@ -129,9 +136,11 @@ struct PublishProductView: View {
         initialize()
         savedFingerprint = snapshot
         recovery = await LocalStore.shared.read(localKey, userID: session.user?.id ?? 0)
+        pendingPublication = await LocalStore.shared.read(publicationKey, userID: session.user?.id ?? 0)
         restored = true
         pendingVideo = await LocalStore.shared.read(videoRecoveryKey, userID: session.user?.id ?? 0)
         if let config = try? await APIClient.shared.get("mall.config") {
+            recoverySupported = config["product_request_recovery"].flag
             let configured = config["categories"].array.map(\.string)
             if !configured.isEmpty { categories = configured }
             if let selected = values["category"], !categories.contains(selected) {
@@ -166,7 +175,10 @@ struct PublishProductView: View {
     private func discardLocalDraft() {
         recovery = nil
         let owner = session.user?.id ?? 0
-        Task { await LocalStore.shared.remove(localKey, userID: owner) }
+        Task {
+            await LocalStore.shared.remove(localKey, userID: owner)
+            if let pendingVideo { await discardVideo(pendingVideo) }
+        }
     }
 
     private func keepDraftAndLeave() {
@@ -218,6 +230,7 @@ struct PublishProductView: View {
         Section {
             PhotosPicker(selection: $mainPicker, maxSelectionCount: max(1, 8 - images.count), matching: .images) { Label("批量选择主图", systemImage: "photo.on.rectangle.angled") }.disabled(images.count >= 8)
             imageStrip($images)
+            failedImageRows(failedMainImages, detail: false)
         } header: { Text("商品主图 \(images.count)/8") } footer: { Text("第一张为主图。点击缩略图菜单可设为主图或移除，图片保持完整居中。") }
     }
     private var variantSection: some View {
@@ -238,6 +251,7 @@ struct PublishProductView: View {
             field("detail_text", "详细介绍", multiline: true)
             PhotosPicker(selection: $detailPicker, maxSelectionCount: max(1, 20 - detailImages.count), matching: .images) { Label("批量添加详情图", systemImage: "photo.stack") }.disabled(detailImages.count >= 20)
             imageStrip($detailImages)
+            failedImageRows(failedDetailImages, detail: true)
             field("video_url", "商品视频 URL（选填）")
             PhotosPicker(selection: $videoPicker, matching: .videos) { Label("从相册选择商品视频", systemImage: "video.badge.plus") }.disabled(pendingVideo != nil)
             if let pendingVideo {
@@ -258,10 +272,11 @@ struct PublishProductView: View {
     }
     @ViewBuilder private var statusSections: some View {
         if !progress.isEmpty { Section { HStack { ProgressView(); Text(progress).font(.subheadline) } } }
+        if pendingPublication != nil { Section { Label("上次商品提交结果需要核对", systemImage: "clock.arrow.circlepath"); Button("核对发布结果") { resolvePublication() }.disabled(busy) } }
         if let error { Section { ErrorBanner(message: error) } }
     }
     private var saveSection: some View {
-        Section { Button("保存草稿") { save(publishing: false) }; Button(editing ? "保存商品修改" : "提交发布") { publish = true }.fontWeight(.semibold) }.disabled(busy)
+        Section { Button("保存草稿") { save(publishing: false) }; Button(editing ? "保存商品修改" : "提交发布") { publish = true }.fontWeight(.semibold) }.disabled(busy || !restored || pendingPublication != nil)
     }
 
     private func bind(_ key: String) -> Binding<String> { Binding(get: { values[key] ?? "" }, set: { values[key] = $0 }) }
@@ -296,12 +311,60 @@ struct PublishProductView: View {
         type = saved["product_type"].string; images = saved["images"].array.map(\.string); detailImages = saved["detail_images"].array.map(\.string); appointment = saved["appointment_required"].flag
         variants = saved["variants"].array.map { v in ProductVariant(id: v["id"].string, name: v["name"].string, cny: v["cny_price"].string, stock: v["stock"].string, enabled: v["enabled"].flag, attributes: v["attributes"].object, imageURL: v["image_url"].string) }
     }
-    private func upload(_ selected: [PhotosPickerItem], detail: Bool) async {
-        guard !busy else { return }; busy = true; defer { busy = false; progress = ""; if detail { detailPicker = [] } else { mainPicker = [] } }
-        for (index, item) in selected.enumerated() {
-            if detail ? detailImages.count >= 20 : images.count >= 8 { break }
-            do { progress = "正在上传 \(index + 1)/\(selected.count)"; let file = try await MediaFiles.select(item, userID: session.user?.id ?? 0); defer { try? FileManager.default.removeItem(at: file) }; let remote = try await MediaUploader.shared.uploadForm(file: file, action: "merchant.media.upload"); if detail { detailImages.append(remote) } else { images.append(remote) }; try? FileManager.default.removeItem(at: file) }
-            catch { self.error = error.localizedDescription; break }
+    @ViewBuilder private func failedImageRows(_ pending: [PhotosPickerItem], detail: Bool) -> some View {
+        if !pending.isEmpty {
+            Button("重试全部待上传图片（\(pending.count)张）", systemImage: "arrow.clockwise") {
+                Task { await upload(pending, detail: detail) }
+            }
+            ForEach(Array(pending.enumerated()), id: \.offset) { index, item in
+                HStack {
+                    Label("待上传图片 \(index + 1)", systemImage: "photo.badge.exclamationmark").font(.caption)
+                    Spacer()
+                    Button("重试") { Task { await upload([item], detail: detail) } }.buttonStyle(.borderless)
+                    Button("移除", role: .destructive) { removeFailedImage(item, detail: detail) }.buttonStyle(.borderless)
+                }
+            }
+        }
+    }
+    private func removeFailedImage(_ item: PhotosPickerItem, detail: Bool) {
+        if detail { failedDetailImages.removeAll { $0 == item } }
+        else { failedMainImages.removeAll { $0 == item } }
+    }
+    @MainActor private func upload(_ selected: [PhotosPickerItem], detail: Bool) async {
+        guard !selected.isEmpty, !busy, let owner = session.user?.id, owner > 0 else { return }
+        busy = true; error = nil
+        defer {
+            busy = false; progress = ""
+            if detail { detailPicker = [] } else { mainPicker = [] }
+        }
+        // Keep unfinished selections, including other failed batches and capacity overflow.
+        var unfinished = detail ? failedDetailImages : failedMainImages
+        for item in selected where !unfinished.contains(item) { unfinished.append(item) }
+        if detail { failedDetailImages = unfinished } else { failedMainImages = unfinished }
+        var batch: [PhotosPickerItem] = []
+        for item in selected where !batch.contains(item) { batch.append(item) }
+        for (index, item) in batch.enumerated() {
+            guard session.user?.id == owner, !Task.isCancelled else { return }
+            if detail ? detailImages.count >= 20 : images.count >= 8 {
+                error = "图片数量已达上限，请先移除图片后重试待上传项"
+                break
+            }
+            do {
+                progress = "正在上传 \(index + 1)/\(batch.count)"
+                let file = try await MediaFiles.select(item, userID: owner)
+                defer { try? FileManager.default.removeItem(at: file) }
+                guard session.user?.id == owner else { return }
+                try Task.checkCancellation()
+                let remote = try await MediaUploader.shared.uploadForm(file: file, action: "merchant.media.upload")
+                guard session.user?.id == owner else { return }
+                if detail { detailImages.append(remote) } else { images.append(remote) }
+                removeFailedImage(item, detail: detail)
+            } catch is CancellationError {
+                return
+            } catch {
+                guard session.user?.id == owner else { return }
+                self.error = "部分图片未上传，可逐张重试或移除。" + error.localizedDescription
+            }
         }
     }
     @MainActor private func uploadVideo(_ item: PhotosPickerItem) async {
@@ -342,7 +405,9 @@ struct PublishProductView: View {
     }
     private func save(publishing: Bool) {
         guard !busy else { return }
+        guard restored, pendingPublication == nil else { error = "请先核对上次商品提交结果"; return }
         guard pendingVideo == nil else { error = "请先继续上传或放弃未完成的商品视频"; return }
+        if publishing, !recoverySupported { error = "正在确认发布服务，请稍后重新进入；本地草稿可继续保存"; return }
         if publishing {
             guard (values["name"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).count <= 150 else { error = "商品名称最多 150 字"; return }
             guard !(values["name"] ?? "").isEmpty, !(values["description"] ?? "").isEmpty, Money.positive(values["cny_price"] ?? ""), let stock = Int(values["stock"] ?? ""), (0...1_000_000).contains(stock), values["consultation_group_code"]?.count == 6, !images.isEmpty else { error = "请完善名称、描述、人民币售价、库存、咨询群号及至少一张主图"; return }
@@ -355,9 +420,52 @@ struct PublishProductView: View {
         Task {
             defer { busy = false }
             do {
-                if publishing { try await APIClient.shared.post("merchant.product.save", payload); committed = true; await LocalStore.shared.remove(localKey, userID: owner); NotificationCenter.default.post(name: .spxMerchantProductsUpdated, object: nil); dismiss() }
+                if publishing {
+                    let pending: Record
+                    do { pending = try await LocalStore.shared.reserveFinancial(Record(payload), key: publicationKey, userID: owner) }
+                    catch { pendingPublication = await LocalStore.shared.read(publicationKey, userID: owner); throw error }
+                    pendingPublication = pending
+                    do {
+                        let result = try await APIClient.shared.post("merchant.product.save", pending.fields)
+                        guard result["id"].int > 0 else { throw APIError.invalidResponse }
+                        await publicationCompleted(pending, owner: owner)
+                    } catch {
+                        if (error as? APIError)?.definitiveRejection == true {
+                            _ = await LocalStore.shared.completeFinancial(publicationKey, userID: owner, requestID: pending["client_request_id"].string)
+                            pendingPublication = nil
+                        }
+                        throw error
+                    }
+                }
                 else { let result = try await APIClient.shared.post("merchant.draft.save", ["id": .number(Decimal(draft)), "version": .number(Decimal(version)), "payload": .object(payload)]); draft = result["id"].int; version = result["version"].int; savedFingerprint = snapshot; await LocalStore.shared.remove(localKey, userID: owner); error = "草稿已保存" }
             } catch { self.error = error.localizedDescription }
         }
     }
+    @MainActor private func publicationCompleted(_ pending: Record, owner: Int) async {
+        _ = await LocalStore.shared.completeFinancial(publicationKey, userID: owner, requestID: pending["client_request_id"].string)
+        await LocalStore.shared.remove(localKey, userID: owner)
+        guard session.user?.id == owner else { return }
+        pendingPublication = nil; committed = true
+        NotificationCenter.default.post(name: .spxMerchantProductsUpdated, object: nil); dismiss()
+    }
+    private func resolvePublication() {
+        guard !busy, let pending = pendingPublication, let owner = session.user?.id else { return }
+        busy = true; error = nil
+        Task { @MainActor in
+            defer { busy = false }
+            do {
+                var body = pending.fields; body["operation"] = "merchant.product.save"
+                let result = try await APIClient.shared.post("financial.resolve", body)
+                guard session.user?.id == owner else { throw APIError.staleSession }
+                if result["cancelled"].flag {
+                    _ = await LocalStore.shared.completeFinancial(publicationKey, userID: owner, requestID: pending["client_request_id"].string)
+                    pendingPublication = nil; error = "上次发布未完成，已安全撤销，可以修改后重新提交"
+                } else {
+                    guard result["id"].int > 0 else { throw APIError.invalidResponse }
+                    await publicationCompleted(pending, owner: owner)
+                }
+            } catch { self.error = "暂时无法核对，上次提交记录会保留。" + error.localizedDescription }
+        }
+    }
+
 }
