@@ -256,9 +256,9 @@ struct ActiveCall: Identifiable {
             }
             let success: () -> Void = { Task { @MainActor in completion.resolve(true) } }
             if reject {
-                TUICallEngine.createInstance().reject(success, fail: { _, _ in Task { @MainActor in completion.resolve(false) } })
+                TUICallEngine.createInstance().reject(succ: success, fail: { _, _ in Task { @MainActor in completion.resolve(false) } })
             } else {
-                TUICallEngine.createInstance().hangup(success, fail: { _, _ in Task { @MainActor in completion.resolve(false) } })
+                TUICallEngine.createInstance().hangup(succ: success, fail: { _, _ in Task { @MainActor in completion.resolve(false) } })
             }
         }
     }
