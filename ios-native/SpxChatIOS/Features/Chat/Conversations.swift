@@ -234,7 +234,12 @@ struct ChatListView: View {
         var changed = false
         for row in rows where row.id > clearedThrough && row.id > 0 {
             var value = row
-            if value["local_created_at"].string.isEmpty, let local = map[row.id], local["client_message_id"] == value["client_message_id"] { value["local_created_at"] = local["local_created_at"] }
+            if value["local_created_at"].string.isEmpty,
+               !value["client_message_id"].string.isEmpty,
+               let local = map[row.id], !local["local_created_at"].string.isEmpty,
+               local["client_message_id"] == value["client_message_id"] {
+                value["local_created_at"] = local["local_created_at"]
+            }
             if map[row.id] != value { map[row.id] = value; changed = true }
         }
         if changed { messages = map.values.sorted { $0.id < $1.id } }

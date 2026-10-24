@@ -106,16 +106,24 @@ final class ReliabilityTests: XCTestCase {
         try await LocalStore.shared.save(snapshot, key: key, userID: owner)
         var cursors: [String] = []
         let caughtUp = expectation(description: "Read receipt only after full catchup")
+        var acknowledgedCatchup = false
         let model = ConversationStore(target: target, group: true, userID: owner, fetch: { action, query in
             if action.hasSuffix(".reconcile") { return .object(["messages": .array([]), "removed_ids": .array([])]) }
             let cursor = query["after_id"] ?? "initial"; cursors.append(cursor)
             let ids = cursor == "200" ? Array(201...300) : cursor == "300" ? Array(301...350) : []
             return .array(ids.map { .object(["id": .number(Decimal($0))]) })
         }, post: { _, body in
-            XCTAssertEqual(body["through_id"]?.int, 350)
-            caughtUp.fulfill(); return .null
+            let boundary = body["through_id"]?.int ?? 0
+            XCTAssertTrue([200, 300, 350].contains(boundary), "Receipts must follow a contiguous REST boundary")
+            if boundary == 350, !acknowledgedCatchup {
+                acknowledgedCatchup = true
+                XCTAssertEqual(Array(cursors.prefix(2)), ["200", "300"])
+                caughtUp.fulfill()
+            }
+            return .null
         })
         model.receive(.object(["type": "group.message", "group_id": .number(Decimal(target)), "message": .object(["id": 350])]))
+        model.setReadVisibility(true)
         let task = Task { await model.run() }
         await fulfillment(of: [caughtUp], timeout: 5)
         task.cancel(); await task.value
@@ -138,7 +146,13 @@ final class ReliabilityTests: XCTestCase {
             requests += 1
             if requests == 1 { return await withCheckedContinuation { continuation in release = continuation; fetching.fulfill() } }
             return .array([.object(["id": 11])])
-        }, post: { _, body in XCTAssertEqual(body["through_id"]?.int, 11); recovered.fulfill(); return .null })
+        }, post: { _, body in
+            let boundary = body["through_id"]?.int ?? 0
+            XCTAssertTrue([10, 11].contains(boundary))
+            if boundary == 11 { recovered.fulfill() }
+            return .null
+        })
+        model.setReadVisibility(true)
         let task = Task { await model.run() }
         await fulfillment(of: [fetching], timeout: 5)
         model.clear()
@@ -147,6 +161,37 @@ final class ReliabilityTests: XCTestCase {
         task.cancel(); await task.value
         XCTAssertGreaterThanOrEqual(requests, 2)
         XCTAssertEqual(model.messages.map(\.id), [11])
+        await LocalStore.shared.remove(key, userID: owner)
+    }
+    @MainActor func testSyncedMessagesStayUnreadUntilLatestMessagesAreVisible() async throws {
+        let owner = 2_147_479_987, target = 77887
+        let key = "messages-g-\(target)-sync-v2"
+        try await LocalStore.shared.save(ConversationSnapshot(messages: [Record(["id": 10])], cursor: 10, clearedThrough: 0), key: key, userID: owner)
+        let synced = expectation(description: "Messages merged while reading history")
+        let read = expectation(description: "Read only after latest messages become visible")
+        var receipts = 0
+        var reconciled = false
+        let model = ConversationStore(target: target, group: true, userID: owner, fetch: { action, _ in
+            if action.hasSuffix(".reconcile") {
+                if !reconciled { reconciled = true; synced.fulfill() }
+                return .object(["messages": .array([]), "removed_ids": .array([])])
+            }
+            return .array([.object(["id": 11])])
+        }, post: { _, body in
+            receipts += 1
+            XCTAssertEqual(body["through_id"]?.int, 11)
+            read.fulfill()
+            return .null
+        })
+        let task = Task { await model.run() }
+        await fulfillment(of: [synced], timeout: 5)
+        XCTAssertEqual(model.messages.map(\.id), [10, 11])
+        XCTAssertEqual(receipts, 0, "Background sync must not acknowledge unseen messages")
+        model.setReadVisibility(true)
+        await fulfillment(of: [read], timeout: 5)
+        model.setReadVisibility(false)
+        task.cancel(); await task.value
+        XCTAssertEqual(receipts, 1)
         await LocalStore.shared.remove(key, userID: owner)
     }
     @MainActor func testQueuedLargeUploadDoesNotBlockTextDelivery() async throws {
