@@ -21,7 +21,7 @@ struct RedPacketHistoryView: View {
                         }
                         Spacer(minLength: 4)
                         VStack(alignment: .trailing, spacing: 6) {
-                            Text(packet[filter == "received" ? "my_amount" : "total_amount"].string + " SPX001").font(.caption.weight(.semibold)).foregroundStyle(.primary)
+                            Text(DisplayLabels.amount(packet[filter == "received" ? "my_amount" : "total_amount"].string) + " SPX001").font(.caption.weight(.semibold)).foregroundStyle(.primary)
                             Text(status(packet)).font(.caption2).foregroundStyle(.secondary)
                         }
                     }.padding(.vertical, 5)

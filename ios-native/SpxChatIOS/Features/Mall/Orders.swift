@@ -30,7 +30,7 @@ struct CheckoutView: View {
         Form {
             Section {
                 HStack(spacing: 14) { CachedImage(source: product.image).frame(width: 76, height: 76); VStack(alignment: .leading, spacing: 8) { Text(product.name).font(.headline); PriceLabel(cny: selectedPrice, estimate: nil, legacy: selectedVariant?["spx_price"].string ?? product["spx_price"].string) } }
-                if !variants.isEmpty { Picker("选择规格", selection: $variantID) { Text("请选择").tag(""); ForEach(variants, id: \.self) { value in Text("\(value["name"].string) · ¥\(value["cny_price"].string)").tag(value["id"].string) } } }
+                if !variants.isEmpty { Picker("选择规格", selection: $variantID) { Text("请选择").tag(""); ForEach(variants, id: \.self) { value in Text("\(value["name"].string) · ¥\(DisplayLabels.amount(value["cny_price"].string))").tag(value["id"].string) } } }
                 Stepper("数量：\(quantity)", value: $quantity, in: 1...max(1, min(99, availableStock))).disabled(availableStock < 1)
                 Text("可购买库存：\(availableStock)").font(.caption).foregroundStyle(.secondary)
             }.disabled(busy || pending != nil)
@@ -43,10 +43,10 @@ struct CheckoutView: View {
             Section { TextField("买家备注（选填）", text: $note, axis: .vertical).lineLimit(2...4) }.disabled(busy || pending != nil)
             if !quote.object.isEmpty {
                 Section("锁定报价") {
-                    InfoRow(title: "商品单价", value: quote["unit_price"].string + " SPX001")
-                    InfoRow(title: "运费", value: quote["shipping_fee"].string + " SPX001")
-                    InfoRow(title: "合计", value: quote["total_spx"].string + " SPX001")
-                    InfoRow(title: "可用余额", value: quote["balance"].string + " SPX001")
+                    InfoRow(title: "商品单价", value: DisplayLabels.amount(quote["unit_price"].string) + " SPX001")
+                    InfoRow(title: "运费", value: DisplayLabels.amount(quote["shipping_fee"].string) + " SPX001")
+                    InfoRow(title: "合计", value: DisplayLabels.amount(quote["total_spx"].string) + " SPX001")
+                    InfoRow(title: "可用余额", value: DisplayLabels.amount(quote["balance"].string) + " SPX001")
                     if let quoteExpiresAt {
                         TimelineView(.periodic(from: .now, by: 1)) { context in
                             let remaining = max(0, Int(quoteExpiresAt.timeIntervalSince(context.date)))
@@ -67,7 +67,7 @@ struct CheckoutView: View {
             .onChange(of: addressID) { _, _ in quote = .null }
             .task { await loadAddresses(); pending = await LocalStore.shared.read("checkout-pending", userID: session.user?.id ?? 0) }
             .onAppear { Task { await loadAddresses() } }
-            .confirmationDialog("确认支付 \(quote["total_spx"].string) SPX001？", isPresented: $confirm, titleVisibility: .visible) { Button("确认支付") { pay() }; Button("取消", role: .cancel) { } }
+            .confirmationDialog("确认支付 \(DisplayLabels.amount(quote["total_spx"].string)) SPX001？", isPresented: $confirm, titleVisibility: .visible) { Button("确认支付") { pay() }; Button("取消", role: .cancel) { } }
             .navigationDestination(isPresented: Binding(get: { orderID > 0 }, set: { if !$0 { orderID = 0 } })) { OrderDetailView(id: orderID) }
     }
     private func loadAddresses() async { guard physical else { return }; do { addresses = try await APIClient.shared.get("wallet.address").list; if addressID == 0 { addressID = addresses.first(where: { $0["is_default"].flag })?.id ?? addresses.first?.id ?? 0 } } catch { self.error = error.localizedDescription } }
@@ -109,6 +109,9 @@ struct OrdersView: View {
             if more { Button(busy ? "加载中…" : "加载更多") { Task { await load(reset: false) } }.disabled(busy) }
             if rows.isEmpty && !busy { EmptyState(title: "暂无订单", icon: "shippingbox") }
         }.navigationTitle("我的订单").task(id: status) { await load(reset: true) }.refreshable { await load(reset: true) }.errorAlert($error)
+            .onReceive(NotificationCenter.default.publisher(for: .spxOrdersChanged).debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { event in
+                Task { if await AccountMutation.isCurrent(event) { await load(reset: true) } }
+            }
     }
     private func load(reset: Bool) async {
         if !reset && busy { return }
@@ -126,11 +129,12 @@ struct OrdersView: View {
 
 struct OrderSummary: View {
     let order: Record
-    var body: some View { VStack(alignment: .leading, spacing: 9) { HStack { Text(order.text("product_name", "name")).font(.headline); Spacer(); Text(DisplayLabels.order(order["status"].string)).font(.caption).foregroundStyle(SPXColor.primary) }; Text("\(order["quantity"].string) 件 · \(order["total_spx"].string) SPX001").font(.subheadline); Text(order["created_at"].string).font(.caption).foregroundStyle(.secondary) }.padding(.vertical, 6) }
+    var body: some View { VStack(alignment: .leading, spacing: 9) { HStack { Text(order.text("product_name", "name")).font(.headline); Spacer(); Text(DisplayLabels.order(order["status"].string)).font(.caption).foregroundStyle(SPXColor.primary) }; Text("\(order["quantity"].string) 件 · \(DisplayLabels.amount(order["total_spx"].string)) SPX001").font(.subheadline); Text(order["created_at"].string).font(.caption).foregroundStyle(.secondary) }.padding(.vertical, 6) }
 }
 
 struct OrderDetailView: View {
     let id: Int
+    @State private var detailLoadID = UUID()
     @State private var order = Record()
     @State private var error: String?
     @State private var busy = false
@@ -140,7 +144,7 @@ struct OrderDetailView: View {
     @State private var review = false
     var body: some View {
         List {
-            Section { OrderSummary(order: order); InfoRow(title: "订单编号", value: String(id)); InfoRow(title: "规格", value: order["variant_name"].string); InfoRow(title: "支付金额", value: order["total_spx"].string + " SPX001") }
+            Section { OrderSummary(order: order); InfoRow(title: "订单编号", value: String(id)); InfoRow(title: "规格", value: order["variant_name"].string); InfoRow(title: "支付金额", value: DisplayLabels.amount(order["total_spx"].string) + " SPX001") }
             if !order["carrier"].string.isEmpty { Section("物流") { InfoRow(title: "承运商", value: order["carrier"].string); InfoRow(title: "运单号", value: order["tracking_number"].string) } }
             if !order["fulfillment_note"].string.isEmpty { Section("交付内容") { Text(order["fulfillment_note"].string).textSelection(.enabled) } }
             if !order["redeem_code"].string.isEmpty { Section("到店核销码") { Text(order["redeem_code"].string).font(.title2.monospaced().bold()).textSelection(.enabled); Text("到店时向商家出示，切勿提前转发。").font(.caption).foregroundStyle(.secondary) } }
@@ -157,12 +161,23 @@ struct OrderDetailView: View {
             }.disabled(busy)
             if let error { ErrorBanner(message: error) }
         }.navigationTitle("订单详情").task { await load() }.refreshable { await load() }
+            .onReceive(NotificationCenter.default.publisher(for: .spxOrdersChanged).debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { event in
+                Task { if await AccountMutation.isCurrent(event) { await load() } }
+            }
             .confirmationDialog("确认执行此订单操作？", isPresented: Binding(get: { action != nil }, set: { if !$0 { action = nil } }), titleVisibility: .visible) { Button("确认") { if let action { mutate(action); self.action = nil } } }
             .sheet(isPresented: $afterSale, onDismiss: { Task { await load() } }) { AfterSaleView(orderID: id, canReturn: order["order_type"].string == "physical" && order["status"].string != "pending") }
             .sheet(isPresented: $returns, onDismiss: { Task { await load() } }) { ReturnShipmentView(orderID: id) }
             .sheet(isPresented: $review) { ReviewEditor(order: order) }
     }
-    private func load() async { do { order = try await APIClient.shared.get("order", ["id": String(id)]).record } catch { self.error = error.localizedDescription } }
+    private func load() async {
+        let requestID = UUID(); detailLoadID = requestID
+        do {
+            let value = try await APIClient.shared.get("order", ["id": String(id)]).record
+            guard detailLoadID == requestID, !Task.isCancelled else { return }
+            order = value; error = nil
+        } catch is CancellationError { }
+        catch { if detailLoadID == requestID { self.error = error.localizedDescription } }
+    }
     private func mutate(_ action: String) { busy = true; Task { defer { busy = false }; do { try await APIClient.shared.post(action, ["order_id": .number(Decimal(id))]); await load() } catch { self.error = error.localizedDescription } } }
 }
 

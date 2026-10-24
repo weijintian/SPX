@@ -1,30 +1,48 @@
 import SwiftUI
 
 enum MessageTimeline {
+    private static let lock = NSLock()
+    private static let databaseFormatter: DateFormatter = {
+        let value = DateFormatter(); value.locale = Locale(identifier: "en_US_POSIX")
+        value.timeZone = TimeZone(identifier: "Asia/Shanghai"); value.dateFormat = "yyyy-MM-dd HH:mm:ss"; return value
+    }()
+    private static let isoFormatter = ISO8601DateFormatter()
+    private static let parsedDates: NSCache<NSString, NSDate> = { let cache = NSCache<NSString, NSDate>(); cache.countLimit = 8192; return cache }()
+    private static let displayFormatter: DateFormatter = {
+        let value = DateFormatter(); value.locale = .autoupdatingCurrent; value.timeZone = .autoupdatingCurrent; return value
+    }()
     static func date(_ value: String) -> Date? {
-        let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(identifier: "Asia/Shanghai"); formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        return formatter.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+        lock.lock(); defer { lock.unlock() }
+        if let cached = parsedDates.object(forKey: value as NSString) { return cached as Date }
+        let result = databaseFormatter.date(from: value) ?? isoFormatter.date(from: value)
+        if let result { parsedDates.setObject(result as NSDate, forKey: value as NSString) }
+        return result
     }
-    static func showsTime(before message: Record, in messages: [Record]) -> Bool {
-        guard let index = messages.firstIndex(where: { $0.id == message.id }), index > 0 else { return true }
-        guard let current = date(message["created_at"].string), let previous = date(messages[index - 1]["created_at"].string) else { return false }
-        return current.timeIntervalSince(previous) >= 300
+    static func boundaries(in messages: [Record]) -> Set<Int> {
+        var result = Set<Int>(); var previous: Date?
+        for (index, message) in messages.enumerated() {
+            let current = date(message["created_at"].string)
+            if index == 0 || (current != nil && previous != nil && current!.timeIntervalSince(previous!) >= 300) { result.insert(message.id) }
+            previous = current
+        }
+        return result
     }
+    static func showsTime(before message: Record, in messages: [Record]) -> Bool { boundaries(in: messages).contains(message.id) }
     static func label(_ value: String) -> String {
         guard let date = date(value) else { return value }
-        let formatter = DateFormatter(); formatter.locale = .autoupdatingCurrent; formatter.timeZone = .autoupdatingCurrent
-        formatter.dateFormat = Calendar.current.isDateInToday(date) ? "HH:mm" : "MM月dd日 HH:mm"
-        return formatter.string(from: date)
+        lock.lock(); defer { lock.unlock() }
+        displayFormatter.dateFormat = Calendar.current.isDateInToday(date) ? "HH:mm" : "MM月dd日 HH:mm"
+        return displayFormatter.string(from: date)
     }
 }
 
 struct MessageText: View {
     let content: String
     var mine = false
+    private static let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
     private var attributed: AttributedString {
         var text = AttributedString(content)
-        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return text }
+        guard let detector = Self.detector else { return text }
         let source = content as NSString
         for match in detector.matches(in: content, range: NSRange(location: 0, length: source.length)) {
             guard let url = match.url, ["https", "http", "mailto"].contains(url.scheme?.lowercased() ?? ""), let stringRange = Range(match.range, in: content), let range = Range(stringRange, in: text) else { continue }

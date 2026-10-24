@@ -56,8 +56,28 @@ actor APIClient {
         guard epoch == generation else {throw APIError.staleSession}
         return try decode(data,response:response)
     }
-    func get(_ action:String, _ query:[String:String] = [:]) async throws -> JSON {try await request(action,query:query)}
-    @discardableResult func post(_ action:String, _ body:[String:JSON] = [:]) async throws -> JSON {try await request(action,method:"POST",body:body)}
+    func get(_ action:String, _ query:[String:String] = [:]) async throws -> JSON {
+        let expectedSession = generation
+        let result = try await request(action, query: query)
+        guard expectedSession == generation else { throw APIError.staleSession }
+        let recoveredFinancialResult = ["financial.request", "orders.request", "redpackets.request"].contains(action) && (result["exists"].flag || result["found"].flag)
+        if recoveredFinancialResult || (action == "redpackets.detail" && !result["my_amount"].string.isEmpty) {
+            NotificationCenter.default.post(name: .spxWalletChanged, object: AccountMutation(session: expectedSession))
+        }
+        if ["contacts", "contacts.search"].contains(action), case .array(let values) = result {
+            return .array(values.map { .object($0.record.normalizedContact.fields) })
+        }
+        return result
+    }
+    @discardableResult func post(_ action:String, _ body:[String:JSON] = [:]) async throws -> JSON {
+        let expectedSession = generation
+        let result = try await request(action, method: "POST", body: body)
+        guard expectedSession == generation else { throw APIError.staleSession }
+        let event = AccountMutation(session: expectedSession)
+        if AccountMutation.affectsWallet(action) { NotificationCenter.default.post(name: .spxWalletChanged, object: event) }
+        if AccountMutation.affectsOrders(action) { NotificationCenter.default.post(name: .spxOrdersChanged, object: event) }
+        return result
+    }
     func data(_ action: String, query: [String: String] = [:]) async throws -> Data {
         let epoch = generation
         var request = URLRequest(url: try requestURL(action, query: query))

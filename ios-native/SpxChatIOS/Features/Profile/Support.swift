@@ -48,8 +48,8 @@ struct ReferralsView: View {
     @State private var error: String?
     var body: some View {
         List {
-            Section("邀请朋友") { InfoRow(title: "邀请码", value: data["invite_code"].string); if let url = URL(string: data["invite_url"].string), !data["invite_url"].string.isEmpty { ShareLink(item: url) { Label("分享邀请链接", systemImage: "square.and.arrow.up") } }; InfoRow(title: "已邀请", value: data["invited_count"].string); InfoRow(title: "累计奖励 SPX001", value: data["total_rewards"].string); InfoRow(title: "佣金比例", value: data["commission_rate"].string) }
-            Section("邀请记录") { ForEach(data["users"].list) { user in VStack(alignment: .leading, spacing: 8) { Text(user.name); Text("奖励 \(user["reward_total"].string) SPX001").font(.caption).foregroundStyle(.secondary) } } }
+            Section("邀请朋友") { InfoRow(title: "邀请码", value: data["invite_code"].string); if let url = URL(string: data["invite_url"].string), !data["invite_url"].string.isEmpty { ShareLink(item: url) { Label("分享邀请链接", systemImage: "square.and.arrow.up") } }; InfoRow(title: "已邀请", value: data["invited_count"].string); InfoRow(title: "累计奖励 SPX001", value: DisplayLabels.amount(data["total_rewards"].string)); InfoRow(title: "佣金比例", value: DisplayLabels.amount(data["commission_rate"].string)) }
+            Section("邀请记录") { ForEach(data["users"].list) { user in VStack(alignment: .leading, spacing: 8) { Text(user.name); Text("奖励 \(DisplayLabels.amount(user["reward_total"].string)) SPX001").font(.caption).foregroundStyle(.secondary) } } }
             if let error { ErrorBanner(message: error) }
         }.navigationTitle("邀请朋友").task { do { data = try await APIClient.shared.get("referrals") } catch { self.error = error.localizedDescription } }
     }

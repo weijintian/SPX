@@ -108,6 +108,7 @@ struct ConversationSettingsView: View {
             do {
                 try await APIClient.shared.post(action, [isGroup ? "group_id" : "chat_id": .number(Decimal(item.id))])
                 await LocalStore.shared.remove("messages-\(isGroup ? "g" : "c")-\(item.id)", userID: session.user?.id ?? 0)
+                await LocalStore.shared.remove("messages-\(isGroup ? "g" : "c")-\(item.id)-sync-v2", userID: session.user?.id ?? 0)
                 let context = Record(["target": .number(Decimal(item.id)), "group": .bool(isGroup)])
                 NotificationCenter.default.post(name: isGroup ? .spxConversationRemoved : .spxConversationCleared, object: context)
                 dismiss()

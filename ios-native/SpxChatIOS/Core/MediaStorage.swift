@@ -175,7 +175,7 @@ actor MediaCache {
             return target
         }
         tasks[key] = task
-        defer { tasks[key] = nil }
+        defer { if generations[userID] == generation { tasks[key] = nil } }
         return try await task.value
     }
     /// Inspect the disk cache without starting a network transfer.
@@ -188,14 +188,21 @@ actor MediaCache {
         try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: target.path)
         return target
     }
-    func clear(userID: Int) throws {
+    func clear(userID: Int) async throws {
         generations[userID] = UUID()
         for (key, task) in tasks where key.hasPrefix("\(userID):") { task.cancel() }
+        try await VideoRangeCache.shared.clear(userID: userID)
+        try await ImageThumbnailCache.shared.clear(userID: userID)
         let directory = try MediaFiles.directory(userID: userID, component: "media")
         for url in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) { try FileManager.default.removeItem(at: url) }
     }
-    func seed(_ local: URL, source: String, userID: Int) throws {
-        guard let remote = URL(string: source), remote.scheme == "https" || remote.scheme == "http" else { return }
+    func seed(_ local: URL, source: String, userID: Int) async throws {
+        try Task.checkCancellation()
+        let generation = generations[userID] ?? UUID(); generations[userID] = generation
+        let endpoint = try await APIClient.shared.endpoint()
+        try Task.checkCancellation()
+        guard generation == generations[userID] else { throw CancellationError() }
+        guard let remote = URL(string: source, relativeTo: endpoint)?.absoluteURL, ["https", "http"].contains(remote.scheme ?? "") else { throw APIError.invalidURL }
         let hash = SHA256.hash(data: Data(source.utf8)).map { String(format: "%02x", $0) }.joined()
         let target = try MediaFiles.directory(userID: userID, component: "media").appendingPathComponent(hash).appendingPathExtension(remote.pathExtension)
         guard !FileManager.default.fileExists(atPath: target.path) else { return }
@@ -203,9 +210,19 @@ actor MediaCache {
         try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: target.path)
     }
     func trim(userID: Int, maximumBytes: Int = 536_870_912) throws {
-        let directory = try MediaFiles.directory(userID: userID, component: "media")
-        let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey]).compactMap { url -> (URL, Int, Date)? in guard let info = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]) else { return nil }; return (url, info.fileSize ?? 0, info.contentModificationDate ?? .distantPast) }.sorted { $0.2 < $1.2 }
+        var files: [(URL, Int, Date)] = []
+        for component in ["media", "media-ranges", "media-thumbnails"] {
+            let directory = try MediaFiles.directory(userID: userID, component: component)
+            let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey])
+            while let url = enumerator?.nextObject() as? URL {
+                guard let info = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]), info.isRegularFile == true else { continue }
+                files.append((url, info.fileSize ?? 0, info.contentModificationDate ?? .distantPast))
+            }
+        }
+        files.sort { $0.2 < $1.2 }
         var size = files.reduce(0) { $0 + $1.1 }
-        for (url, bytes, modified) in files where size > maximumBytes && modified < Date().addingTimeInterval(-86400) { try FileManager.default.removeItem(at: url); size -= bytes }
+        for (url, bytes, modified) in files where size > maximumBytes && modified < Date().addingTimeInterval(-86400) {
+            try? FileManager.default.removeItem(at: url); size -= bytes
+        }
     }
 }

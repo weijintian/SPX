@@ -35,7 +35,7 @@ struct RedPacketSendView: View {
             }.navigationTitle("发红包").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() }.disabled(busy) } }
                 .tint(.red).errorAlert($error)
-                .confirmationDialog("确认发送 \(amount) SPX001，分为 \(count) 个红包？", isPresented: $confirm, titleVisibility: .visible) { Button("确认发送") { send() } }
+                .confirmationDialog("确认发送 \(DisplayLabels.amount(amount)) SPX001，分为 \(count) 个红包？", isPresented: $confirm, titleVisibility: .visible) { Button("确认发送") { send() } }
                 .task { if let saved: String = await LocalStore.shared.read("redpacket-pending-\(scope)-\(targetID)", userID: session.user?.id ?? 0) { requestID = saved; uncertain = true } }
         }
     }
@@ -67,27 +67,70 @@ struct RedPacketSendView: View {
 struct RedPacketPopup: View {
     let packetID: String
     let close: () -> Void
+    @EnvironmentObject private var session: SessionStore
     @State private var packet: JSON = .null
     @State private var busy = false
+    @State private var loading = false
+    @State private var claimCompleted = false
     @State private var error: String?
     var body: some View {
         ZStack {
             Color.black.opacity(0.55).ignoresSafeArea().onTapGesture { if !busy { close() } }
             VStack(spacing: 22) {
                 Image(systemName: "gift.fill").font(.system(size: 38)).foregroundStyle(.yellow)
-                Text(packet["sender_name"].string).font(.headline)
+                Text(packet["sender_name"].string.isEmpty ? "红包" : packet["sender_name"].string).font(.headline)
                 Text(packet["greeting"].string.isEmpty ? "恭喜发财，大吉大利" : packet["greeting"].string).font(.title3.weight(.medium)).multilineTextAlignment(.center)
-                if packet["can_claim"].flag {
-                    Button { claim() } label: { ZStack { Circle().fill(LinearGradient(colors: [.yellow, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)).frame(width: 94, height: 94); Circle().stroke(.brown.opacity(0.4), lineWidth: 2).frame(width: 80, height: 80); if busy { ProgressView().tint(.brown) } else { Text("開").font(.system(size: 38, weight: .medium, design: .serif)).foregroundStyle(.brown) } } }.disabled(busy)
-                } else if !packet["my_amount"].string.isEmpty { Text("\(packet["my_amount"].string) SPX001").font(.title2.bold()).foregroundStyle(.yellow); Text("已存入资产").font(.footnote) }
-                else { Text(packet["status"].string == "active" ? "查看红包领取情况" : "红包已领完或已过期").foregroundStyle(.white.opacity(0.8)) }
+                if claimCompleted {
+                    Label("领取成功，正在更新状态", systemImage: "checkmark.circle.fill").foregroundStyle(.yellow)
+                    Button(loading ? "正在刷新…" : "刷新领取状态") { load() }.font(.footnote.weight(.semibold)).disabled(loading || busy)
+                } else if packet["can_claim"].flag {
+                    Button { claim() } label: { ZStack { Circle().fill(LinearGradient(colors: [.yellow, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)).frame(width: 94, height: 94); Circle().stroke(.brown.opacity(0.4), lineWidth: 2).frame(width: 80, height: 80); if busy { ProgressView().tint(.brown) } else { Text("拆").font(.system(size: 38, weight: .medium, design: .serif)).foregroundStyle(.brown) } } }.disabled(busy)
+                } else if !packet["my_amount"].string.isEmpty { Text("\(DisplayLabels.amount(packet["my_amount"].string)) SPX001").font(.title2.bold()).foregroundStyle(.yellow); Text("已存入资产").font(.footnote) }
+                else if packet["id"].string.isEmpty {
+                    if loading { ProgressView().tint(.white) }
+                    else { Button("重新加载红包") { load() }.font(.footnote.weight(.semibold)).disabled(loading || busy) }
+                }
+                else { Text(ineligibleMessage).foregroundStyle(.white.opacity(0.86)).multilineTextAlignment(.center); Button(loading ? "正在刷新…" : "刷新领取状态") { load() }.font(.footnote.weight(.semibold)).disabled(loading || busy) }
                 if let error { Text(error).font(.footnote).foregroundStyle(.yellow) }
                 if !packet["claims"].array.isEmpty {
-                    ScrollView { LazyVStack(spacing: 12) { ForEach(Array(packet["claims"].array.enumerated()), id: \.offset) { _, claim in HStack { Text(claim["nickname"].string); Spacer(); Text(claim["amount"].string) }.font(.caption) } } }.frame(maxHeight: 200)
+                    ScrollView { LazyVStack(spacing: 12) { ForEach(Array(packet["claims"].array.enumerated()), id: \.offset) { _, claim in HStack { Text(claim["nickname"].string); Spacer(); Text(DisplayLabels.amount(claim["amount"].string) + " SPX001") }.font(.caption) } } }.frame(maxHeight: 200)
                 }
                 Button("关闭") { close() }.foregroundStyle(.white.opacity(0.8)).disabled(busy)
             }.padding(30).frame(maxWidth: 320).foregroundStyle(.white).background(LinearGradient(colors: [Color(red: 0.86, green: 0.24, blue: 0.18), Color(red: 0.67, green: 0.1, blue: 0.1)], startPoint: .top, endPoint: .bottom), in: RoundedRectangle(cornerRadius: 24))
-        }.task { do { packet = try await APIClient.shared.get("redpackets.detail", ["id": packetID]) } catch { self.error = error.localizedDescription } }
+        }.task { load() }
     }
-    private func claim() { busy = true; Task { defer { busy = false }; do { packet = try await APIClient.shared.post("redpackets.claim", ["id": .string(packetID)]) } catch { self.error = error.localizedDescription; if let result = try? await APIClient.shared.get("redpackets.detail", ["id": packetID]) { packet = result } } } }
+    private var ineligibleMessage: String {
+        if packet["status"].string != "active" { return "红包已领完或已过期" }
+        if packet["sender_id"].int == session.user?.id { return "这是你发出的红包，查看领取进度" }
+        return "当前账号暂不可领取，请确认红包接收范围和群成员身份。"
+    }
+    private func load() {
+        guard !loading else { return }
+        loading = true
+        Task { defer { loading = false }; do { packet = try await APIClient.shared.get("redpackets.detail", ["id": packetID]); claimCompleted = false; error = nil } catch { self.error = error.localizedDescription } }
+    }
+    private func claim() {
+        guard !busy, packet["can_claim"].flag else { return }
+        busy = true
+        Task {
+            defer { busy = false }
+            do {
+                packet = try await APIClient.shared.post("redpackets.claim", ["id": .string(packetID)])
+                claimCompleted = true
+                error = nil
+                do {
+                    packet = try await APIClient.shared.get("redpackets.detail", ["id": packetID])
+                    claimCompleted = false
+                } catch {
+                    self.error = "领取已提交，状态暂时无法刷新，请稍后重试。"
+                }
+            } catch {
+                self.error = error.localizedDescription
+                if let result = try? await APIClient.shared.get("redpackets.detail", ["id": packetID]) {
+                    packet = result
+                    claimCompleted = false
+                }
+            }
+        }
+    }
 }

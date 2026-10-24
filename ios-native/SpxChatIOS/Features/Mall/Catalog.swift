@@ -97,10 +97,10 @@ struct PriceLabel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             if !cny.isEmpty, Money.positive(cny) {
-                Text("¥\(cny)").font(.title3.bold()).foregroundStyle(SPXColor.primary)
-                if let estimate { Text("≈ \(estimate) SPX001").font(.caption).foregroundStyle(.secondary) }
+                Text("¥\(DisplayLabels.amount(cny))").font(.title3.bold()).foregroundStyle(SPXColor.primary)
+                if let estimate { Text("≈ \(DisplayLabels.amount(estimate)) SPX001").font(.caption).foregroundStyle(.secondary) }
             } else {
-                Text("\(legacy) SPX001").font(.headline).foregroundStyle(SPXColor.primary)
+                Text("\(DisplayLabels.amount(legacy)) SPX001").font(.headline).foregroundStyle(SPXColor.primary)
                 Text("历史商品 · 尚未设置 CNY 定价").font(.caption2).foregroundStyle(.secondary)
             }
         }
@@ -162,13 +162,9 @@ struct ProductDetailView: View {
 
 private struct ProductVideo: View {
     let source: String
-    @EnvironmentObject private var session: SessionStore
-    @State private var player: AVPlayer?
-    @State private var error: String?
     var body: some View {
-        VideoPlayer(player: player).overlay { if let error { Text(error).font(.caption).padding() } else if player == nil { ProgressView("正在加载视频…") } }
-            .task(id: source) { do { player = AVPlayer(url: try await MediaCache.shared.file(source, userID: session.user?.id ?? 0)) } catch { self.error = error.localizedDescription } }
-            .onDisappear { player?.pause(); player = nil }
+        MediaPage(message: Record(["message_type": "video", "media_url": .string(source)]))
+            .background(.black).clipShape(RoundedRectangle(cornerRadius: 14))
     }
 }
 

@@ -191,11 +191,11 @@ struct RecordsView: View {
                     if finance {
                         InfoRow(title: "处理状态", value: DisplayLabels.transactionStatus(row["status"].string))
                         if row["mall_order_id"].int > 0 { InfoRow(title: "关联订单", value: "#" + row["mall_order_id"].string) }
-                        if let stakeable = row["stakeable_amount"].decimal, stakeable > 0 { InfoRow(title: "其中可质押数量", value: Money.format(stakeable, scale: 8) + " SPX001") }
+                        if let stakeable = row["stakeable_amount"].decimal, stakeable > 0 { InfoRow(title: "其中可质押数量", value: DisplayLabels.amount(Money.format(stakeable, scale: 18)) + " SPX001") }
                     } else {
                         if row["target_id"].int > 0 { InfoRow(title: "关联业务编号", value: "#" + row["target_id"].string) }
                         let metadata = metadata(row)
-                        if !metadata["amount"].string.isEmpty { InfoRow(title: "数量", value: metadata["amount"].string + " SPX001") }
+                        if !metadata["amount"].string.isEmpty { InfoRow(title: "数量", value: DisplayLabels.amount(metadata["amount"].string) + " SPX001") }
                         if !metadata["version"].string.isEmpty { InfoRow(title: "商品版本", value: metadata["version"].string) }
                         if !metadata["ids"].array.isEmpty { InfoRow(title: "涉及商品", value: metadata["ids"].array.map(\.string).joined(separator: "、")) }
                     }
@@ -207,7 +207,7 @@ struct RecordsView: View {
                             Text(row["created_at"].string).font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        if finance { Text(row["amount"].string + " " + row["symbol"].string).font(.caption.weight(.semibold)).multilineTextAlignment(.trailing) }
+                        if finance { Text(DisplayLabels.amount(row["amount"].string) + " " + row["symbol"].string).font(.caption.weight(.semibold)).multilineTextAlignment(.trailing) }
                     }
                 }
             }

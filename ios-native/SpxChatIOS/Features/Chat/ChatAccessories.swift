@@ -58,7 +58,7 @@ struct MessageCardContent: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 12) {
                     CachedImage(source: product["image_url"].string).frame(width: 72, height: 72).background(.white, in: RoundedRectangle(cornerRadius: 10)).clipShape(RoundedRectangle(cornerRadius: 10))
-                    VStack(alignment: .leading, spacing: 8) { Text(product.text("name", "product_name")).font(.subheadline.weight(.semibold)).lineLimit(2); if !product["cny_price"].string.isEmpty { Text("¥\(product["cny_price"].string)").font(.headline) } }
+                    VStack(alignment: .leading, spacing: 8) { Text(product.text("name", "product_name")).font(.subheadline.weight(.semibold)).lineLimit(2); if !product["cny_price"].string.isEmpty { Text("¥\(DisplayLabels.amount(product["cny_price"].string))").font(.headline) } }
                 }
                 Divider(); Label("商城商品 · 查看详情", systemImage: "bag").font(.caption).opacity(0.8)
             }.frame(width: 228, alignment: .leading)

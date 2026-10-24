@@ -198,7 +198,7 @@ struct PublishProductView: View {
             field("description", "商品简介", multiline: true)
             Picker("分类", selection: bind("category")) { ForEach(categories, id: \.self) { Text($0).tag($0) } }
             field("cny_price", "人民币价格 CNY", keyboard: .decimalPad)
-            if let estimate = Money.estimate(cny: values["cny_price"] ?? "", usd: usd) { Text("参考约 \(estimate) SPX001").font(.caption).foregroundStyle(.secondary) }
+            if let estimate = Money.estimate(cny: values["cny_price"] ?? "", usd: usd) { Text("参考约 \(DisplayLabels.amount(estimate)) SPX001").font(.caption).foregroundStyle(.secondary) }
             field("stock", "总库存", keyboard: .numberPad).disabled(editing)
             field("consultation_group_code", "咨询群号（六位）")
         } header: { Text("基本信息") } footer: { Text("人民币售价固定，SPX001 数量按实时行情换算。已发布商品库存请通过库存管理调整。") }

@@ -29,7 +29,7 @@ struct MerchantOverviewView: View {
                         NavigationLink { MerchantOrdersView() } label: { Metric(title: "近 30 天订单", value: performance["orders_30_days"].string, icon: "shippingbox") }
                         NavigationLink { MerchantProductsView() } label: { Metric(title: "商品管理", value: "查看商品", icon: "square.grid.2x2") }
                         NavigationLink { MerchantOrdersView(onlyAfterSale: true) } label: { Metric(title: "售后请求", value: performance["after_sale_count"].string, icon: "arrow.triangle.2.circlepath") }
-                        NavigationLink { RecordsView(title: "经营财务", action: "merchant.finance") } label: { Metric(title: "已结算 SPX001", value: stats["settled_amount"].string, icon: "chart.line.uptrend.xyaxis") }
+                        NavigationLink { RecordsView(title: "经营财务", action: "merchant.finance") } label: { Metric(title: "已结算 SPX001", value: DisplayLabels.amount(stats["settled_amount"].string), icon: "chart.line.uptrend.xyaxis") }
                     }.buttonStyle(.plain)
                     NavigationLink { PublishProductView() } label: { HStack { Image(systemName: "plus.app").font(.title2); VStack(alignment: .leading) { Text("发布新商品").font(.headline); Text("批量主图 · CNY 定价 · 多规格").font(.caption).opacity(0.8) }; Spacer(); Image(systemName: "arrow.right") }.padding(20).foregroundStyle(.white).background(LinearGradient(colors: [SPXColor.primary, Color(red: 0.16, green: 0.48, blue: 0.98)], startPoint: .leading, endPoint: .trailing), in: RoundedRectangle(cornerRadius: 22)) }
                     SPXCard {
@@ -38,8 +38,8 @@ struct MerchantOverviewView: View {
                             NavigationLink { MerchantDraftsView() } label: { Label("商品草稿", systemImage: "doc.text") }
                             NavigationLink { MerchantProfileEditor(merchant: merchant, application: false) } label: { Label("店铺资料", systemImage: "storefront") }
                             NavigationLink { RecordsView(title: "操作记录", action: "merchant.audit") } label: { Label("操作记录", systemImage: "clock.arrow.circlepath") }
-                            InfoRow(title: "待结算 SPX001", value: stats["held_amount"].string)
-                            InfoRow(title: "已冻结保证金", value: merchant["deposit_frozen"].string)
+                            InfoRow(title: "待结算 SPX001", value: DisplayLabels.amount(stats["held_amount"].string))
+                            InfoRow(title: "已冻结保证金", value: DisplayLabels.amount(merchant["deposit_frozen"].string))
                             if merchant["status"].string == "awaiting_deposit" { Button("缴纳保证金 \(required) SPX001") { deposit = true } }
                         }
                     }

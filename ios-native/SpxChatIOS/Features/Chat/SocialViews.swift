@@ -3,6 +3,8 @@ import CoreLocation
 import PhotosUI
 
 struct ContactsView: View {
+    @EnvironmentObject private var session: SessionStore
+    @State private var loadID = UUID()
     @State private var rows: [Record] = []
     @State private var search = ""
     @State private var error: String?
@@ -15,8 +17,21 @@ struct ContactsView: View {
                 }
             }
         }.navigationTitle("通讯录").searchable(text: $search).task { await load() }.refreshable { await load() }.errorAlert($error)
+            .onReceive(NotificationCenter.default.publisher(for: .spxRealtime).receive(on: RunLoop.main)) { notification in
+                guard let event = notification.object as? JSON, event["type"].string == "contact.remark.updated", event["user_id"].int == session.user?.id else { return }
+                loadID = UUID()
+                rows = rows.map { row in
+                    guard row.id == event["contact_user_id"].int else { return row }
+                    var updated = row; updated["remark"] = event["remark"]; return updated.normalizedContact
+                }
+            }
     }
-    private func load() async { do { rows = try await APIClient.shared.get("contacts").list } catch { self.error = error.localizedDescription } }
+    private func load() async {
+        let requestID = UUID(); loadID = requestID
+        do { let values = try await APIClient.shared.get("contacts").list; guard loadID == requestID else { return }; rows = values; error = nil }
+        catch is CancellationError { }
+        catch { if loadID == requestID { self.error = error.localizedDescription } }
+    }
 }
 
 struct AddContactView: View {

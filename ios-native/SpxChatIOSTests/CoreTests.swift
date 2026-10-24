@@ -98,6 +98,14 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(amount - Money.withdrawalFee(amount), Decimal(string: "0.990000000000000099")!)
         XCTAssertEqual(Money.withdrawalFee(Decimal(string: "0.000000000000000001")!), 0)
     }
+    func testDisplayedAmountsRoundToAtMostTwoFractionDigits() {
+        XCTAssertEqual(DisplayLabels.amount("12.345"), "12.35")
+        XCTAssertEqual(DisplayLabels.amount("12.300000"), "12.3")
+        XCTAssertEqual(DisplayLabels.amount("100"), "100")
+        XCTAssertEqual(DisplayLabels.amount("0.000001"), "<0.01")
+        XCTAssertEqual(DisplayLabels.amount("-0.000001"), "-<0.01")
+        XCTAssertEqual(DisplayLabels.amount("not-a-number"), "not-a-number")
+    }
     func testTrustedDeepLinksRejectUnsupportedTargets() {
         XCTAssertEqual(AppLink.parse(URL(string: "spxchat://group?code=ab12cd")!), .group("AB12CD"))
         XCTAssertEqual(AppLink.parse(URL(string: "https://spx001.top/spxchat/product-share.php?id=42")!), .product(42))

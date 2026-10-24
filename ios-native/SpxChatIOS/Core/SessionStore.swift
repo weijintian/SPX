@@ -147,6 +147,10 @@ import UIKit
         active = value
         presenceEpoch = UUID()
         let presenceEpoch = self.presenceEpoch
+        if value, token != nil, let user, user.id > 0, !restoring {
+            CallCoordinator.shared.start(userID: user.id)
+            Outbox.shared.resume()
+        }
         CallCoordinator.shared.setActive(value)
         if value, let token, let user, user.id > 0, !restoring { RealtimeClient.shared.start(token: token) }
         else { RealtimeClient.shared.stop() }

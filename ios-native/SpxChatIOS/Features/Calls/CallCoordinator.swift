@@ -41,7 +41,7 @@ struct ActiveCall: Identifiable {
     private var finishing = false
     private var front = true
     private let controller = CXCallController()
-    private let observer = TencentCallObserver()
+    private var observer = TencentCallObserver()
     private lazy var provider: CXProvider = {
         let config = CXProviderConfiguration(localizedName: "SPX Chat")
         config.supportsVideo = true; config.maximumCallsPerCallGroup = 1
@@ -53,17 +53,19 @@ struct ActiveCall: Identifiable {
     private let terminal = Set(["ended", "canceled", "rejected", "busy", "timeout", "failed", "offline"])
     func start(userID: Int) { if self.userID != userID { stop(); self.userID = userID }; schedule() }
     func setActive(_ value: Bool) { active = value; if value || call != nil { schedule() } else { ticker?.cancel(); ticker = nil } }
-    func stop() {
-        ChatSoundEffects.shared.reset()
+    func stop(resetSounds: Bool = true) {
+        if resetSounds { ChatSoundEffects.shared.reset() } else { ChatSoundEffects.shared.stopCall() }
         epoch = UUID(); tickerID = UUID(); ticker?.cancel(); ticker = nil
         let pendingInitialization = initializing; pendingInitialization?.cancel(); initializing = nil
         let pendingTeardown = sdkTeardown
+        let oldObserver = observer; oldObserver.enabled = false; observer = TencentCallObserver()
         let hadSDK = ready || pendingInitialization != nil
+        if hadSDK { TUICallEngine.createInstance().closeMicrophone(); if call?.video == true { TUICallEngine.createInstance().closeCamera() } }
         if let call { provider.reportCall(with: call.systemID, endedAt: Date(), reason: .remoteEnded) }
         sdkTeardown = Task {
             await pendingTeardown?.value
             _ = try? await pendingInitialization?.value
-            if hadSDK { TUICallEngine.createInstance().hangup {} fail: { _, _ in }; TUICallEngine.createInstance().removeObserver(observer); TUICallEngine.destroyInstance() }
+            if hadSDK { _ = await Self.terminateSDK(reject: false); TUICallEngine.createInstance().removeObserver(oldObserver); TUICallEngine.destroyInstance() }
         }
         ready = false; userID = 0; call = nil; preparing = false; receiving = false; finishing = false; minimized = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -75,6 +77,7 @@ struct ActiveCall: Identifiable {
             while !Task.isCancelled {
                 guard let self, generation == self.epoch, tickerGeneration == self.tickerID else { return }
                 do {
+                    if self.finishing { try await Task.sleep(for: .milliseconds(200)); continue }
                     try await self.ensureReady()
                     guard generation == self.epoch, tickerGeneration == self.tickerID, !Task.isCancelled else { return }
                     try await self.presence()
@@ -105,11 +108,13 @@ struct ActiveCall: Identifiable {
             let sdk = Int32(credentials["sdk_app_id"].int), identity = credentials["user_id"].string, signature = credentials["user_sig"].string
             guard sdk > 0, identity == "spx_\(userID)", !signature.isEmpty else { throw APIError.invalidResponse }
             try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
-                TUILogin.login(sdk, userID: identity, userSig: signature) { c.resume() } fail: { code, message in c.resume(throwing: APIError.server(Int(code), message ?? "通话登录失败")) }
+                let completion = SDKOperationCompletion(c)
+                TUILogin.login(sdk, userID: identity, userSig: signature) { Task { @MainActor in completion.succeed() } } fail: { code, message in Task { @MainActor in completion.resolve(.failure(APIError.server(Int(code), message ?? "通话登录失败"))) } }
             }
             try Task.checkCancellation(); guard generation == epoch else { throw APIError.staleSession }
             try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
-                TUICallEngine.createInstance().`init`(sdk, userId: identity, userSig: signature) { c.resume() } fail: { code, message in c.resume(throwing: APIError.server(Int(code), message ?? "通话服务连接失败")) }
+                let completion = SDKOperationCompletion(c)
+                TUICallEngine.createInstance().`init`(sdk, userId: identity, userSig: signature) { Task { @MainActor in completion.succeed() } } fail: { code, message in Task { @MainActor in completion.resolve(.failure(APIError.server(Int(code), message ?? "通话服务连接失败"))) } }
             }
             guard generation == epoch else { throw APIError.staleSession }
             TUICallEngine.createInstance().addObserver(observer); ready = true
@@ -153,7 +158,8 @@ struct ActiveCall: Identifiable {
                 let params = TUICallParams(); params.timeout = Int32(max(1, min(60, Int(deadline.timeIntervalSinceNow)))); params.userData = id
                 let roomID = TUIRoomId(); roomID.intRoomId = room; params.roomId = roomID
                 try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
-                    TUICallEngine.createInstance().calls(userIdList: [data["peer_user_id"].string], callMediaType: video ? .video : .audio, params: params) { c.resume() } fail: { code, message in c.resume(throwing: APIError.server(Int(code), message ?? "呼叫失败")) }
+                    let completion = SDKOperationCompletion(c)
+                    TUICallEngine.createInstance().calls(userIdList: [data["peer_user_id"].string], callMediaType: video ? .video : .audio, params: params) { Task { @MainActor in completion.succeed() } } fail: { code, message in Task { @MainActor in completion.resolve(.failure(APIError.server(Int(code), message ?? "呼叫失败"))) } }
                 }
             } catch { if generation == epoch { if call?.id == id { await finish(event: "failed", message: error.localizedDescription) } else if call == nil { toast(error.localizedDescription) } } }
         }
@@ -216,7 +222,7 @@ struct ActiveCall: Identifiable {
         case 7: mapped = ("sdk_canceled", "已在其他设备接听")
         default: mapped = (current.connected ? "ended" : "failed", "通话连接已结束，请检查网络后重试")
         }
-        await finish(event: mapped.0, message: mapped.1)
+        await finish(event: mapped.0, message: mapped.1, sdkAlreadyEnded: true)
     }
     // Legacy peer-only callbacks have no call ID. Correlated onCallNotConnected is authoritative.
     func peerResult(_ peer: String, event: String) async {
@@ -227,22 +233,62 @@ struct ActiveCall: Identifiable {
     }
     func expired() {
         if ready { TUICallEngine.createInstance().removeObserver(observer) }
+        observer.enabled = false; observer = TencentCallObserver()
         ready = false
         if call != nil { Task { await finish(event: "failed", message: "通话登录已过期，请重新呼叫") } }
         schedule()
     }
-    private func finish(event: String, message: String?) async {
+    /// SDK kicks are not application logout. Re-authenticate through calls.credentials after teardown.
+    func kickedOffline() {
+        guard userID > 0, ready || initializing != nil else { return }
+        let owner = userID, previous = call?.id
+        stop(resetSounds: false); userID = owner
+        let generation = epoch
+        toast("通话连接已断开，正在重新连接")
+        if let previous { Task { guard generation == epoch else { return }; _ = try? await update(previous, event: "failed") } }
+        schedule()
+    }
+    private static func terminateSDK(reject: Bool) async -> Bool {
+        await withCheckedContinuation { continuation in
+            let completion = SDKTerminationCompletion(continuation)
+            completion.timeout = Task {
+                do { try await Task.sleep(for: .seconds(6)); completion.resolve(false) } catch { }
+            }
+            let success: () -> Void = { Task { @MainActor in completion.resolve(true) } }
+            if reject {
+                TUICallEngine.createInstance().reject(success, fail: { _, _ in Task { @MainActor in completion.resolve(false) } })
+            } else {
+                TUICallEngine.createInstance().hangup(success, fail: { _, _ in Task { @MainActor in completion.resolve(false) } })
+            }
+        }
+    }
+    private func finish(event: String, message: String?, sdkAlreadyEnded: Bool = false) async {
         guard !finishing, let current = call else { return }
         finishing = true
         ChatSoundEffects.shared.stopCall()
+        TUICallEngine.createInstance().closeMicrophone()
+        if current.video { TUICallEngine.createInstance().closeCamera() }
         let generation = epoch
         call = nil; minimized = false
-        if current.outgoing || current.connected { TUICallEngine.createInstance().hangup {} fail: { _, _ in } } else { TUICallEngine.createInstance().reject {} fail: { _, _ in } }
         provider.reportCall(with: current.systemID, endedAt: Date(), reason: event == "failed" ? .failed : .remoteEnded)
+        async let backend: JSON? = try? update(current.id, event: event)
+        let clean: Bool
+        if sdkAlreadyEnded { clean = true }
+        else { clean = await Self.terminateSDK(reject: !current.outgoing && !current.connected) }
+        _ = await backend
+        guard generation == epoch else { return }
+        if !clean {
+            // A timed-out teardown must not overlap a new SDK call.
+            ready = false
+            observer.enabled = false
+            TUICallEngine.createInstance().removeObserver(observer)
+            observer = TencentCallObserver()
+            TUICallEngine.destroyInstance()
+        }
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         finishing = false
-        _ = try? await update(current.id, event: event)
-        if generation == epoch, call == nil, let message { toast(message) }
+        schedule()
+        if call == nil, let message { toast(message) }
     }
     private func label(_ state: String) -> String? { ["timeout": "无人接听", "rejected": "对方已拒绝", "busy": "对方忙线中", "failed": "通话连接中断"][state] }
     func toggleMute() {
@@ -271,7 +317,7 @@ extension CallCoordinator: CXProviderDelegate {
             catch { action.fail(); if call?.id == current.id { await finish(event: "rejected", message: error.localizedDescription) } }
         }
     }
-    nonisolated func provider(_ provider: CXProvider, perform action: CXEndCallAction) { Task { @MainActor in guard let current = call, current.systemID == action.callUUID else { action.fulfill(); return }; await finish(event: current.connected ? "ended" : (current.outgoing ? "canceled" : "rejected"), message: nil); action.fulfill() } }
+    nonisolated func provider(_ provider: CXProvider, perform action: CXEndCallAction) { Task { @MainActor in guard let current = call, current.systemID == action.callUUID else { action.fulfill(); return }; action.fulfill(); await finish(event: current.connected ? "ended" : (current.outgoing ? "canceled" : "rejected"), message: nil) } }
     nonisolated func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
         try? audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth])
         Task { @MainActor in ChatSoundEffects.shared.setCallAudioActive(true) }
@@ -280,15 +326,44 @@ extension CallCoordinator: CXProviderDelegate {
 }
 
 private final class TencentCallObserver: NSObject, TUICallObserver {
-    func onCallReceived(_ callId: String, callerId: String, calleeIdList: [String], mediaType: TUICallMediaType, info: TUICallObserverExtraInfo) { let session = info.userData, room = info.roomId.intRoomId; Task { @MainActor in await CallCoordinator.shared.receive(id: session, sdkID: callId, caller: callerId, video: mediaType == .video, room: room) } }
-    func onCallBegin(callId: String, mediaType: TUICallMediaType, info: TUICallObserverExtraInfo) { let session = info.userData, room = info.roomId.intRoomId; Task { @MainActor in await CallCoordinator.shared.connected(sdkID: callId, sessionID: session, room: room) } }
+    @MainActor var enabled = true
+    func onCallReceived(_ callId: String, callerId: String, calleeIdList: [String], mediaType: TUICallMediaType, info: TUICallObserverExtraInfo) { let session = info.userData, room = info.roomId.intRoomId; Task { @MainActor in guard self.enabled else { return }; await CallCoordinator.shared.receive(id: session, sdkID: callId, caller: callerId, video: mediaType == .video, room: room) } }
+    func onCallBegin(callId: String, mediaType: TUICallMediaType, info: TUICallObserverExtraInfo) { let session = info.userData, room = info.roomId.intRoomId; Task { @MainActor in guard self.enabled else { return }; await CallCoordinator.shared.connected(sdkID: callId, sessionID: session, room: room) } }
     func onCallEnd(callId: String, mediaType: TUICallMediaType, reason: TUICallEndReason, userId: String, totalTime: Float, info: TUICallObserverExtraInfo) { ended(callId, reason: reason, info: info) }
     func onCallNotConnected(callId: String, mediaType: TUICallMediaType, reason: TUICallEndReason, userId: String, info: TUICallObserverExtraInfo) { ended(callId, reason: reason, info: info) }
-    private func ended(_ id: String, reason: TUICallEndReason, info: TUICallObserverExtraInfo) { let session = info.userData, room = info.roomId.intRoomId, rawReason = reason.rawValue; Task { @MainActor in await CallCoordinator.shared.sdkEnded(sdkID: id, sessionID: session, room: room, reason: rawReason) } }
-    func onUserReject(userId: String) { Task { @MainActor in await CallCoordinator.shared.peerResult(userId, event: "sdk_rejected") } }
-    func onUserLineBusy(userId: String) { Task { @MainActor in await CallCoordinator.shared.peerResult(userId, event: "sdk_busy") } }
-    func onUserNoResponse(userId: String) { Task { @MainActor in await CallCoordinator.shared.peerResult(userId, event: "sdk_timeout") } }
-    func onError(code: Int32, message: String?) { Task { @MainActor in CallCoordinator.shared.toast(message ?? "通话服务暂不可用") } }
-    func onUserSigExpired() { Task { @MainActor in CallCoordinator.shared.expired() } }
-    func onKickedOffline() { Task { @MainActor in CallCoordinator.shared.stop() } }
+    private func ended(_ id: String, reason: TUICallEndReason, info: TUICallObserverExtraInfo) { let session = info.userData, room = info.roomId.intRoomId, rawReason = reason.rawValue; Task { @MainActor in guard self.enabled else { return }; await CallCoordinator.shared.sdkEnded(sdkID: id, sessionID: session, room: room, reason: rawReason) } }
+    func onUserReject(userId: String) { Task { @MainActor in guard self.enabled else { return }; await CallCoordinator.shared.peerResult(userId, event: "sdk_rejected") } }
+    func onUserLineBusy(userId: String) { Task { @MainActor in guard self.enabled else { return }; await CallCoordinator.shared.peerResult(userId, event: "sdk_busy") } }
+    func onUserNoResponse(userId: String) { Task { @MainActor in guard self.enabled else { return }; await CallCoordinator.shared.peerResult(userId, event: "sdk_timeout") } }
+    func onError(code: Int32, message: String?) { Task { @MainActor in guard self.enabled else { return }; CallCoordinator.shared.toast(message ?? "通话服务暂不可用") } }
+    func onUserSigExpired() { Task { @MainActor in guard self.enabled else { return }; CallCoordinator.shared.expired() } }
+    func onKickedOffline() { Task { @MainActor in guard self.enabled else { return }; CallCoordinator.shared.kickedOffline() } }
+}
+
+/// Resume at most once even if the SDK callback arrives after its timeout.
+@MainActor private final class SDKTerminationCompletion {
+    private var continuation: CheckedContinuation<Bool, Never>?
+    var timeout: Task<Void, Never>?
+    init(_ continuation: CheckedContinuation<Bool, Never>) { self.continuation = continuation }
+    func resolve(_ success: Bool) {
+        guard let continuation else { return }
+        self.continuation = nil; timeout?.cancel(); timeout = nil
+        continuation.resume(returning: success)
+    }
+}
+
+@MainActor private final class SDKOperationCompletion {
+    private var continuation: CheckedContinuation<Void, Error>?
+    private var timeout: Task<Void, Never>?
+    init(_ continuation: CheckedContinuation<Void, Error>) {
+        self.continuation = continuation
+        timeout = Task {
+            do { try await Task.sleep(for: .seconds(20)); resolve(.failure(APIError.server(408, "通话服务响应超时，请重试"))) } catch { }
+        }
+    }
+    func succeed() { resolve(.success(Void())) }
+    func resolve(_ result: Result<Void, Error>) {
+        guard let continuation else { return }
+        self.continuation = nil; timeout?.cancel(); timeout = nil; continuation.resume(with: result)
+    }
 }

@@ -45,9 +45,14 @@ actor LocalStore {
         for file in files where file.pathExtension == "json" {
             let encoded = file.deletingPathExtension().lastPathComponent.replacingOccurrences(of: "_", with: "/")
             guard let keyData = Data(base64Encoded: encoded), let key = String(data: keyData, encoding: .utf8), key.hasPrefix("messages-g-"),
-                  let data = try? Data(contentsOf: file), let rows = try? JSONDecoder().decode([Record].self, from: data) else { continue }
-            let updated = rows.map { $0.applyingGroupRemark(peerID: peerID, remark: remark) }
-            if updated != rows { try? save(updated, key: key, userID: userID) }
+                  let data = try? Data(contentsOf: file) else { continue }
+            if key.hasSuffix("-sync-v2"), var snapshot = try? JSONDecoder().decode(ConversationSnapshot.self, from: data) {
+                let updated = snapshot.messages.map { $0.applyingGroupRemark(peerID: peerID, remark: remark) }
+                if updated != snapshot.messages { snapshot.messages = updated; try? save(snapshot, key: key, userID: userID) }
+            } else if let rows = try? JSONDecoder().decode([Record].self, from: data) {
+                let updated = rows.map { $0.applyingGroupRemark(peerID: peerID, remark: remark) }
+                if updated != rows { try? save(updated, key: key, userID: userID) }
+            }
         }
     }
 }

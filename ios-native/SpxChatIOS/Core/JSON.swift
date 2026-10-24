@@ -93,3 +93,15 @@ extension Dictionary where Key == String, Value == JSON {
     mutating func set(_ key:String, _ value:Int) { self[key] = .number(Decimal(value)) }
 }
 
+
+extension Record {
+    /// The contacts endpoint calls this field remark; other record types give it different meanings.
+    var normalizedContact: Record {
+        var value = self
+        let raw = (fields["remark"] != nil ? self["remark"].string : self["contact_remark"].string).trimmingCharacters(in: .whitespacesAndNewlines)
+        let remark = ["null", "undefined"].contains(raw.lowercased()) ? "" : raw
+        value["contact_remark"] = .string(remark)
+        value["display_name"] = .string(remark.isEmpty ? text("nickname", "name", "username") : remark)
+        return value
+    }
+}

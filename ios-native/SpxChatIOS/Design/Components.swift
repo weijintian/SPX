@@ -44,7 +44,10 @@ struct Avatar: View {
             .accessibilityLabel(name)
             .task(id: url) {
                 image = nil; guard !url.isEmpty else { return }
-                if let file = try? await MediaCache.shared.file(url, userID: session.user?.id ?? 0) { image = UIImage(contentsOfFile: file.path) }
+                do {
+                    let decoded = try await ImageThumbnailCache.shared.image(url, userID: session.user?.id ?? 0, maximumPixelSize: Int(size * 3))
+                    try Task.checkCancellation(); image = decoded
+                } catch { }
             }
     }
     private var fallback: some View {

@@ -172,8 +172,11 @@ struct MerchantOrdersView: View {
     @State private var busy = false
     @State private var error: String?
     var body: some View {
-        List { ForEach(rows.filter { !onlyAfterSale || !["none", ""].contains($0["after_sale_status"].string) }) { order in NavigationLink { MerchantFulfillmentView(order: order) } label: { OrderSummary(order: order) } }; if more { Button(busy ? "正在加载…" : "加载更多") { Task { await load(reset: false) } }.disabled(busy) } }
+        List { ForEach(rows.filter { !onlyAfterSale || !["none", ""].contains($0["after_sale_status"].string) }) { order in NavigationLink { MerchantFulfillmentView(order: order, sourcePage: (rows.firstIndex(where: { $0.id == order.id }) ?? 0) / 30 + 1) } label: { OrderSummary(order: order) } }; if more { Button(busy ? "正在加载…" : "加载更多") { Task { await load(reset: false) } }.disabled(busy) } }
             .navigationTitle(onlyAfterSale ? "售后管理" : "订单管理").task { await load(reset: true) }.refreshable { await load(reset: true) }.errorAlert($error)
+            .onReceive(NotificationCenter.default.publisher(for: .spxOrdersChanged).debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { event in
+                Task { if await AccountMutation.isCurrent(event) { await load(reset: true) } }
+            }
     }
     private func load(reset: Bool) async {
         if !reset && busy { return }
@@ -190,7 +193,10 @@ struct MerchantOrdersView: View {
 }
 
 struct MerchantFulfillmentView: View {
-    let order: Record
+    @State private var order: Record
+    @State private var sourcePage: Int
+    @State private var verified = false
+    @State private var loading = false
     @Environment(\.dismiss) private var dismiss
     @State private var carrier = ""
     @State private var tracking = ""
@@ -200,20 +206,92 @@ struct MerchantFulfillmentView: View {
     @State private var error: String?
     @State private var busy = false
     @State private var confirmation: String?
+    init(order: Record, sourcePage: Int = 1) { _order = State(initialValue: order); _sourcePage = State(initialValue: sourcePage) }
     private var activeAfterSale: Bool { ["requested", "return_approved", "return_shipped"].contains(order["after_sale_status"].string) }
     var body: some View {
         Form {
             Section { OrderSummary(order: order); InfoRow(title: "订单编号", value: order["id"].string); InfoRow(title: "买家备注", value: order["buyer_note"].string) }
-            if !order["shipping_address"].string.isEmpty { Section("收货信息") { Text(order["shipping_address"].string).textSelection(.enabled) } }
-            if order["status"].string == "pending", !activeAfterSale {
-                if order["order_type"].string == "physical" { Section("发货") { TextField("承运商", text: $carrier); TextField("物流单号", text: $tracking); Button("确认发货") { confirmation = "merchant.order.ship" }.disabled(carrier.isEmpty || tracking.isEmpty) } }
-                else if order["order_type"].string == "digital" { Section("数字交付") { TextField("填写交付内容 / 使用说明", text: $delivery, axis: .vertical).lineLimit(4...12); Button("完成数字交付") { confirmation = "merchant.order.deliver" }.disabled(delivery.isEmpty) } }
-                else { Section("到店核销") { TextField("输入买家出示的核销码", text: $code).textInputAutocapitalization(.characters); Button("核销服务") { confirmation = "merchant.order.redeem" }.disabled(code.isEmpty); Text("核销码由买家主动出示，商家端无法查询该码。").font(.caption).foregroundStyle(.secondary) } }
+            if loading { Section { ProgressView("正在核对订单状态…") } }
+            if !OrderPresentation.address(order).fields.isEmpty {
+                Section("收货信息") {
+                    let address = OrderPresentation.address(order)
+                    InfoRow(title: "收货人", value: address["name"].string)
+                    InfoRow(title: "联系电话", value: address["phone"].string)
+                    Text(OrderPresentation.addressLine(address)).textSelection(.enabled)
+                }
             }
-            if activeAfterSale { Section("售后协商") { InfoRow(title: "申请类型", value: order["after_sale_type"].string); Text(order["after_sale_reason"].string); TextField("给买家的回复", text: $reply, axis: .vertical).lineLimit(3...10); Button("回复售后") { confirmation = "merchant.order.reply" }.disabled(reply.isEmpty); Text("退款审核按平台流程处理。").font(.caption).foregroundStyle(.secondary) } }
-            if let error { ErrorBanner(message: error) }
+            if order["status"].string == "pending", !activeAfterSale {
+                Section(order["order_type"].string == "physical" ? "发货" : order["order_type"].string == "digital" ? "数字交付" : "到店核销") {
+                    if order["order_type"].string == "physical" {
+                        TextField("承运商", text: $carrier); TextField("物流单号", text: $tracking)
+                        Button("确认发货") { confirmation = "merchant.order.ship" }.disabled(carrier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || tracking.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    } else if order["order_type"].string == "digital" {
+                        TextField("填写交付内容 / 使用说明", text: $delivery, axis: .vertical).lineLimit(4...12)
+                        Button("完成数字交付") { confirmation = "merchant.order.deliver" }.disabled(delivery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    } else {
+                        TextField("输入买家出示的核销码", text: $code).textInputAutocapitalization(.characters)
+                        Button("核销服务") { confirmation = "merchant.order.redeem" }.disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Text("核销码由买家主动出示，商家端无法查询该码。").font(.caption).foregroundStyle(.secondary)
+                    }
+                }.disabled(!verified || loading)
+            }
+            if activeAfterSale {
+                Section("售后协商") {
+                    InfoRow(title: "申请类型", value: DisplayLabels.afterSaleType(order["after_sale_type"].string))
+                    Text(order["after_sale_reason"].string)
+                    TextField("给买家的回复", text: $reply, axis: .vertical).lineLimit(3...10)
+                    Button("回复售后") { confirmation = "merchant.order.reply" }.disabled(reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Text("退款审核按平台流程处理。").font(.caption).foregroundStyle(.secondary)
+                }.disabled(!verified || loading)
+            }
+            if let error { Section { ErrorBanner(message: error); Button("重新读取订单") { Task { await load() } }.disabled(loading) } }
         }.navigationTitle("订单处理").disabled(busy)
-            .confirmationDialog("确认提交此订单操作？", isPresented: Binding(get: { confirmation != nil }, set: { if !$0 { confirmation = nil } }), titleVisibility: .visible) { Button("确认提交") { if let action = confirmation { submit(action); confirmation = nil } } }
+            .task { await load() }.refreshable { await load() }
+            .confirmationDialog("确认提交此订单操作？", isPresented: Binding(get: { confirmation != nil }, set: { if !$0 { confirmation = nil } }), titleVisibility: .visible) {
+                Button("确认提交") { if let action = confirmation { confirmation = nil; submit(action) } }
+            }
     }
-    private func submit(_ action: String) { busy = true; Task { defer { busy = false }; do { var body: [String: JSON] = ["order_id": order["id"]]; switch action { case "merchant.order.ship": body["carrier"] = .string(carrier); body["tracking_number"] = .string(tracking); case "merchant.order.deliver": body["fulfillment_note"] = .string(delivery); case "merchant.order.redeem": body["redeem_code"] = .string(code.uppercased()); default: body["reply"] = .string(reply) }; try await APIClient.shared.post(action, body); dismiss() } catch { self.error = error.localizedDescription } } }
+    private func latest() async throws -> Record {
+        let id = order.id
+        let expected = await APIClient.shared.sessionIdentity()
+        let result = try await MerchantOrderReader.find(id: id, startingPage: sourcePage) { page in
+            guard await APIClient.shared.sessionIdentity() == expected else { throw APIError.staleSession }
+            return try await APIClient.shared.get("merchant.orders", ["page": String(page), "page_size": "30"]).list
+        }
+        guard await APIClient.shared.sessionIdentity() == expected else { throw APIError.staleSession }
+        sourcePage = result.page
+        return result.order
+    }
+    private func load() async {
+        guard !loading, !busy else { return }
+        loading = true; verified = false; defer { loading = false }
+        do { order = try await latest(); verified = true; error = nil }
+        catch is CancellationError { }
+        catch { self.error = error.localizedDescription }
+    }
+    private func submit(_ action: String) {
+        guard !busy, !loading, verified else { return }
+        busy = true
+        Task {
+            defer { busy = false }
+            do {
+                order = try await latest(); verified = true
+                let fulfillmentAllowed = order["status"].string == "pending" && !activeAfterSale
+                let allowed = action == "merchant.order.reply" ? activeAfterSale : fulfillmentAllowed && (
+                    action == "merchant.order.ship" && order["order_type"].string == "physical" ||
+                    action == "merchant.order.deliver" && order["order_type"].string == "digital" ||
+                    action == "merchant.order.redeem" && order["order_type"].string == "local")
+                guard allowed else { throw APIError.server(409, "订单状态已变化，已更新页面，请重新确认") }
+                var body: [String: JSON] = ["order_id": order["id"]]
+                switch action {
+                case "merchant.order.ship": body["carrier"] = .string(carrier.trimmingCharacters(in: .whitespacesAndNewlines)); body["tracking_number"] = .string(tracking.trimmingCharacters(in: .whitespacesAndNewlines))
+                case "merchant.order.deliver": body["fulfillment_note"] = .string(delivery.trimmingCharacters(in: .whitespacesAndNewlines))
+                case "merchant.order.redeem": body["redeem_code"] = .string(code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased())
+                default: body["reply"] = .string(reply.trimmingCharacters(in: .whitespacesAndNewlines))
+                }
+                try await APIClient.shared.post(action, body)
+                dismiss()
+            } catch { self.error = error.localizedDescription; if !(error is CancellationError) { verified = false } }
+        }
+    }
 }

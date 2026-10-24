@@ -20,8 +20,7 @@ struct LocalAttachmentPreview: View {
                 ProgressView().frame(width: 160, height: 120)
             }
         }.task(id: url) {
-            if kind == "image", let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-               let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 480, kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary) { thumbnail = UIImage(cgImage: cg) }
+            if kind == "image" { thumbnail = try? await ImageThumbnailCache.shared.local(url) }
             else if kind == "video" {
                 let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url)); generator.appliesPreferredTrackTransform = true; generator.maximumSize = CGSize(width: 480, height: 480)
                 if let result = try? await generator.image(at: .zero) { thumbnail = UIImage(cgImage: result.image) }
@@ -33,6 +32,7 @@ struct LocalAttachmentPreview: View {
 struct CachedImage: View {
     let source: String
     var fit = true
+    var maximumPixelSize = 720
     @EnvironmentObject private var session: SessionStore
     @State private var image: UIImage?
     @State private var failed = false
@@ -50,10 +50,10 @@ struct CachedImage: View {
             image = nil; failed = false
             guard !source.isEmpty else { failed = true; return }
             do {
-                let file = try await MediaCache.shared.file(requestedSource, userID: session.user?.id ?? 0)
+                let decoded = try await ImageThumbnailCache.shared.image(requestedSource, userID: session.user?.id ?? 0, maximumPixelSize: maximumPixelSize)
                 try Task.checkCancellation()
                 guard source == requestedSource else { return }
-                image = UIImage(contentsOfFile: file.path); failed = image == nil
+                image = decoded; failed = false
             }
             catch is CancellationError { }
             catch { failed = true }
@@ -139,24 +139,24 @@ struct VideoMessagePreview: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .accessibilityLabel("视频，轻点播放")
         .task(id: source) {
-            guard !source.isEmpty, let userID = session.user?.id, userID > 0,
-                  let file = try? await MediaCache.shared.cachedFile(source, userID: userID) else { return }
-            let generator = AVAssetImageGenerator(asset: AVURLAsset(url: file))
-            generator.appliesPreferredTrackTransform = true
-            generator.maximumSize = CGSize(width: 480, height: 320)
-            if let frame = try? await generator.image(at: .zero) {
-                thumbnail = UIImage(cgImage: frame.image)
-            }
+            thumbnail = nil
+            guard !source.isEmpty, let userID = session.user?.id, userID > 0 else { return }
+            do {
+                let image = try await ImageThumbnailCache.shared.video(source, userID: userID)
+                try Task.checkCancellation(); thumbnail = image
+            } catch { /* The video remains playable if its optional poster cannot be generated. */ }
         }
     }
 }
 
-private final class RemoteVideoResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
+final class RemoteVideoResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
     private let sourceURL: URL
+    private let source: String
+    private let userID: Int
     private let delegateQueue = DispatchQueue(label: "com.spx.chat.ios.video-range-loader")
     private var requests: [ObjectIdentifier: Task<Void, Never>] = [:]
 
-    init(sourceURL: URL) { self.sourceURL = sourceURL }
+    init(sourceURL: URL, source: String, userID: Int) { self.sourceURL = sourceURL; self.source = source; self.userID = userID }
 
     func makeAsset() throws -> AVURLAsset {
         guard var parts = URLComponents(url: sourceURL, resolvingAgainstBaseURL: false) else { throw APIError.invalidURL }
@@ -195,47 +195,30 @@ private final class RemoteVideoResourceLoader: NSObject, AVAssetResourceLoaderDe
     }
 
     private func load(_ loadingRequest: AVAssetResourceLoadingRequest) async throws {
-        let dataRequest = loadingRequest.dataRequest
-        let initialOffset = dataRequest.map { $0.currentOffset == 0 ? $0.requestedOffset : $0.currentOffset } ?? 0
-        guard let initial = Int(exactly: initialOffset), initial >= 0 else { throw APIError.invalidResponse }
-        var offset = initial
-        var remaining = max(1, dataRequest?.requestedLength ?? 0)
-        let toEnd = dataRequest?.requestsAllDataToEndOfResource == true
-        var firstResponse = true
-
+        let position: (Int64, Int, Bool) = await withCheckedContinuation { continuation in
+            delegateQueue.async {
+                let data = loadingRequest.dataRequest
+                continuation.resume(returning: (data.map { $0.currentOffset == 0 ? $0.requestedOffset : $0.currentOffset } ?? 0,
+                                                max(1, data?.requestedLength ?? 0), data?.requestsAllDataToEndOfResource == true))
+            }
+        }
+        guard let initial = Int(exactly: position.0), initial >= 0 else { throw APIError.invalidResponse }
+        var offset = initial, remaining = position.1
+        var first = true
         while remaining > 0 {
             try Task.checkCancellation()
-            let requestedLength = min(1_048_576, remaining)
-            let (end, overflow) = offset.addingReportingOverflow(requestedLength - 1)
-            guard !overflow else { throw APIError.invalidResponse }
-            var request = URLRequest(url: sourceURL)
-            request.cachePolicy = .reloadIgnoringLocalCacheData
-            request.setValue("bytes=\(offset)-\(end)", forHTTPHeaderField: "Range")
-            request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
-            let (bytes, response) = try await NetworkSession.shared.bytes(for: request)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 206,
-                  let range = HTTPContentRange(http.value(forHTTPHeaderField: "Content-Range")),
-                  range.matches(offset: offset, maximumCount: requestedLength) else {
-                throw APIError.server((response as? HTTPURLResponse)?.statusCode ?? 0, "服务器未返回有效的视频分段，暂时无法在线播放")
-            }
-            let count = range.count
-            guard count > 0 else { throw APIError.invalidResponse }
-            var chunk = Data(); chunk.reserveCapacity(count)
-            for try await byte in bytes {
-                chunk.append(byte)
-                if chunk.count == count { break }
-            }
-            guard chunk.count == count else { throw APIError.invalidResponse }
-            try Task.checkCancellation()
-            await deliver(chunk, response: http, totalLength: range.total, request: loadingRequest, includeContentInfo: firstResponse)
-            firstResponse = false
-            offset += count
-            remaining = toEnd ? range.total - offset : remaining - count
-            if offset >= range.total { break }
+            let chunk = try await VideoRangeCache.shared.chunk(source: source, remote: sourceURL, userID: userID, offset: offset)
+            let relative = offset - chunk.offset
+            guard relative >= 0, relative < chunk.data.count, offset < chunk.total else { throw APIError.invalidResponse }
+            let count = min(remaining, chunk.data.count - relative, chunk.total - offset)
+            let bytes = chunk.data.subdata(in: relative..<(relative + count))
+            await deliver(bytes, mimeType: chunk.mimeType, totalLength: chunk.total, request: loadingRequest, includeContentInfo: first)
+            first = false; offset += count
+            remaining = position.2 ? chunk.total - offset : remaining - count
+            if offset >= chunk.total { break }
         }
     }
-
-    private func deliver(_ data: Data, response: HTTPURLResponse, totalLength: Int, request: AVAssetResourceLoadingRequest,
+    private func deliver(_ data: Data, mimeType: String?, totalLength: Int, request: AVAssetResourceLoadingRequest,
                          includeContentInfo: Bool) async {
         await withCheckedContinuation { continuation in
             delegateQueue.async {
@@ -243,8 +226,7 @@ private final class RemoteVideoResourceLoader: NSObject, AVAssetResourceLoaderDe
                 if includeContentInfo, let information = request.contentInformationRequest {
                     information.contentLength = Int64(totalLength)
                     information.isByteRangeAccessSupported = true
-                    let format = UTType(filenameExtension: self.sourceURL.pathExtension)
-                        ?? response.mimeType.flatMap { UTType(mimeType: $0) }
+                    let format = UTType(filenameExtension: self.sourceURL.pathExtension) ?? mimeType.flatMap { UTType(mimeType: $0) }
                     information.contentType = format?.identifier ?? UTType.movie.identifier
                 }
                 request.dataRequest?.respond(with: data)
@@ -278,8 +260,10 @@ struct MediaPage: View {
     @State private var videoLoader: RemoteVideoResourceLoader?
     @State private var videoObservation: NSKeyValueObservation?
     @State private var videoLoadID = UUID()
+    @State private var buffering = false
+    @State private var playbackObservation: NSKeyValueObservation?
     private var loadKey: String {
-        [String(message.id), String(retry), String(active)].joined(separator: ":")
+        [String(message.id), message["media_url"].string, String(session.user?.id ?? 0), String(retry), String(active)].joined(separator: ":")
     }
     var body: some View {
         pageContent
@@ -289,7 +273,7 @@ struct MediaPage: View {
             .onChange(of: message.id) { _, _ in resetImageTransform() }
             .onDisappear {
                 videoLoadID = UUID()
-                player?.pause(); player = nil; videoObservation = nil
+                player?.pause(); player = nil; videoObservation = nil; playbackObservation = nil
                 videoLoader?.cancelAllRequests(); videoLoader = nil
             }
     }
@@ -298,7 +282,7 @@ struct MediaPage: View {
         else { imageContent }
     }
     @ViewBuilder private var videoContent: some View {
-        if let player { VideoPlayer(player: player) }
+        if let player { VideoPlayer(player: player).overlay { if buffering { ProgressView("正在缓冲…").tint(.white).foregroundStyle(.white).padding(14).background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 12)).allowsHitTesting(false) } } }
         else if let error {
             VStack(spacing: 14) {
                 Text(error).font(.footnote).multilineTextAlignment(.center)
@@ -307,7 +291,7 @@ struct MediaPage: View {
         } else { ProgressView().tint(.white) }
     }
     private var imageContent: some View {
-        CachedImage(source: message["media_url"].string)
+        CachedImage(source: message["media_url"].string, maximumPixelSize: 4096)
             .scaleEffect(scale)
             .offset(imageOffset)
             .gesture(MagnifyGesture()
@@ -328,27 +312,18 @@ struct MediaPage: View {
     }
     @MainActor private func loadVideo() async {
         guard message["message_type"].string == "video" else { return }
-        guard active else { player?.pause(); return }
+        guard active else { player?.pause(); videoLoader?.cancelAllRequests(); videoLoader = nil; return }
         let loadID = UUID()
         videoLoadID = loadID
         player?.pause(); player = nil
-        videoObservation = nil
+        videoObservation = nil; playbackObservation = nil; buffering = false
         videoLoader?.cancelAllRequests(); videoLoader = nil
         error = nil
         do {
-            let item: AVPlayerItem
-            if let local = try await MediaCache.shared.cachedFile(message["media_url"].string, userID: session.user?.id ?? 0) {
-                item = AVPlayerItem(url: local)
-            } else {
-                let endpoint = try await APIClient.shared.endpoint()
-                guard let remote = URL(string: message["media_url"].string, relativeTo: endpoint)?.absoluteURL,
-                      remote.scheme == "https", remote.host == endpoint.host else { throw APIError.invalidURL }
-                let loader = RemoteVideoResourceLoader(sourceURL: remote)
-                item = AVPlayerItem(asset: try loader.makeAsset())
-                videoLoader = loader
-            }
-            try Task.checkCancellation()
-            guard videoLoadID == loadID else { return }
+            let resource = try await VideoAssetSource.make(source: message["media_url"].string, userID: session.user?.id ?? 0)
+            guard !Task.isCancelled, videoLoadID == loadID else { resource.loader?.cancelAllRequests(); return }
+            let item = AVPlayerItem(asset: resource.asset)
+            videoLoader = resource.loader
             videoObservation = item.observe(\.status, options: [.initial, .new]) { observed, _ in
                 guard observed.status == .failed else { return }
                 let reason = observed.error?.localizedDescription ?? "视频加载失败，请检查网络后重试"
@@ -360,10 +335,15 @@ struct MediaPage: View {
                     videoObservation = nil
                 }
             }
-            player = AVPlayer(playerItem: item)
+            let playback = AVPlayer(playerItem: item)
+            playbackObservation = playback.observe(\.timeControlStatus, options: [.initial, .new]) { observed, _ in
+                let waiting = observed.timeControlStatus == .waitingToPlayAtSpecifiedRate
+                Task { @MainActor in guard videoLoadID == loadID else { return }; buffering = waiting }
+            }
+            player = playback
         }
         catch is CancellationError { }
-        catch { self.error = error.localizedDescription }
+        catch { if videoLoadID == loadID { self.error = error.localizedDescription } }
     }
     private func resetImageTransform() {
         scale = 1

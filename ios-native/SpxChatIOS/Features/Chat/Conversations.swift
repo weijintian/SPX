@@ -12,6 +12,9 @@ struct ChatListView: View {
     @State private var search = ""
     @State private var error: String?
     @State private var loadID = UUID()
+    @State private var listVisible = false
+    @State private var loadingList = false
+    @State private var reloadRequested = false
     private var conversations: [Record] {
         let direct = chats.map { item -> Record in var value = item; value["kind"] = "chat"; return value }
         let joined = groups.map { item -> Record in var value = item; value["kind"] = "group"; return value }
@@ -40,15 +43,24 @@ struct ChatListView: View {
                     } label: { Image(systemName: "plus.circle").font(.title3) }
                 }
             }.refreshable { await load() }.spxPage()
-            .onReceive(NotificationCenter.default.publisher(for: .spxRealtime).debounce(for: .milliseconds(150), scheduler: RunLoop.main)) { _ in Task { await load() } }
+            .onReceive(NotificationCenter.default.publisher(for: .spxRealtime)
+                .filter { notification in
+                    guard let event = notification.object as? JSON else { return false }
+                    let type = event["type"].string
+                    return type.hasPrefix("message") || type.hasPrefix("group.") || type.hasPrefix("chat.") || type.hasPrefix("contact.")
+                }.throttle(for: .milliseconds(600), scheduler: RunLoop.main, latest: true)) { _ in
+                guard listVisible, phase == .active else { return }
+                Task { await load() }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .spxConversationUpdated)) { _ in Task { await load() } }
             .onReceive(NotificationCenter.default.publisher(for: .spxConversationRemoved)) { _ in Task { await load() } }
-            .task(id: phase) {
-                guard phase == .active else { return }
+            .onAppear { listVisible = true }.onDisappear { listVisible = false }
+            .task(id: String(describing: phase) + String(listVisible)) {
+                guard phase == .active, listVisible else { return }
                 let id = session.user?.id ?? 0
                 if let cache: [Record] = await LocalStore.shared.read("chats", userID: id) { chats = cache }
                 if let cache: [Record] = await LocalStore.shared.read("groups", userID: id) { groups = cache }
-                while !Task.isCancelled { await load(); do { try await Task.sleep(for: .seconds(5)) } catch { return } }
+                while !Task.isCancelled { await load(); do { try await Task.sleep(for: .seconds(20)) } catch { return } }
             }
     }
     private func filtered(_ items: [Record]) -> [Record] { items.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) } }
@@ -73,23 +85,37 @@ struct ChatListView: View {
     }
     private func update(_ item: Record, key: String, group: Bool) { Task { do { try await APIClient.shared.post(group ? "groups.settings" : "chats.settings", [group ? "group_id" : "chat_id": item["id"], key: .bool(!item[key].flag)]); await load() } catch { self.error = error.localizedDescription } } }
     private func load() async {
+        guard !loadingList else { reloadRequested = true; return }
+        loadingList = true
+        defer {
+            loadingList = false
+            if reloadRequested { reloadRequested = false; if listVisible && phase == .active { Task { await load() } } }
+        }
         let epoch = UUID(); loadID = epoch; let owner = session.user?.id ?? 0
         do {
             async let direct = APIClient.shared.get("chats")
             async let group = APIClient.shared.get("groups")
             let (a, b) = try await (direct, group)
             guard loadID == epoch, owner == session.user?.id else { return }
-            chats = a.list; groups = b.list; error = nil
+            let directChanged = chats != a.list, groupsChanged = groups != b.list
+            if directChanged { chats = a.list }
+            if groupsChanged { groups = b.list }
+            error = nil
             sounds.updateMuted(chats: chats, groups: groups)
-            let id = owner
-            await LocalStore.shared.write(chats, key: "chats", userID: id)
-            await LocalStore.shared.write(groups, key: "groups", userID: id)
+            if directChanged { await LocalStore.shared.write(a.list, key: "chats", userID: owner) }
+            if groupsChanged { await LocalStore.shared.write(b.list, key: "groups", userID: owner) }
         } catch is CancellationError { } catch { if loadID == epoch { self.error = error.localizedDescription } }
     }
 }
 
 @MainActor final class ConversationStore: ObservableObject {
-    @Published var messages: [Record] = []
+    @Published var messages: [Record] = [] { didSet { if oldValue != messages { timeBoundaryIDs = MessageTimeline.boundaries(in: messages) } } }
+    @Published private(set) var timeBoundaryIDs: Set<Int> = []
+    private var syncCursor: Int?
+    private var restored = false
+    private var legacyIDs: Set<Int> = []
+    private var persisted: ConversationSnapshot?
+    private var lastReadID = 0
     @Published var error: String?
     @Published var loadingOlder = false
     @Published var hasOlder = true
@@ -101,47 +127,104 @@ struct ChatListView: View {
     var action: String { group ? "groups.messages" : "messages" }
     var key: String { group ? "group_id" : "chat_id" }
     var cacheKey: String { "messages-\(group ? "g" : "c")-\(target)" }
-    init(target: Int, group: Bool, userID: Int) { self.target = target; self.group = group; self.userID = userID }
+    private let fetch: (String, [String: String]) async throws -> JSON
+    private let post: (String, [String: JSON]) async throws -> JSON
+    init(target: Int, group: Bool, userID: Int,
+         fetch: @escaping (String, [String: String]) async throws -> JSON = { try await APIClient.shared.get($0, $1) },
+         post: @escaping (String, [String: JSON]) async throws -> JSON = { try await APIClient.shared.post($0, $1) }) {
+        self.target = target; self.group = group; self.userID = userID; self.fetch = fetch; self.post = post
+    }
     func run() async {
-        let restoreRevision = revision
-        if let saved: [Record] = await LocalStore.shared.read(cacheKey, userID: userID), restoreRevision == revision, !Task.isCancelled { merge(saved) }
+        if !restored {
+            restored = true
+            let restoreRevision = revision
+            let snapshot: ConversationSnapshot? = await LocalStore.shared.read(cacheKey + "-sync-v2", userID: userID)
+            guard restoreRevision == revision, !Task.isCancelled else { return }
+            if let snapshot {
+                syncCursor = snapshot.cursor; clearedThrough = snapshot.clearedThrough
+                merge(snapshot.messages); persisted = snapshot
+            } else if let saved: [Record] = await LocalStore.shared.read(cacheKey, userID: userID), restoreRevision == revision {
+                // Legacy caches may contain gaps. Show them immediately, then establish a fresh REST window.
+                legacyIDs = Set(saved.map(\.id)); merge(saved)
+            }
+        }
         var round = 0
         while !Task.isCancelled {
             let currentRevision = revision
             do {
-                var query = [key: String(target), "limit": "100"]
-                if let last = messages.last, last.id > 0 { query["after_id"] = String(last.id) }
-                let fresh = try await APIClient.shared.get(action, query).list
-                guard currentRevision == revision, !Task.isCancelled else { continue }
-                merge(fresh)
+                var more = true
+                while more {
+                    let cursor = syncCursor
+                    var query = [key: String(target), "limit": "100"]
+                    if let cursor, cursor > 0 { query["after_id"] = String(cursor) }
+                    let fresh = try await fetch(action, query).list
+                    guard currentRevision == revision, !Task.isCancelled else { throw CancellationError() }
+                    if cursor == nil {
+                        let upper = fresh.map(\.id).max() ?? 0
+                        // Preserve newer realtime inserts while discarding untrusted legacy cache gaps.
+                        messages = messages.filter { $0.id > upper && $0.id > clearedThrough && !legacyIDs.contains($0.id) }
+                        legacyIDs = []
+                        syncCursor = max(clearedThrough, upper)
+                    } else if let last = fresh.map(\.id).max() {
+                        syncCursor = max(cursor ?? 0, last)
+                    }
+                    merge(fresh)
+                    more = (cursor ?? 0) > 0 && fresh.count == 100 && (syncCursor ?? 0) > (cursor ?? 0)
+                    await persistIfNeeded()
+                }
                 if round % 5 == 0, !messages.isEmpty {
                     let ids = messages.suffix(200).map { String($0.id) }.joined(separator: ",")
-                    let sync = try await APIClient.shared.get(action + ".reconcile", [key: String(target), "ids": ids])
-                    guard currentRevision == revision, !Task.isCancelled else { continue }
+                    let sync = try await fetch(action + ".reconcile", [key: String(target), "ids": ids])
+                    guard currentRevision == revision, !Task.isCancelled else { throw CancellationError() }
                     let removed = Set(sync["removed_ids"].array.map(\.int))
-                    messages.removeAll { removed.contains($0.id) }; merge(sync["messages"].list)
+                    if !removed.isEmpty { messages.removeAll { removed.contains($0.id) } }
+                    merge(sync["messages"].list)
                 }
-                if let last = messages.last { try await APIClient.shared.post(action + ".read", [key: .number(Decimal(target)), "through_id": .number(Decimal(last.id))]) }
-                guard currentRevision == revision, !Task.isCancelled else { continue }
-                await LocalStore.shared.write(Array(messages.suffix(1000)), key: cacheKey, userID: userID)
-                guard currentRevision == revision, !Task.isCancelled else { continue }
+                // Realtime inserts cannot acknowledge a missing REST interval as read.
+                let boundary = min(messages.last?.id ?? 0, syncCursor ?? 0)
+                if boundary > lastReadID {
+                    try await post(action + ".read", [key: .number(Decimal(target)), "through_id": .number(Decimal(boundary))])
+                    guard currentRevision == revision else { throw CancellationError() }
+                    lastReadID = boundary
+                }
+                await persistIfNeeded()
+                guard currentRevision == revision, !Task.isCancelled else { throw CancellationError() }
                 error = nil; round += 1
-            } catch is CancellationError { return } catch { if currentRevision == revision { self.error = error.localizedDescription } }
+            } catch is CancellationError { if Task.isCancelled { return }; if currentRevision != revision { continue }; return }
+            catch { if currentRevision == revision { self.error = error.localizedDescription } }
             do { try await Task.sleep(for: .seconds(3)) } catch { return }
         }
+    }
+    private func persistIfNeeded() async {
+        guard let cursor = syncCursor else { return }
+        let snapshot = ConversationSnapshot(messages: Array(messages.suffix(1000)), cursor: cursor, clearedThrough: clearedThrough)
+        guard snapshot != persisted else { return }
+        let currentRevision = revision
+        do {
+            try await LocalStore.shared.save(snapshot, key: cacheKey + "-sync-v2", userID: userID)
+            if currentRevision == revision { persisted = snapshot }
+        } catch { /* A failed checkpoint is retried; its cursor must never be saved separately. */ }
     }
     func older() async {
         guard !loadingOlder, hasOlder, let first = messages.first else { return }
         loadingOlder = true; defer { loadingOlder = false }
         let currentRevision = revision
-        do { let rows = try await APIClient.shared.get(action, [key: String(target), "before_id": String(first.id), "limit": "100"]).list; guard currentRevision == revision, !Task.isCancelled else { return }; hasOlder = rows.count == 100; merge(rows) }
+        do { let rows = try await fetch(action, [key: String(target), "before_id": String(first.id), "limit": "100"]).list; guard currentRevision == revision, !Task.isCancelled else { return }; hasOlder = rows.count == 100; merge(rows); await persistIfNeeded() }
         catch { self.error = error.localizedDescription }
     }
-    func clear() { revision = UUID(); clearedThrough = max(clearedThrough, messages.last?.id ?? 0); messages = []; hasOlder = false; error = nil }
+    func clear() {
+        revision = UUID(); clearedThrough = max(clearedThrough, messages.last?.id ?? 0)
+        syncCursor = max(syncCursor ?? 0, clearedThrough); messages = []; hasOlder = false; error = nil
+        Task { await persistIfNeeded() }
+    }
     func merge(_ rows: [Record]) {
+        guard !rows.isEmpty else { return }
         var map = Dictionary(uniqueKeysWithValues: messages.map { ($0.id, $0) })
-        for row in rows where row.id > clearedThrough { map[row.id] = row }
-        messages = map.values.sorted { $0.id < $1.id }
+        var changed = false
+        for row in rows where row.id > clearedThrough && row.id > 0 {
+            if map[row.id] != row { map[row.id] = row; changed = true }
+        }
+        if changed { messages = map.values.sorted { $0.id < $1.id } }
     }
     func receive(_ event: JSON) {
         if event["type"].string == "contact.remark.updated", event["user_id"].int == userID, group {
@@ -161,23 +244,23 @@ struct ChatListView: View {
         do {
             for offset in stride(from: 0, to: ids.count, by: 200) {
                 let batch = ids[offset..<min(offset + 200, ids.count)].joined(separator: ",")
-                let sync = try await APIClient.shared.get(action + ".reconcile", [key: String(target), "ids": batch])
+                let sync = try await fetch(action + ".reconcile", [key: String(target), "ids": batch])
                 guard currentRevision == revision, !Task.isCancelled else { return }
                 merge(sync["messages"].list)
             }
-            await LocalStore.shared.write(Array(messages.suffix(1000)), key: cacheKey, userID: userID)
+            await persistIfNeeded()
         } catch { /* Existing names remain visible; the next normal sync retries. */ }
     }
     func edit(_ message: Record, content: String) async throws {
         let currentRevision = revision
-        let value = try await APIClient.shared.post(action + ".edit", [key: .number(Decimal(target)), "message_id": message["id"], "content": .string(content)])
+        let value = try await post(action + ".edit", [key: .number(Decimal(target)), "message_id": message["id"], "content": .string(content)])
         guard currentRevision == revision else { return }
         merge([value.record])
     }
     func delete(_ message: Record) async throws {
-        try await APIClient.shared.post(action + ".delete", [key: .number(Decimal(target)), "message_id": message["id"]])
+        try await post(action + ".delete", [key: .number(Decimal(target)), "message_id": message["id"]])
         messages.removeAll { $0.id == message.id }
-        await LocalStore.shared.write(messages, key: cacheKey, userID: userID)
+        await persistIfNeeded()
     }
 }
 
@@ -202,6 +285,7 @@ struct ConversationView: View {
     @State private var text = ""
     @State private var plus = false
     @State private var photos: [PhotosPickerItem] = []
+    @State private var processingPhotos = false
     @State private var documents = false
     @State private var camera = false
     @State private var packet = false
@@ -231,7 +315,9 @@ struct ConversationView: View {
     @State private var backgroundURL = ""
     @State private var members: [Record] = []
     @State private var mentioning = false
-    @State private var mentions: [Int: String] = [:]
+    @State private var mentionTokens: [MentionToken] = []
+    @State private var mentionSourceText = ""
+    private var mentions: [Int: String] { Dictionary(mentionTokens.map { ($0.userID, $0.name) }, uniquingKeysWith: { first, _ in first }) }
     @State private var mentionTrigger: Int?
     @State private var insertingMention = false
     @State private var mentionNotice: String?
@@ -265,7 +351,7 @@ struct ConversationView: View {
                         Button(model.loadingOlder ? "加载中…" : "查看更早消息") { Task { await model.older() } }.font(.caption).disabled(model.loadingOlder)
                     }
                     ForEach(model.messages) { message in
-                        if MessageTimeline.showsTime(before: message, in: model.messages) {
+                        if model.timeBoundaryIDs.contains(message.id) {
                             Text(MessageTimeline.label(message["created_at"].string)).font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 4)
                         }
                         HStack(spacing: 10) {
@@ -318,7 +404,7 @@ struct ConversationView: View {
                 .onChange(of: outbox.acknowledgements) { _, map in model.merge(Array(map.values.filter { $0[isGroup ? "group_id" : "chat_id"].int == item.id })) }
             if let replied { HStack { Text("回复：\(replied["content"].string)").lineLimit(1); Spacer(); Button { self.replied = nil } label: { Image(systemName: "xmark.circle.fill") } }.font(.caption).padding(10).background(.thinMaterial) }
             if !mentions.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) { HStack { ForEach(mentions.keys.sorted(), id: \.self) { id in Button { let name = mentions.removeValue(forKey: id) ?? ""; text = text.replacingOccurrences(of: "@\(name) ", with: "") } label: { Label("@\(mentions[id] ?? "")", systemImage: "xmark.circle.fill").font(.caption).padding(7).background(SPXColor.primary.opacity(0.08), in: Capsule()) } } } }.padding(.horizontal, 12)
+                ScrollView(.horizontal, showsIndicators: false) { HStack { ForEach(mentions.keys.sorted(), id: \.self) { id in Button { removeMention(id) } label: { Label("@\(mentions[id] ?? "")", systemImage: "xmark.circle.fill").font(.caption).padding(7).background(SPXColor.primary.opacity(0.08), in: Capsule()) } } } }.padding(.horizontal, 12)
             }
             Divider()
             if selecting {
@@ -351,6 +437,7 @@ struct ConversationView: View {
     private var navigationContent: some View {
         conversationContent.navigationTitle(title).navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { NavigationLink { ConversationSettingsView(item: item, isGroup: isGroup) } label: { Image(systemName: "ellipsis") } } }
+            .toolbar(.hidden, for: .tabBar)
             .spxPage().errorAlert($error)
             .overlay(alignment: .top) { if let mentionNotice { Text(mentionNotice).font(.subheadline.weight(.medium)).padding(.horizontal, 18).padding(.vertical, 11).background(.regularMaterial, in: Capsule()).padding(.top, 10).allowsHitTesting(false) } }
             .task(id: mentionNotice) { guard mentionNotice != nil else { return }; do { try await Task.sleep(for: .seconds(2)); mentionNotice = nil } catch { } }
@@ -358,7 +445,9 @@ struct ConversationView: View {
     private var realtimeContent: some View {
         navigationContent
             .onChange(of: text) { old, value in
-                guard isGroup, !insertingMention, !mentioning, value.count == old.count + 1 else { return }
+                let userEdit = mentionSourceText != value
+                synchronizeMentions(to: value)
+                guard userEdit, isGroup, !insertingMention, !mentioning, value.count == old.count + 1 else { return }
                 let prefix = zip(old, value).prefix { $0.0 == $0.1 }.count
                 let index = value.index(value.startIndex, offsetBy: prefix)
                 if value[index] == "@" { mentionTrigger = prefix; mentioning = true }
@@ -375,8 +464,15 @@ struct ConversationView: View {
                 if !restoredDraft {
                     let saved: Record? = await LocalStore.shared.read(draftKey, userID: userID)
                     if text.isEmpty {
-                        text = saved?["text"].string ?? ""
-                        for (key, name) in saved?["mention_names"].object ?? [:] { if let id = Int(key), id > 0 || id == -1 { mentions[id] = name.string } }
+                        let value = saved?["text"].string ?? ""
+                        if let raw = saved?["mention_tokens"], let data = try? JSONEncoder().encode(raw), let tokens = try? JSONDecoder().decode([MentionToken].self, from: data) {
+                            mentionTokens = MentionRanges.validated(tokens, in: value)
+                        } else {
+                            var names: [Int: String] = [:]
+                            for (key, name) in saved?["mention_names"].object ?? [:] { if let id = Int(key), id > 0 || id == -1 { names[id] = name.string } }
+                            mentionTokens = MentionRanges.restoringLegacy(names, in: value)
+                        }
+                        mentionSourceText = value; text = value
                     }
                     restoredDraft = true
                 }
@@ -384,7 +480,7 @@ struct ConversationView: View {
                 if let saved: String = await LocalStore.shared.read("chat-background-\(isGroup ? "g" : "c")-\(item.id)", userID: userID) { backgroundURL = saved }
                 if !isGroup, let settings = try? await APIClient.shared.get("chats.settings.get", ["chat_id": String(item.id)]) { backgroundURL = settings["background_url"].string }
             }
-            .task(id: text) {
+            .task(id: draftSnapshot) {
                 guard restoredDraft else { return }
                 do { try await Task.sleep(for: .milliseconds(350)); await LocalStore.shared.write(draftSnapshot, key: draftKey, userID: userID) } catch { }
             }
@@ -416,7 +512,12 @@ struct ConversationView: View {
     }
     private var attachmentContent: some View {
         recordingContent
-            .onChange(of: photos) { _, items in Task { await sendPhotos(items) } }
+            .onChange(of: photos) { _, items in
+                guard !items.isEmpty, !processingPhotos else { return }
+                photos = []
+                processingPhotos = true
+                Task { await sendPhotos(items) }
+            }
             .fileImporter(isPresented: $documents, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
                 Task { do { for source in try result.get() { try await queue(file: MediaFiles.keep(source, userID: userID), kind: "file", name: source.lastPathComponent) } } catch { self.error = error.localizedDescription } }
             }
@@ -446,6 +547,7 @@ struct ConversationView: View {
     private var plusGrid: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 20) {
             PhotosPicker(selection: $photos, maxSelectionCount: 9, matching: .any(of: [.images, .videos])) { PlusAction(title: "相册", icon: "photo.on.rectangle") }
+                .disabled(processingPhotos)
             Button { if UIImagePickerController.isSourceTypeAvailable(.camera) { camera = true } else { error = "当前设备没有可用相机" } } label: { PlusAction(title: "拍摄", icon: "camera") }
             if !isGroup {
                 Button { CallCoordinator.shared.dial(chat: item, video: false) } label: { PlusAction(title: "语音通话", icon: "phone") }
@@ -458,29 +560,54 @@ struct ConversationView: View {
             if isGroup { Button { mentioning = true } label: { PlusAction(title: "提醒成员", icon: "at") } }
         }.buttonStyle(.plain)
     }
+    private func synchronizeMentions(to value: String) {
+        guard mentionSourceText != value else { return }
+        mentionTokens = MentionRanges.updating(mentionTokens, from: mentionSourceText, to: value)
+        mentionSourceText = value
+    }
+    private func removeMention(_ id: Int) {
+        synchronizeMentions(to: text)
+        let updated = MentionRanges.removing(userID: id, tokens: mentionTokens, from: text)
+        mentionTokens = updated.tokens; mentionSourceText = updated.text; text = updated.text
+    }
     private func sendText() {
-        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let source = text, value = source.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
         guard value.unicodeScalars.count <= 10_000 else { error = "消息最多 10000 字，请分段发送"; return }
+        synchronizeMentions(to: source)
         var body: [String: JSON] = ["content": .string(value), "message_type": "text"]
         if let replied { body["reply_to_message_id"] = .number(Decimal(replied.id)) }
-        if isGroup { body["mention_user_ids"] = .array(mentions.keys.sorted().filter { value.contains("@\(mentions[$0] ?? "")") }.map { .number(Decimal($0)) }) }
-        let savedMentions = mentions
-        let savedReply = replied
-        text = ""; replied = nil; mentions = [:]
-        Task { do { try await outbox.enqueue(scope: isGroup ? "group" : "chat", id: item.id, body: body, expectedUserID: userID); scrollTarget = "bottom" } catch { if text.isEmpty { text = value; mentions = savedMentions; replied = savedReply }; self.error = error.localizedDescription } }
+        if isGroup { body["mention_user_ids"] = .array(MentionRanges.userIDs(mentionTokens, in: source).map { .number(Decimal($0)) }) }
+        let savedTokens = mentionTokens, savedReply = replied
+        mentionTokens = []; mentionSourceText = ""; text = ""; replied = nil
+        Task {
+            do { try await outbox.enqueue(scope: isGroup ? "group" : "chat", id: item.id, body: body, expectedUserID: userID); scrollTarget = "bottom" }
+            catch { if text.isEmpty { mentionTokens = savedTokens; mentionSourceText = source; text = source; replied = savedReply }; self.error = error.localizedDescription }
+        }
     }
     private func insertMention(id: Int, name: String) {
         guard id != userID, id > 0 || id == -1, !name.isEmpty else { return }
-        mentions[id] = name; insertingMention = true
+        synchronizeMentions(to: text)
+        insertingMention = true
+        var value = text
+        let insertion: Int
         if let offset = mentionTrigger, offset < text.count {
             let index = text.index(text.startIndex, offsetBy: offset)
-            if text[index] == "@" { text.replaceSubrange(index...index, with: "@\(name) ") } else { text += "@\(name) " }
-        } else { text += "@\(name) " }
+            if text[index] == "@" {
+                insertion = text[..<index].utf16.count; value.replaceSubrange(index...index, with: "@\(name) ")
+            } else { insertion = value.utf16.count; value += "@\(name) " }
+        } else { insertion = value.utf16.count; value += "@\(name) " }
+        mentionTokens = MentionRanges.updating(mentionTokens, from: text, to: value)
+        mentionTokens.append(MentionToken(userID: id, name: name, location: insertion))
+        mentionTokens = MentionRanges.validated(mentionTokens, in: value)
+        mentionSourceText = value; text = value
         mentionTrigger = nil; composerFocused = true
         Task { @MainActor in await Task.yield(); insertingMention = false }
     }
-    private var draftSnapshot: Record { Record(["text": .string(text), "mention_names": .object(Dictionary(uniqueKeysWithValues: mentions.map { (String($0.key), JSON.string($0.value)) }))]) }
+    private var draftSnapshot: Record {
+        let tokens = MentionRanges.updating(mentionTokens, from: mentionSourceText, to: text)
+        return Record(["text": .string(text), "mention_tokens": .array(tokens.map(\.json))])
+    }
     private func refreshGroup() async {
         guard isGroup else { return }
         do {
@@ -502,11 +629,11 @@ struct ConversationView: View {
         scrollTarget = "bottom"
     }
     private func sendPhotos(_ items: [PhotosPickerItem]) async {
+        defer { processingPhotos = false; plus = false }
         for selected in items {
             do { let file = try await MediaFiles.select(selected, userID: userID); let video = selected.supportedContentTypes.contains { $0.conforms(to: .movie) }; try await queue(file: file, kind: video ? "video" : "image", name: video ? "视频" : "图片") }
             catch { self.error = error.localizedDescription }
         }
-        photos = []; plus = false
     }
     private func beginRecording() {
         guard !recordingGesture else { return }
