@@ -20,6 +20,12 @@ try {
         $data = chatUploadStatus($uid, $_GET, $root . '/state');
     } elseif ($operation === 'chunk' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $data = chatReceiveChunk($uid, $_POST, $_FILES['chunk'] ?? [], $root . '/messages', $root . '/state', 'https://example.invalid');
+    } elseif ($operation === 'single' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $file = $_FILES['file'] ?? [];
+        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'] ?? '')) {
+            throw new DomainException('Missing upload fixture', 422);
+        }
+        $data = chatSaveUpload($file['tmp_name'], $uid, $root . '/messages', 'https://example.invalid');
     } else {
         throw new DomainException('Unknown test operation', 404);
     }

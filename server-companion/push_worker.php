@@ -2,7 +2,6 @@
 declare(strict_types=1);
 // CLI only. Run once per minute with cron or continuously with a process manager.
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
-require_once __DIR__.'/db.php';
 require_once __DIR__.'/push_notifications.php';
 
 function pushBase64(string $value): string { return rtrim(strtr(base64_encode($value),'+/','-_'),'='); }
@@ -53,6 +52,7 @@ function pushDeliver(array $device, array $payload, string $collapse): array
 function pushRunBatch(): array
 {
     if (!pushConfigured()) return ['configured'=>false,'sent'=>0];
+    require_once __DIR__.'/db.php';
     if (!extension_loaded('curl') || !(curl_version()['features'] & CURL_VERSION_HTTP2)) throw new RuntimeException('APNs requires cURL HTTP/2');
     $pdo=db(); $stats=['configured'=>true,'sent'=>0,'skipped'=>0,'retried'=>0];
     if ((int)$pdo->query("SELECT GET_LOCK('spx_push_worker',0)")->fetchColumn()!==1) return $stats;

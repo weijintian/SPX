@@ -1,5 +1,5 @@
 {
-  "source": "Literal API actions verified against local backend on 2026-10-24; isolated API tests are separate",
+  "source": "Literal API actions verified against local backend on 2026-10-25; isolated API tests are separate",
   "actions": [
     "app.update.history",
     "auth.email.code",
@@ -39,6 +39,7 @@
     "groups.members.add",
     "groups.mentions",
     "groups.search",
+    "groups.settings",
     "groups.transfer",
     "groups.update",
     "mall.config",
@@ -79,6 +80,8 @@
     "profile.update",
     "questions",
     "questions.create",
+    "push.device.register",
+    "push.device.unregister",
     "redpackets.claim",
     "redpackets.create",
     "redpackets.detail",
@@ -91,6 +94,7 @@
     "staking.create",
     "staking.plans",
     "support.tickets",
+    "upload.message",
     "upload.message.chunk",
     "upload.message.status",
     "user.profile",

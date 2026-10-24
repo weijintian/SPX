@@ -184,8 +184,8 @@
     },
     {
       "path": "spxchat/push_worker.php",
-      "sha256": "64a0efb4d9968bf3417bdba6d6fd65d89640c19032add5b9a0d6a1a2078af009",
-      "bytes": 7886
+      "sha256": "cff3d2dddf6b4cd72230b7b280ebe9ecbfaee35620d20ef683aedcfc68dbc3aa",
+      "bytes": 7890
     },
     {
       "path": "spxchat/db.php",
@@ -209,13 +209,13 @@
     },
     {
       "path": "server-companion/push_worker.php",
-      "sha256": "64a0efb4d9968bf3417bdba6d6fd65d89640c19032add5b9a0d6a1a2078af009",
-      "bytes": 7886
+      "sha256": "cff3d2dddf6b4cd72230b7b280ebe9ecbfaee35620d20ef683aedcfc68dbc3aa",
+      "bytes": 7890
     },
     {
       "path": "server-companion/tests/push-policy.php",
-      "sha256": "2e8a5640b619189ebb7907e7dfd0807116ab090d58eb78b96390dd35d9a0458b",
-      "bytes": 3802
+      "sha256": "3a0f01ea8941a49f0c7e4972cf146bcc411a8456ad17fc0e19a332cc6d9ab959",
+      "bytes": 3792
     },
     {
       "path": "ios-native/SpxChatIOS/Design/DetailPages.swift",
@@ -246,6 +246,56 @@
       "path": "ios-native/Validation/source-validation.json",
       "sha256": "9cf8d81b926d0dfd951ec4d04643ec0ffb7f23812d4a57b0de94ffcc368e1868",
       "bytes": 408
+    },
+    {
+      "path": "ios-native/scripts/backend-actions.json",
+      "sha256": "8cdd58aed01cfa05e69876ec604624e7837d4ce7e3531cbc1cf24a2983c3c27d",
+      "bytes": 2535
+    },
+    {
+      "path": "ios-native/scripts/test-call-login.php",
+      "sha256": "9f12d5d9c8b0a44f0d3eb9b4302724921daacf1a08a0d228b3007026c20964dc",
+      "bytes": 1639
+    },
+    {
+      "path": "ios-native/scripts/upload-test-router.php",
+      "sha256": "e0cec4807afa02944e70bd8b79c566d01634f6cb5990aa1405da29fec50a9842",
+      "bytes": 1854
+    },
+    {
+      "path": "server-companion/auth.php",
+      "sha256": "e41ec0db86e40147691a89a743c2e41e5b1c3f1587ef3d9a123c549881f932e7",
+      "bytes": 3912
+    },
+    {
+      "path": "server-companion/chat_calls.php",
+      "sha256": "bff1d52a43ef1fe4c2a5c57ba96fd43b2b1f7ce027e4e01799f5a7102b1587d8",
+      "bytes": 14310
+    },
+    {
+      "path": "server-companion/call_session_policy.php",
+      "sha256": "16cc537257abd41bedd2c3159a7e9c78a160738821c3a644d5bc5bf43e635879",
+      "bytes": 412
+    },
+    {
+      "path": "server-companion/IOS-1.0.5-DEPLOYMENT.md",
+      "sha256": "6428bd73ae9f1ce6cacf401e099f5e7d1cda9829eec02d085f04b3cc402991d0",
+      "bytes": 1342
+    },
+    {
+      "path": "server-companion/IOS-1.0.6-DEPLOYMENT.md",
+      "sha256": "e0650e6f169bd26c74f07cefd4a70f6ffe97743d10ff17d526091e972e18076b",
+      "bytes": 1498
+    },
+    {
+      "path": "server-companion/NOTIFICATIONS-SETUP.md",
+      "sha256": "72f780b55e2de39befa89ad8a35941208ac616661eabbbad8d7b0f248c7b0e25",
+      "bytes": 3837
+    },
+    {
+      "path": "server-companion/notifications-integration.patch",
+      "sha256": "a8ab95ca44cb4148978714f062347de9f268cd2563c03a4b6ed8c5e894ef7f09",
+      "bytes": 2899
     }
   ],
   "reaudit_date": "2026-10-24",

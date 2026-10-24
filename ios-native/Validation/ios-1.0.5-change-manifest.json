@@ -1,0 +1,110 @@
+{
+  "date": "2026-10-24",
+  "version": "1.0.5",
+  "build": 6,
+  "files": [
+    {
+      "file": "ios-native/project.yml",
+      "sha256": "a1510083464a71f90b187e8b5e59af3c27285393b081384982decefd1b13c07e"
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Core/APIClient.swift",
+      "sha256": "e948c3c19f513e385d5750681cef42ecbb30f7c849bc9becd1bf651b245de696"
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Core/MediaStorage.swift",
+      "sha256": "3f4fcf2b50c38ee8db44a5d06fb1f4e98c10ec87ea517d27cfaef84b0f0c68d8"
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Core/BackgroundMediaTransfer.swift",
+      "sha256": "e591dff899da27c0498972ff4f7eda79746ac56814f3fac6e8d822534275e4e6"
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Core/MessageOutbox.swift",
+      "sha256": "65daad75a14a6ba28eaf7515a413658e173749d0c9a2884cfb285c39a1538db6"
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Chat/Conversations.swift",
+      "sha256": "c5e072ef5edbc5db2aeb2becec348d5d90c0052155d249fa762cda20128ebf24"
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Chat/NativeMediaViews.swift",
+      "sha256": "8077cc744f30e2808113072195d9781a69e942a65fa02f8b2b3272360851afb0"
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Calls/CallCoordinator.swift",
+      "sha256": "72a1d287c67267f3154179bd392884d5c2f6660fc522b4646a3496448360782a"
+    },
+    {
+      "file": "ios-native/SpxChatIOSTests/ChatMediaRegressionTests.swift",
+      "sha256": "96519d4c6b9a5108e379325c5b3cdd51b4c4cf4345fee45e72d98d779d891690"
+    },
+    {
+      "file": "ios-native/scripts/test-media-upload.mjs",
+      "sha256": "0727662d5b64155aa1277e218b68096228b9142fe3483d78adb6291e844c075a"
+    },
+    {
+      "file": "ios-native/scripts/upload-test-router.php",
+      "sha256": "e0cec4807afa02944e70bd8b79c566d01634f6cb5990aa1405da29fec50a9842"
+    },
+    {
+      "file": "ios-native/scripts/test-call-login.php",
+      "sha256": "9f12d5d9c8b0a44f0d3eb9b4302724921daacf1a08a0d228b3007026c20964dc"
+    },
+    {
+      "file": "spxchat/auth.php",
+      "sha256": "e41ec0db86e40147691a89a743c2e41e5b1c3f1587ef3d9a123c549881f932e7"
+    },
+    {
+      "file": "spxchat/chat_calls.php",
+      "sha256": "bff1d52a43ef1fe4c2a5c57ba96fd43b2b1f7ce027e4e01799f5a7102b1587d8"
+    },
+    {
+      "file": "spxchat/call_session_policy.php",
+      "sha256": "16cc537257abd41bedd2c3159a7e9c78a160738821c3a644d5bc5bf43e635879"
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Calls/CallOverlay.swift",
+      "sha256": "214f5cb2df705738c2f0ccb1c9f5600c8175537617ac930f4801bef8d6b26895"
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Chat/MessageHistory.swift",
+      "sha256": "740db960f63151a6e332b5a5c87c023d744141cb9ca15c21e74eace4504690a3"
+    },
+    {
+      "file": "ios-native/SpxChatIOSTests/CallFlowRegressionTests.swift",
+      "sha256": "2269d22252c76ca9211128c6f3535ad52d9c6b0f85afac818907418f3158e507"
+    }
+  ],
+  "validation": {
+    "source_structure": true,
+    "call_policy_tests": true,
+    "media_loopback_checks": 18,
+    "xcode_compilation": "not_run",
+    "xctest": "not_run",
+    "device_testing": "not_run",
+    "server_deployment": "not_run",
+    "git_push": "not_run",
+    "call_policy_checks": 9,
+    "one_to_one_sdk_signature_in_pinned_header": true,
+    "android_call_api_parity": true,
+    "php_lint": true,
+    "server_companion_copies_match": true,
+    "source_structure_scan": {
+      "swift_files": 62,
+      "lines": 9260,
+      "syntax_errors": [],
+      "literal_api_actions": 99,
+      "actions_not_found_in_local_backend": [],
+      "api_action_validation_source": "local_backend",
+      "policy_resources": [
+        "SpxChatIOS\\Resources\\privacy.txt",
+        "SpxChatIOS\\Resources\\agreement.txt"
+      ],
+      "xcode_compilation": "not_run",
+      "unit_tests": "not_run",
+      "device_testing": "not_run"
+    },
+    "signed_ipa": "not_built"
+  }
+}

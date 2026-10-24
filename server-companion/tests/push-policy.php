@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
-require_once __DIR__.'/../../spxchat/push_notifications.php';
-require_once __DIR__.'/../../spxchat/push_worker.php';
+require_once dirname(__DIR__).'/push_notifications.php';
+require_once dirname(__DIR__).'/push_worker.php';
 $checks=[];
 function check(bool $ok,string $name): void { global $checks; $checks[]=['name'=>$name,'passed'=>$ok]; if (!$ok) throw new RuntimeException($name); }
 function rejects(array $body,string $name): void { try { pushRegistration($body); check(false,$name); } catch (InvalidArgumentException $e) { check(true,$name); } }
