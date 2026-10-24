@@ -22,6 +22,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 
 
@@ -40,6 +41,22 @@ def run(label, args, *, capture=False):
             print("[signing] Apple signing tool rejected the signing material.", flush=True)
         raise BuildFailure(f"{label} failed (exit {result.returncode}).")
     return result.stdout if capture else b""
+
+
+def run_with_retries(label, args, *, attempts=4, delay_seconds=8):
+    """Retry transient dependency/network failures before aborting the build."""
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return run(label, args)
+        except BuildFailure as error:
+            last_error = error
+            if attempt >= attempts:
+                raise
+            wait = delay_seconds * attempt
+            print(f"[signing] {label} failed (attempt {attempt}/{attempts}); retrying in {wait}s.", flush=True)
+            time.sleep(wait)
+    raise last_error
 
 
 def profile_settings(profile, requested_bundle="", now=None):
@@ -207,7 +224,7 @@ def build():
             "SpxChatIOS": {"settings": {"configs": {"Release": release}}}
         }}, indent=2), encoding="utf-8")
         run("Generate signing project", ["xcodegen", "generate", "--spec", str(spec)])
-        run("Resolve pinned dependencies", ["pod", "install"])
+        run_with_retries("Resolve pinned dependencies", ["pod", "install"])
         archive = ROOT / "build/SpxChatIOS-signed.xcarchive"
         run("Archive signed application", ["xcodebuild", "-workspace", "SpxChatIOS.xcworkspace", "-scheme", "SpxChatIOS",
             "-configuration", "Release", "-destination", "generic/platform=iOS", "-derivedDataPath", "build/SignedDerivedData",
