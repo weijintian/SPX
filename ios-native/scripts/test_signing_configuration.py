@@ -7,7 +7,7 @@ import tempfile
 import unittest
 import zipfile
 
-from build_signed_ipa import BuildFailure, profile_settings, verify_ipa
+from build_signed_ipa import BuildFailure, prepare_signing_info_plist, profile_settings, verify_ipa
 
 
 class SigningConfigurationTests(unittest.TestCase):
@@ -33,6 +33,38 @@ class SigningConfigurationTests(unittest.TestCase):
         value = self.profile()
         value["Entitlements"]["aps-environment"] = "production"
         self.assertEqual(profile_settings(value)["pushEnvironment"], "production")
+
+    def test_signing_plist_materializes_push_environment_and_preserves_source(self):
+        source = Path(__file__).resolve().parents[1] / "SpxChatIOS/Info.plist"
+        original = source.read_bytes()
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "Info.plist"
+            for environment in ["development", "production", ""]:
+                prepare_signing_info_plist(source, target, {"pushEnvironment": environment})
+                info = plistlib.loads(target.read_bytes())
+                self.assertEqual(info.get("SPXPushEnvironment", ""), environment)
+                self.assertEqual(info["SPXNetworkTrust"], "system-public-ip-v1")
+                self.assertIn("NSCameraUsageDescription", info)
+                self.assertNotIn("NSAppTransportSecurity", info)
+            with self.assertRaises(BuildFailure):
+                prepare_signing_info_plist(source, target, {"pushEnvironment": "invalid"})
+        self.assertEqual(source.read_bytes(), original)
+
+    def test_generated_signing_plist_passes_export_push_validation(self):
+        source = Path(__file__).resolve().parents[1] / "SpxChatIOS/Info.plist"
+        profile = self.profile()
+        profile["Entitlements"]["aps-environment"] = "production"
+        settings = profile_settings(profile)
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "Info.plist"
+            prepare_signing_info_plist(source, target, settings)
+            info = plistlib.loads(target.read_bytes())
+            info.update(CFBundleIdentifier=settings["bundleID"], CFBundleVersion="7")
+            ipa = Path(directory) / "test.ipa"
+            with zipfile.ZipFile(ipa, "w") as package:
+                package.writestr("Payload/Test.app/Info.plist", plistlib.dumps(info))
+                package.writestr("Payload/Test.app/embedded.mobileprovision", b"fixture")
+            self.assertEqual(verify_ipa(ipa, settings, "7")["SPXPushEnvironment"], "production")
 
     def test_expired_and_wrong_bundle_are_rejected(self):
         with self.assertRaises(BuildFailure):

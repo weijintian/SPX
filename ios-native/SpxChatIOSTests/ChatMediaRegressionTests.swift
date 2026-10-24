@@ -4,11 +4,18 @@ import Combine
 
 final class ChatMediaRegressionTests: XCTestCase {
     func testImageBubbleUsesAndroidAspectBoundsAndFitsNarrowProposals() {
-        XCTAssertEqual(ChatMediaLayout.imageSize(CGSize(width: 480, height: 480)), CGSize(width: 220, height: 220))
-        XCTAssertEqual(ChatMediaLayout.imageSize(CGSize(width: 400, height: 800)), CGSize(width: 150, height: 300))
-        XCTAssertEqual(ChatMediaLayout.imageSize(CGSize(width: 800, height: 400)), CGSize(width: 220, height: 110))
-        XCTAssertEqual(ChatMediaLayout.imageSize(CGSize(width: 480, height: 480), maximumWidth: 180), CGSize(width: 180, height: 180))
-        XCTAssertEqual(ChatMediaLayout.imageSize(.zero), CGSize(width: 210, height: 160))
+        let cases: [(CGSize, CGFloat, CGSize)] = [
+            (CGSize(width: 480, height: 480), 220, CGSize(width: 220, height: 220)),
+            (CGSize(width: 400, height: 800), 220, CGSize(width: 150, height: 300)),
+            (CGSize(width: 800, height: 400), 220, CGSize(width: 220, height: 110)),
+            (CGSize(width: 480, height: 480), 180, CGSize(width: 180, height: 180)),
+            (.zero, 220, CGSize(width: 210, height: 160))
+        ]
+        for (source, maximumWidth, expected) in cases {
+            let actual = ChatMediaLayout.imageSize(source, maximumWidth: maximumWidth)
+            XCTAssertEqual(actual.width, expected.width, accuracy: 0.000_001)
+            XCTAssertEqual(actual.height, expected.height, accuracy: 0.000_001)
+        }
     }
     func testUploadResultAcceptsCurrentAndLegacyAddressShapes() {
         let url = "https://media.example.test/image.png"

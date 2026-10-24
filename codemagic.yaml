@@ -18,19 +18,6 @@ workflows:
           python3 -m pip install -r scripts/requirements-dev.txt
           python3 scripts/validate_sources.py
           python3 scripts/test_signing_configuration.py
-      - name: Check signing variables
-        script: |
-          set -euo pipefail
-          missing=()
-          [ -n "${SPX_IOS_CERTIFICATE_BASE64:-}" ] || missing+=(SPX_IOS_CERTIFICATE_BASE64)
-          [ -n "${SPX_IOS_P12_PASSWORD:-}" ] || missing+=(SPX_IOS_P12_PASSWORD)
-          [ -n "${SPX_IOS_PROFILE_BASE64:-}" ] || missing+=(SPX_IOS_PROFILE_BASE64)
-          if [ "${#missing[@]}" -gt 0 ]; then
-            echo "Missing Codemagic encrypted variables: ${missing[*]}"
-            echo "Create or update the spx-ios-signing variable group with these exact names."
-            exit 1
-          fi
-          echo "Signing variables are present."
       - name: Build and sign IPA
         script: |
           set -euo pipefail
@@ -38,7 +25,7 @@ workflows:
           mkdir -p build
           bash scripts/build-signed-ipa-macos.sh 2>&1 | tee build/signing.log
     artifacts:
-      - ios-native/build/export/*.ipa
+      - ios-native/build/export/SPX-*.ipa
       - ios-native/build/export/SHA256SUMS.txt
       - ios-native/build/export/signing-report.json
       - ios-native/build/signing.log

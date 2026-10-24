@@ -161,6 +161,24 @@ def verify_ipa(ipa, settings, build_number):
     return info
 
 
+def prepare_signing_info_plist(source, target, settings):
+    """Materialize custom keys in the plist used by the signed target.
+
+    Do not rely on INFOPLIST_KEY_* to insert an arbitrary application key
+    while Xcode is also processing an explicit INFOPLIST_FILE.
+    """
+    info = plistlib.loads(source.read_bytes())
+    environment = settings.get("pushEnvironment", "")
+    if environment not in {"", "development", "production"}:
+        raise BuildFailure("Provisioning profile has an unsupported push environment.")
+    if environment:
+        info["SPXPushEnvironment"] = environment
+    else:
+        info.pop("SPXPushEnvironment", None)
+    target.write_bytes(plistlib.dumps(info))
+    return target
+
+
 def build():
     if sys.platform != "darwin":
         raise BuildFailure("This command requires macOS, Xcode, XcodeGen and CocoaPods.")
@@ -217,11 +235,13 @@ def build():
             "PROVISIONING_PROFILE_SPECIFIER": settings["name"],
             "OTHER_CODE_SIGN_FLAGS": "--keychain " + shlex.quote(str(keychain)),
         }
+        signing_info = prepare_signing_info_plist(
+            ROOT / "SpxChatIOS/Info.plist", temporary / "SpxChatIOS-Info.plist", settings)
+        release["INFOPLIST_FILE"] = str(signing_info)
         if settings["pushEnvironment"] in {"development", "production"}:
             push_entitlements = temporary / "SpxChatIOS.entitlements"
             push_entitlements.write_bytes(plistlib.dumps({"aps-environment": settings["pushEnvironment"]}))
             release["CODE_SIGN_ENTITLEMENTS"] = str(push_entitlements)
-            release["INFOPLIST_KEY_SPXPushEnvironment"] = settings["pushEnvironment"]
         if build_number:
             release["CURRENT_PROJECT_VERSION"] = build_number
         spec = ROOT / "project.signing.generated.json"
@@ -244,11 +264,13 @@ def build():
             "provisioningProfiles": {settings["bundleID"]: settings["uuid"]},
             "manageAppVersionAndBuildNumber": False, "stripSwiftSymbols": True,
         }))
-        output = ROOT / "build/export"
-        output.mkdir(parents=True, exist_ok=True)
+        # Keep incomplete or unverified exports outside the published artifact
+        # directory. Only a fully verified IPA is copied there below.
+        export_staging = temporary / "export"
+        export_staging.mkdir()
         run("Export signed IPA", ["xcodebuild", "-exportArchive", "-archivePath", str(archive),
-            "-exportOptionsPlist", str(options), "-exportPath", str(output)])
-        ipas = list(output.glob("*.ipa"))
+            "-exportOptionsPlist", str(options), "-exportPath", str(export_staging)])
+        ipas = list(export_staging.glob("*.ipa"))
         if len(ipas) != 1:
             raise BuildFailure("Expected exactly one exported IPA.")
         info = verify_ipa(ipas[0], settings, build_number)
@@ -269,11 +291,12 @@ def build():
         if entitlements.get("aps-environment", "") != settings["pushEnvironment"]:
             raise BuildFailure("Exported push entitlement does not match the profile.")
         name = f"SPX-{info['CFBundleShortVersionString']}-{info['CFBundleVersion']}.ipa"
+        output = ROOT / "build/export"
+        output.mkdir(parents=True, exist_ok=True)
         target = output / name
-        if ipas[0] != target:
-            if target.exists():
-                raise BuildFailure("An IPA with the target version already exists; use a new build number.")
-            ipas[0].rename(target)
+        if target.exists():
+            raise BuildFailure("An IPA with the target version already exists; use a new build number.")
+        shutil.copyfile(ipas[0], target)
         with target.open("rb") as stream:
             digest = hashlib.file_digest(stream, "sha256").hexdigest()
         (output / "SHA256SUMS.txt").write_text(f"{digest}  {target.name}\n", encoding="utf-8")
