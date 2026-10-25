@@ -36,6 +36,13 @@ final class CallFlowRegressionTests: XCTestCase {
         XCTAssertFalse(call.matchesSDK("sdk-previous", sessionID: "another-session", room: 9000, retired: []))
     }
 
+    func testRetryRejectsPreviousRoomEvenIfBusinessUUIDStillMatches() {
+        var call = outgoing(); call.room = 9002
+        XCTAssertFalse(call.matchesSDK("old-sdk", sessionID: id, room: 9001, retired: []))
+        XCTAssertFalse(call.matchesSDK("other-session", sessionID: "another-session", room: 9002, retired: []))
+        XCTAssertTrue(call.matchesSDK("new-sdk", sessionID: id, room: 9002, retired: []))
+    }
+
     func testOfflineRetryUsesOriginalDeadlineForAudioAndVideo() {
         let now = Date(timeIntervalSince1970: 1_000)
         for video in [false, true] {

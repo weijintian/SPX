@@ -50,8 +50,9 @@ actor APIClient {
         c.queryItems = [URLQueryItem(name:"action",value:action)] + query.sorted(by:{$0.key < $1.key}).map{URLQueryItem(name:$0.key,value:$0.value)}
         guard let url = c.url else {throw APIError.invalidURL}; return url
     }
-    func request(_ action:String, method:String = "GET", query:[String:String] = [:], body:[String:JSON]? = nil) async throws -> JSON {
+    func request(_ action:String, method:String = "GET", query:[String:String] = [:], body:[String:JSON]? = nil, timeout: TimeInterval = 30) async throws -> JSON {
         var request = URLRequest(url:try requestURL(action,query:query))
+        request.timeoutInterval = timeout
         request.httpMethod = method
         request.setValue("application/json",forHTTPHeaderField:"Accept")
         request.setValue(UserDefaults.standard.string(forKey:"spx.language") ?? Locale.preferredLanguages.first ?? "zh-CN",forHTTPHeaderField:"Accept-Language")

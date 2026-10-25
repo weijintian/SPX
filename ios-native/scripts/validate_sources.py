@@ -61,7 +61,7 @@ backend = "\n".join(f.read_text(encoding="utf8", errors="replace") for f in back
 api_actions = set()
 for file in files:
     source = file.read_text(encoding="utf8")
-    api_actions.update(re.findall(r'APIClient\.shared\.(?:get|post|data|backgroundUploadRequest)\("([a-z][a-z0-9_.]+)"', source))
+    api_actions.update(re.findall(r'APIClient\.shared\.(?:get|post|request|data|backgroundUploadRequest)\("([a-z][a-z0-9_.]+)"', source))
     if file.name == "APIClient.swift":
         api_actions.update(re.findall(r'\bget\("([a-z][a-z0-9_.]+)"', source))
 contract = ROOT / "scripts" / "backend-actions.json"

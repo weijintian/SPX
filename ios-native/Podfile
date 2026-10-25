@@ -3,9 +3,10 @@ use_frameworks! :linkage => :static
 project 'SpxChatIOS.xcodeproj'
 
 target 'SpxChatIOS' do
-  # Tencent's official full UI call component.
-  pod 'TUICallKit_Swift', '4.2.1'
-  pod 'TUICore', '8.6.7019'
+  # Match Android's rtc_room_engine 3.6.4.104 and existing 1:1 signaling.
+  pod 'RTCRoomEngine', '3.6.4'
+  pod 'TXLiteAVSDK_TRTC', '12.8.19666'
+  pod 'TXIMSDK_Plus_iOS_XCFramework', '8.8.7373'
 
   target 'SpxChatIOSTests' do
     inherit! :search_paths

@@ -31,8 +31,8 @@ struct CallOverlay: View {
                 } else {
                     ZStack {
                         LinearGradient(colors: [Color(red: 0.08, green: 0.14, blue: 0.24), Color(red: 0.04, green: 0.07, blue: 0.13)], startPoint: .topLeading, endPoint: .bottomTrailing).ignoresSafeArea()
-                        if call.video, call.connected {
-                            CallVideoView(local: false).ignoresSafeArea()
+                        if call.video, call.outgoing || call.connected || model.answering {
+                            if call.connected { CallVideoView(local: false).ignoresSafeArea() }
                             VStack { HStack { Spacer(); if model.cameraEnabled { CallVideoView(local: true).frame(width: 112, height: 164).clipShape(RoundedRectangle(cornerRadius: 18)).padding(.top, 60).id(model.cameraEnabled) } }; Spacer() }.padding(20)
                         }
                         VStack(spacing: 22) {
@@ -75,6 +75,9 @@ struct CallOverlay: View {
 
 private struct CallVideoView: UIViewRepresentable {
     let local: Bool
-    func makeUIView(context: Context) -> UIView { let view = UIView(); view.backgroundColor = .black; CallCoordinator.shared.attachVideo(view, local: local); return view }
-    func updateUIView(_ view: UIView, context: Context) { }
+    final class Coordinator { let local: Bool; init(local: Bool) { self.local = local } }
+    func makeCoordinator() -> Coordinator { Coordinator(local: local) }
+    func makeUIView(context: Context) -> UIView { let view = UIView(); view.backgroundColor = .black; return view }
+    func updateUIView(_ view: UIView, context: Context) { CallCoordinator.shared.attachVideo(view, local: local) }
+    static func dismantleUIView(_ view: UIView, coordinator: Coordinator) { CallCoordinator.shared.detachVideo(view, local: coordinator.local) }
 }
