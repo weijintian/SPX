@@ -87,7 +87,7 @@ struct ActiveCall: Identifiable {
                 let sdkAppID = Int32(credentials["sdk_app_id"].int)
                 let identity = credentials["user_id"].string
                 let userSig = credentials["user_sig"].string
-                guard sdkAppID > 0, identity == "spx_(expectedUser)", !userSig.isEmpty else { throw APIError.invalidResponse }
+                guard sdkAppID > 0, identity == "spx_\(expectedUser)", !userSig.isEmpty else { throw APIError.invalidResponse }
                 try await self.tencentLogin(sdkAppID: sdkAppID, userID: identity, userSig: userSig)
                 guard !Task.isCancelled, self.generation == expectedGeneration, self.userID == expectedUser else { return }
 
@@ -100,7 +100,7 @@ struct ActiveCall: Identifiable {
             } catch {
                 guard let self, self.generation == expectedGeneration, self.userID == expectedUser else { return }
                 self.ready = false
-                self.toast("通话服务连接失败：(error.localizedDescription)")
+                self.toast("通话服务连接失败：\(error.localizedDescription)")
             }
         }
     }
@@ -120,8 +120,8 @@ struct ActiveCall: Identifiable {
     func dial(chat: Record, video: Bool) {
         guard chat.id > 0 else { toast("会话不可用，请重新打开好友资料"); return }
         guard userID > 0 else { toast("请先登录后再发起通话"); return }
-        let peer = "spx_(chat["peer_user_id"].int)"
-        guard peer != "spx_0", peer != "spx_(userID)" else { toast("未找到有效的通话对象"); return }
+        let peer = "spx_\(chat["peer_user_id"].int)"
+        guard peer != "spx_0", peer != "spx_\(userID)" else { toast("未找到有效的通话对象"); return }
 
         Task { [weak self] in
             guard let self else { return }
@@ -139,7 +139,7 @@ struct ActiveCall: Identifiable {
                 params: nil,
                 completion: { [weak self] result in
                     if case .failure(let error) = result {
-                        Task { @MainActor in self?.toast("发起通话失败：(error.localizedDescription)") }
+                        Task { @MainActor in self?.toast("发起通话失败：\(error.localizedDescription)") }
                     }
                 }
             )
