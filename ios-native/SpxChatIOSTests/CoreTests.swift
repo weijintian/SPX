@@ -130,6 +130,10 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(MessageContent.groupCode(Record(["content": "SPXGROUP:ab12cd"])), "AB12CD")
         XCTAssertNil(MessageContent.groupCode(Record(["content": "SPXGROUP:中文1234"])))
         XCTAssertFalse(MessageContent.canForward(Record(["message_type": "red_packet"])))
+        let packet = Record(["message_type": "text", "content": #"{"packet_id":"rp-42","greeting":"恭喜发财"}"#])
+        XCTAssertTrue(MessageContent.isRedPacket(packet))
+        XCTAssertEqual(MessageContent.preview(packet), "红包")
+        XCTAssertEqual(MessageContent.redPacketGreeting(packet), "恭喜发财")
         XCTAssertFalse(MessageContent.canForward(Record(["message_type": "text", "message_origin": "call"])))
     }
     func testTimelineUsesFiveMinuteBoundaries() {
