@@ -24,8 +24,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.spx.chat.ios
         INFOPLIST_FILE: SpxChatIOS/Info.plist
-        CURRENT_PROJECT_VERSION: 11
-        MARKETING_VERSION: 1.0.10
+        CURRENT_PROJECT_VERSION: 12
+        MARKETING_VERSION: 1.0.11
         SWIFT_OBJC_BRIDGING_HEADER: SpxChatIOS/Support/SpxChatIOS-Bridging-Header.h
         CLANG_ENABLE_OBJC_ARC: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
