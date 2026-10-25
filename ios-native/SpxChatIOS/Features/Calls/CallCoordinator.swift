@@ -303,20 +303,12 @@ struct ActiveCall: Identifiable {
         guard connectingID != current.id else { return }
         ringingTimeout?.cancel(); ringingTimeout = nil
         connectingID = current.id; call?.sdkID = sdkID
-        // SDK confirmation is authoritative. Do not leave the backend ringing while
-        // the microphone opens, or a near-timeout answer can expire on the server.
-        call?.connected = true; call?.startedAt = Date(); answering = false
-        ChatSoundEffects.shared.connected(current.id)
-        if current.outgoing, systemCallID == current.systemID { provider.reportOutgoingCall(with: current.systemID, connectedAt: Date()) }
-        reportStatus(current.id, event: "connected")
         defer { if connectingID == current.id { connectingID = nil } }
         do {
-            if systemCallID == nil {
-                let audio = AVAudioSession.sharedInstance()
-                try audio.setCategory(.playAndRecord, mode: current.video ? .videoChat : .voiceChat, options: [.allowBluetooth])
-                try audio.setActive(true)
-                ChatSoundEffects.shared.setCallAudioActive(true)
-            }
+            let audio = AVAudioSession.sharedInstance()
+            try audio.setCategory(.playAndRecord, mode: current.video ? .videoChat : .voiceChat, options: [.allowBluetooth])
+            try audio.setActive(true)
+            ChatSoundEffects.shared.setCallAudioActive(true)
             try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
                 let completion = SDKOperationCompletion(c)
                 TUICallEngine.createInstance().openMicrophone { Task { @MainActor in completion.succeed() } } fail: { code, message in
@@ -325,6 +317,13 @@ struct ActiveCall: Identifiable {
             }
             guard call?.id == current.id, !finishing else { return }
             TUICallEngine.createInstance().selectAudioPlaybackDevice(speaker ? .speakerphone : .earpiece)
+            // Only mark the business session connected after the RTC audio path is ready.
+            call?.connected = true
+            call?.startedAt = Date()
+            answering = false
+            ChatSoundEffects.shared.connected(current.id)
+            if current.outgoing, systemCallID == current.systemID { provider.reportOutgoingCall(with: current.systemID, connectedAt: Date()) }
+            reportStatus(current.id, event: "connected")
         } catch { if call?.id == current.id { await finish(event: "failed", message: error.localizedDescription) } }
     }
     private func reportStatus(_ id: String, event: String) {
@@ -469,8 +468,12 @@ extension CallCoordinator: CXProviderDelegate {
     }
     nonisolated func provider(_ provider: CXProvider, perform action: CXEndCallAction) { Task { @MainActor in guard let current = call, current.systemID == action.callUUID else { action.fulfill(); return }; action.fulfill(); await finish(event: current.connected ? "ended" : (current.outgoing ? "canceled" : "rejected"), message: nil) } }
     nonisolated func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
-        try? audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth])
-        Task { @MainActor in ChatSoundEffects.shared.setCallAudioActive(true) }
+        Task { @MainActor in
+            let mode: AVAudioSession.Mode = self.call?.video == true ? .videoChat : .voiceChat
+            try? audioSession.setCategory(.playAndRecord, mode: mode, options: [.allowBluetooth])
+            try? audioSession.setActive(true)
+            ChatSoundEffects.shared.setCallAudioActive(true)
+        }
     }
     nonisolated func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) { Task { @MainActor in ChatSoundEffects.shared.setCallAudioActive(false) } }
 }
