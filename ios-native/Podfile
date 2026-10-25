@@ -3,10 +3,10 @@ use_frameworks! :linkage => :static
 project 'SpxChatIOS.xcodeproj'
 
 target 'SpxChatIOS' do
-  # Version family verified against Tencent's official iOS example lockfile.
-  # Engine API is used directly, so the app owns its SwiftUI call interface.
-  pod 'RTCRoomEngine/TRTC', '3.2.1'
+  # Tencent's official full UI call component.
+  pod 'TUICallKit_Swift', '4.2.1'
   pod 'TUICore', '8.6.7019'
+
   target 'SpxChatIOSTests' do
     inherit! :search_paths
   end
