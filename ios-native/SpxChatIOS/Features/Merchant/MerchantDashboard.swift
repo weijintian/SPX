@@ -77,7 +77,7 @@ struct MerchantOverviewView: View {
                 if let error { ErrorBanner(message: error); Button("重新加载") { Task { await load() } } }
                 if submitting { ProgressView("正在提交…").frame(maxWidth: .infinity) }
             }.buttonStyle(.plain).padding(16)
-        }.navigationTitle("经营概览").spxPage().task { await load() }.refreshable { await load() }
+        }.navigationTitle("经营概览").spxPage().task { await load() }.spxRefreshable { await load() }
             .onReceive(NotificationCenter.default.publisher(for: .spxMerchantUpdated)) { _ in Task { await load() } }
             .onReceive(NotificationCenter.default.publisher(for: .spxMerchantProductsUpdated)) { _ in Task { await load() } }
             .confirmationDialog("确认冻结保证金？", isPresented: $deposit, titleVisibility: .visible) { Button("确认缴纳") { mutate("merchant.deposit.pay", ["level": .string(depositLevel)]) }; Button("取消", role: .cancel) { } } message: { Text(depositLevel == "gold" ? "黄金店铺需冻结合计 1,000,000 SPX001，系统只扣除尚未交齐的差额。" : "初级店铺需冻结 100,000 SPX001。") }
@@ -178,7 +178,7 @@ struct MerchantProductsView: View {
             ToolbarItem(placement: .topBarTrailing) { NavigationLink { PublishProductView() } label: { Image(systemName: "plus") }.accessibilityLabel("发布商品") }
         }.safeAreaInset(edge: .bottom) {
             if selecting { SPXBottomAction { VStack(spacing: 10) { Text("已选 \(selected.count)/50 件商品").font(.system(size: 13)).foregroundStyle(SPXColor.muted); Button(submitting ? "正在下架…" : "批量下架", role: .destructive) { batchConfirm = true }.disabled(selected.isEmpty || submitting) } } }
-        }.task { await load(reset: true); await loadCapacity() }.refreshable { await load(reset: true); await loadCapacity() }
+        }.task { await load(reset: true); await loadCapacity() }.spxRefreshable { await load(reset: true); await loadCapacity() }
             .onReceive(NotificationCenter.default.publisher(for: .spxMerchantProductsUpdated)) { _ in Task { await load(reset: true); await loadCapacity() } }
             .confirmationDialog("确认下架已选的 \(selected.count) 件商品？", isPresented: $batchConfirm, titleVisibility: .visible) { Button("确认下架", role: .destructive) { batchOffline() } }
             .confirmationDialog("确认下架商品？", isPresented: Binding(get: { offline != nil }, set: { if !$0 { offline = nil } }), titleVisibility: .visible) {
@@ -280,7 +280,7 @@ struct MerchantDraftsView: View {
             if state.more && !state.rows.isEmpty { Button("加载更多") { Task { await load(reset: false) } }.frame(maxWidth: .infinity, minHeight: 44).disabled(state.busy || deleting) }
             if state.page > 0, state.rows.isEmpty, !state.busy, error == nil { EmptyState(title: "暂无草稿", description: "发布商品时可保存草稿，下次继续编辑", icon: "doc") }
             if let error { ErrorBanner(message: error); Button("重试") { Task { await load(reset: state.page == 0) } }.frame(maxWidth: .infinity, minHeight: 44).disabled(state.busy || deleting) }
-        }.navigationTitle("商品草稿").task { await load(reset: true) }.refreshable { await load(reset: true) }
+        }.navigationTitle("商品草稿").task { await load(reset: true) }.spxRefreshable { await load(reset: true) }
             .onReceive(NotificationCenter.default.publisher(for: .spxMerchantProductsUpdated)) { _ in Task { await load(reset: true) } }
             .confirmationDialog("删除后无法恢复此草稿", isPresented: Binding(get: { deletingDraft != nil }, set: { if !$0 { deletingDraft = nil } }), titleVisibility: .visible) { Button("删除草稿", role: .destructive) { if let draft = deletingDraft { remove(draft) }; deletingDraft = nil }; Button("取消", role: .cancel) { deletingDraft = nil } }
     }

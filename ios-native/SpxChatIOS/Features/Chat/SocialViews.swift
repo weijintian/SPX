@@ -23,11 +23,16 @@ struct ContactsView: View {
             if let error { ErrorBanner(message: error); Button("重新加载") { Task { await load() } } }
         }.navigationTitle("通讯录").safeAreaInset(edge: .top) {
             HStack(spacing: 10) { SPXIcon("search").frame(width: 18,height: 18).foregroundStyle(SPXColor.muted); TextField("搜索好友、备注或 SPX ID",text: $search).font(.system(size: 14)); if !search.isEmpty { Button { search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(SPXColor.muted) } } }.padding(12).background(SPXColor.card,in: RoundedRectangle(cornerRadius: 12)).padding(.horizontal,18).padding(.vertical,10).background(SPXColor.surface)
-        }.task { if let cached: [Record] = await LocalStore.shared.read("contacts",userID: session.user?.id ?? 0) { rows = cached }; await load() }.refreshable { await load() }
+        }.task { if let cached: [Record] = await LocalStore.shared.read("contacts",userID: session.user?.id ?? 0) { rows = cached }; await load() }.spxRefreshable { await load() }
             .onReceive(NotificationCenter.default.publisher(for: .spxConversationUpdated)) { _ in Task { await load() } }
             .onReceive(NotificationCenter.default.publisher(for: .spxRealtime).receive(on: RunLoop.main)) { notification in
-                guard let event = notification.object as? JSON,event["type"].string == "contact.remark.updated",event["user_id"].int == session.user?.id else { return }
+                guard let event = notification.object as? JSON else { return }
+                let type = event["type"].string
+                guard type == "ready" || type.hasPrefix("contact.") else { return }
+                guard type == "ready" || event["user_id"].int == 0 || event["user_id"].int == session.user?.id else { return }
+                guard type == "contact.remark.updated" else { Task { await load() }; return }
                 loadID = UUID()
+                loading = false
                 rows = rows.map { row in
                     let peer = row["contact_user_id"].int > 0 ? row["contact_user_id"].int : row.id
                     guard peer == event["contact_user_id"].int else { return row }

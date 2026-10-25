@@ -44,3 +44,5 @@ See [FEATURE-PARITY.md](FEATURE-PARITY.md) and [DEVICE-TEST-MATRIX.md](DEVICE-TE
 ## Local validation
 
 Run `python scripts/validate_sources.py` with Python 3.12 and the installed `.tools/python` grammar bindings. It validates the Swift syntax trees, assets, API action names, and bundled legal resources. The integration harness `node scripts/test-media-upload.mjs <php-executable>` needs PHP 8.3 with Fileinfo and tests uploads against a temporary loopback server, without a production account or database. Reports are written to `Validation/`. Neither check replaces an Xcode build, XCTest execution, or iPhone background-transfer/playback acceptance testing.
+
+See [CACHE-BEHAVIOR.md](CACHE-BEHAVIOR.md) for display-cache lifetimes, invalidation rules and acceptance checks.

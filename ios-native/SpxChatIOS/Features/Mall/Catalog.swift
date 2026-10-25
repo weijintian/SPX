@@ -15,6 +15,7 @@ struct MallHomeView: View {
     @State private var loadID = UUID()
     @State private var usd = ""
     @State private var visible = false
+    @State private var loadedFilter: String?
     @Environment(\.scenePhase) private var phase
     private var catalogHeader: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -46,13 +47,19 @@ struct MallHomeView: View {
     private var navigatedCatalog: some View {
         catalogContent.navigationTitle(merchantID > 0 ? "店铺商品" : "商城")
             .toolbar { ToolbarItemGroup(placement: .topBarTrailing) { NavigationLink { FavoritesView() } label: { Image(systemName: "heart") }; NavigationLink { OrdersView() } label: { SPXIcon("order").frame(width: 22, height: 22) }; NavigationLink { ShopsView() } label: { SPXIcon("store").frame(width: 22, height: 22) } } }
-            .spxPage().refreshable { await load(reset: true) }
+            .spxPage().spxRefreshable { await load(reset: true) }
 
     }
     var body: some View {
         navigatedCatalog
             .task { if let config = try? await APIClient.shared.get("mall.config") { categories = config["categories"].array.map(\.string) } }
-            .task(id: search + "|" + category + "|" + kind) { do { try await Task.sleep(for: .milliseconds(350)); await load(reset: true) } catch { } }
+            .task(id: search + "|" + category + "|" + kind) {
+                let filter = search + "|" + category + "|" + kind
+                do {
+                    if loadedFilter != nil, loadedFilter != filter { try await Task.sleep(for: .milliseconds(350)) }
+                    await load(reset: true, preservePages: loadedFilter == filter)
+                } catch { }
+            }
             .onAppear { visible = true }.onDisappear { visible = false }
             .task(id: String(describing: phase) + String(visible)) {
                 guard visible, phase == .active else { return }
@@ -63,7 +70,7 @@ struct MallHomeView: View {
             }
     }
     private func categoryButton(_ title: String, value: String) -> some View { Button { category = value } label: { Text(title).font(.subheadline.weight(category == value ? .semibold : .regular)).padding(.horizontal, 14).padding(.vertical, 9).foregroundStyle(category == value ? .white : SPXColor.ink).background(category == value ? SPXColor.primary : SPXColor.card, in: Capsule()) } }
-    private func load(reset: Bool) async {
+    private func load(reset: Bool, preservePages: Bool = false) async {
         if !reset && busy { return }
         let requestID = UUID(); loadID = requestID; busy = true
         defer { if loadID == requestID { busy = false } }
@@ -71,8 +78,13 @@ struct MallHomeView: View {
         do {
             let rows = try await APIClient.shared.get("products", ["page": String(next), "q": search, "category": category, "type": kind, "merchant_id": String(merchantID)]).list
             guard requestID == loadID, !Task.isCancelled else { return }
-            if reset { products = rows } else { let ids = Set(products.map(\.id)); products += rows.filter { !ids.contains($0.id) } }
-            page = next; more = rows.count == 60; error = nil
+            if reset && preservePages && page > 1 && rows.count == 60 && Array(products.prefix(rows.count)) == rows {
+                // Keep loaded later pages when returning from an unchanged product detail.
+            } else {
+                if reset { products = rows } else { let ids = Set(products.map(\.id)); products += rows.filter { !ids.contains($0.id) } }
+                page = next; more = rows.count == 60
+            }
+            loadedFilter = search + "|" + category + "|" + kind; error = nil
         } catch is CancellationError { } catch { if loadID == requestID { self.error = error.localizedDescription } }
     }
 }
@@ -276,7 +288,7 @@ struct ProductDetailView: View {
             .sheet(isPresented: $shareInChat) { ForwardMessageView(message: Record(["message_type": "product", "content": .string(String(data: (try? JSONEncoder().encode(Record(["product_id": current["id"]]))) ?? Data(), encoding: .utf8) ?? "")])) }
             .alert("举报商品", isPresented: $report) { TextField("原因", text: $reason); Button("提交") { Task { do { try await APIClient.shared.post("product.report", ["product_id": .number(Decimal(current.id)), "reason": .string(reason)]) } catch { self.error = error.localizedDescription } } }; Button("取消", role: .cancel) { } }
             .task(id: product.id) { await loadProduct(); await loadFavorite() }
-            .refreshable { await loadProduct() }
+            .spxRefreshable { await loadProduct() }
             .navigationDestination(item: $merchantChat) { ChatDetailView(item: $0, isGroup: false) }
             .fullScreenCover(isPresented: $previewImages) { MediaPreview(messages: images.enumerated().map { index, url in Record(["id": .number(Decimal(index + 1)), "message_type": "image", "media_url": .string(url)]) }, initialID: selectedImage + 1) }
             .onAppear { visible = true }.onDisappear { visible = false }
@@ -344,7 +356,7 @@ struct ShopsView: View {
             if let error { ErrorBanner(message: error); Button("重新加载") { Task { await load(reset: true) } }.frame(maxWidth: .infinity, minHeight: 44).disabled(busy) }
         }.navigationTitle("优选店铺").searchable(text: $query, prompt: "搜索店铺")
             .task(id: query) { do { try await Task.sleep(for: .milliseconds(300)); await load(reset: true) } catch { } }
-            .refreshable { await load(reset: true) }
+            .spxRefreshable { await load(reset: true) }
     }
     private func load(reset: Bool) async {
         if !reset && busy { return }
@@ -381,7 +393,7 @@ struct ShopDetailView: View {
             if let error { ErrorBanner(message: error); Button("重新读取店铺") { Task { await load() } }.frame(maxWidth: .infinity, minHeight: 44).disabled(loading) }
         }.navigationTitle("店铺").safeAreaInset(edge: .bottom) {
             if shop.id > 0 { SPXBottomAction { NavigationLink { MallHomeView(merchantID: id) } label: { Label("浏览店铺商品", systemImage: "bag") } } }
-        }.task { await load() }.refreshable { await load() }
+        }.task { await load() }.spxRefreshable { await load() }
     }
     private func load() async {
         loading = true; defer { loading = false }
@@ -410,7 +422,7 @@ struct ProductReviewsView: View {
             if loading { ProgressView("正在读取评价…").frame(maxWidth: .infinity).padding(24) }
             if !loading && rows.isEmpty && error == nil { EmptyState(title: "暂无评价", description: "买家完成订单后可留下评价", icon: "star.bubble") }
             if let error { ErrorBanner(message: error); Button("重新读取评价") { Task { await load() } }.frame(maxWidth: .infinity, minHeight: 44).disabled(loading) }
-        }.navigationTitle("商品评价").task { await load() }.refreshable { await load() }
+        }.navigationTitle("商品评价").task { await load() }.spxRefreshable { await load() }
     }
     private func load() async {
         loading = true; defer { loading = false }

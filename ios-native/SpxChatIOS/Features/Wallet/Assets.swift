@@ -61,7 +61,7 @@ struct WalletView: View {
                 NavigationLink { RedPacketHistoryView() } label: { SPXMenuRow(title: "红包记录", subtitle: "查看发出和领取的红包", icon: "gift") }
                 if let error { ErrorBanner(message: error); Button("重新加载") { Task { await load() } } }
             }.buttonStyle(.plain).padding(18)
-        }.navigationTitle("资产").spxPage().task(id: phase) { if phase == .active { await load() } }.refreshable { await load() }
+        }.navigationTitle("资产").spxPage().task(id: phase) { if phase == .active { await load() } }.spxRefreshable { await load() }
             .onReceive(NotificationCenter.default.publisher(for: .spxWalletChanged).debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { event in
                 Task { if await AccountMutation.isCurrent(event) { await load() } }
             }
@@ -73,14 +73,13 @@ struct WalletView: View {
         guard let owner = session.user?.id, owner > 0 else { return }
         let requestID = UUID(); loadID = requestID; loading = true
         defer { if loadID == requestID { loading = false } }
-        if !loaded, let cache: [Record] = await LocalStore.shared.read("wallet-ui", userID: owner), session.user?.id == owner { assets = cache; loaded = true }
+        // APIReadCache restores the endpoint/account/language-scoped display snapshot.
         do {
             async let valuation = loadValuation()
             let rows = try await APIClient.shared.get("wallet").list
             let price = await valuation
             guard loadID == requestID, session.user?.id == owner, !Task.isCancelled else { return }
             assets = rows; usd = price; loaded = true; error = nil
-            await LocalStore.shared.write(rows, key: "wallet-ui", userID: owner)
         } catch is CancellationError { }
         catch { if loadID == requestID, session.user?.id == owner { self.error = error.localizedDescription } }
     }
@@ -314,7 +313,7 @@ struct WalletTransactionsView: View {
             if state.more { Button("加载更多") { Task { await load(reset: false) } }.disabled(state.busy) }
             if let error { ErrorBanner(message: error); Button("重试") { Task { await load(reset: state.page == 0) } } }
             if state.page > 0, state.rows.isEmpty { EmptyState(title: "暂无交易记录") }
-        }.navigationTitle("交易记录").task(id: filter) { await load(reset: true) }.refreshable { await load(reset: true) }.errorAlert($error)
+        }.navigationTitle("交易记录").task(id: filter) { await load(reset: true) }.spxRefreshable { await load(reset: true) }.errorAlert($error)
             .onReceive(NotificationCenter.default.publisher(for: .spxWalletChanged).debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { event in
                 Task { if await AccountMutation.isCurrent(event) { await load(reset: true) } }
             }
@@ -401,7 +400,10 @@ struct StakingView: View {
                 }
                 ForEach(records) { record in recordCard(record) }
             }
-        }.navigationTitle("锁仓质押").task(id: session.user?.id) { await load() }.refreshable { if !busy { await load() } }.successToast($success)
+        }.navigationTitle("锁仓质押").task(id: session.user?.id) { await load() }.spxRefreshable { if !busy { await load() } }.successToast($success)
+            .onReceive(NotificationCenter.default.publisher(for: .spxWalletChanged).debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { event in
+                Task { if await AccountMutation.isCurrent(event), !busy { await load() } }
+            }
             .confirmationDialog(confirm == "create" ? "确认质押 \(StakingPresentation.amount(amount)) SPX001？" : "确认赎回到期本金？", isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }), titleVisibility: .visible) { Button("确认") { let action = confirm; confirm = nil; submit(create: action == "create") } } message: {
                 Text(confirm == "create" ? "\(selectedPlan?["plan_days"].string ?? "—") 天锁定 · 年化 \(StakingPresentation.rate(selectedPlan?["apy"]))。锁定期间不可提前赎回，最终以服务器核验为准。" : "仅可赎回已到期的本金，结果以服务器核验为准。")
             }

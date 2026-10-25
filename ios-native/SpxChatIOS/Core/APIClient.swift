@@ -38,7 +38,12 @@ actor APIClient {
         // This is the old credential. Never decode its 401 as a logout of the next account.
         _ = try? await session.data(for: request)
     }
-    func setToken(_ value:String?) { guard token != value else { return }; token = value; generation = UUID() }
+    func setToken(_ value:String?) async {
+        guard token != value else { return }
+        let previousScope = try? readCacheScope()
+        token = value; generation = UUID()
+        if let previousScope { await APIReadCache.shared.invalidate(scope: previousScope) }
+    }
     func sessionIdentity() -> UUID { generation }
     func endpoint() throws -> URL {
         let configured = UserDefaults.standard.string(forKey:"spx.apiURL") ?? "https://70.39.201.191/spxchat/api.php"
@@ -51,7 +56,10 @@ actor APIClient {
         guard let url = c.url else {throw APIError.invalidURL}; return url
     }
     func request(_ action:String, method:String = "GET", query:[String:String] = [:], body:[String:JSON]? = nil, timeout: TimeInterval = 30) async throws -> JSON {
+        let expectedScope = try readCacheScope()
         var request = URLRequest(url:try requestURL(action,query:query))
+        // APIReadCache owns display freshness; live reads must not reuse URLSession responses.
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = timeout
         request.httpMethod = method
         request.setValue("application/json",forHTTPHeaderField:"Accept")
@@ -61,15 +69,26 @@ actor APIClient {
         let epoch = generation
         let (data,response) = try await session.data(for:request)
         try Task.checkCancellation()
-        guard epoch == generation else {throw APIError.staleSession}
+        try validateContext(epoch, scope: expectedScope)
         return try decode(data,response:response)
     }
     func get(_ action:String, _ query:[String:String] = [:]) async throws -> JSON {
         let expectedSession = generation
-        let result = try await request(action, query: query)
-        guard expectedSession == generation else { throw APIError.staleSession }
+        let expectedScope = try readCacheScope()
+        let result: JSON
+        if let lifetime = APIReadPolicy.lifetime(action) {
+            let key = APIReadCache.digest(try requestURL(action, query: query).absoluteString)
+            result = try await APIReadCache.shared.value(scope: expectedScope, key: key, action: action,
+                                                        lifetime: lifetime, force: APIReadContext.forceRefresh) {
+                try await self.readForSession(action, query: query, expectedSession: expectedSession, expectedScope: expectedScope)
+            }
+        } else { result = try await request(action, query: query) }
+        try Task.checkCancellation()
+        try validateContext(expectedSession, scope: expectedScope)
         let recoveredFinancialResult = ["financial.request", "orders.request", "redpackets.request"].contains(action) && (result["exists"].flag || result["found"].flag)
         if recoveredFinancialResult || (action == "redpackets.detail" && !result["my_amount"].string.isEmpty) {
+            await APIReadCache.shared.invalidate(scope: expectedScope, actions: APIReadPolicy.financial)
+            try validateContext(expectedSession, scope: expectedScope)
             NotificationCenter.default.post(name: .spxWalletChanged, object: AccountMutation(session: expectedSession))
         }
         if ["contacts", "contacts.search"].contains(action), case .array(let values) = result {
@@ -79,21 +98,53 @@ actor APIClient {
     }
     @discardableResult func post(_ action:String, _ body:[String:JSON] = [:]) async throws -> JSON {
         let expectedSession = generation
+        let expectedScope = try readCacheScope()
         let result = try await request(action, method: "POST", body: body)
-        guard expectedSession == generation else { throw APIError.staleSession }
+        try validateContext(expectedSession, scope: expectedScope)
+        let invalidated = APIReadPolicy.invalidatedActions(by: action)
+        if !invalidated.isEmpty { await APIReadCache.shared.invalidate(scope: expectedScope, actions: invalidated) }
+        try validateContext(expectedSession, scope: expectedScope)
         let event = AccountMutation(session: expectedSession)
         if AccountMutation.affectsWallet(action) { NotificationCenter.default.post(name: .spxWalletChanged, object: event) }
         if AccountMutation.affectsOrders(action) { NotificationCenter.default.post(name: .spxOrdersChanged, object: event) }
         return result
     }
+    private func readCacheScope() throws -> String {
+        APIReadCache.scope(endpoint: try endpoint().absoluteString, credential: token,
+                           language: UserDefaults.standard.string(forKey: "spx.language") ?? Locale.preferredLanguages.first ?? "zh-CN")
+    }
+    private func validateContext(_ expectedSession: UUID, scope: String) throws {
+        guard expectedSession == generation, try readCacheScope() == scope else { throw APIError.staleSession }
+    }
+    private func readForSession(_ action: String, query: [String: String], expectedSession: UUID, expectedScope: String) async throws -> JSON {
+        // The cache loader may resume after endpoint, language or account changes.
+        try validateContext(expectedSession, scope: expectedScope)
+        return try await request(action, query: query)
+    }
+    func invalidateRealtime(_ event: JSON, credential: String) async {
+        guard token == credential, let scope = try? readCacheScope() else { return }
+        let expectedSession = generation
+        let actions = APIReadPolicy.realtimeActions(event["type"].string)
+        if actions?.isEmpty == true { return }
+        await APIReadCache.shared.invalidate(scope: scope, actions: actions)
+        guard token == credential, generation == expectedSession, (try? readCacheScope()) == scope else { return }
+        let mutation = AccountMutation(session: expectedSession)
+        if actions == nil || actions?.contains("wallet") == true {
+            NotificationCenter.default.post(name: .spxWalletChanged, object: mutation)
+        }
+        if actions == nil || actions?.contains("orders") == true {
+            NotificationCenter.default.post(name: .spxOrdersChanged, object: mutation)
+        }
+    }
     func data(_ action: String, query: [String: String] = [:]) async throws -> Data {
         let epoch = generation
+        let expectedScope = try readCacheScope()
         var request = URLRequest(url: try requestURL(action, query: query))
         request.cachePolicy = .reloadIgnoringLocalCacheData
         if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         let (data, response) = try await session.data(for: request)
         try Task.checkCancellation()
-        guard epoch == generation else { throw APIError.staleSession }
+        try validateContext(epoch, scope: expectedScope)
         guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
         if http.statusCode == 401 {
             NotificationCenter.default.post(name: .spxUnauthorized, object: token)

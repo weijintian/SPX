@@ -105,6 +105,10 @@ struct MediaPreview: View {
     @State private var forwarding = false
     @State private var notice: String?
     @State private var busy = false
+    init(messages: [Record], initialID: Int) {
+        self.messages = messages; self.initialID = initialID
+        _selected = State(initialValue: messages.firstIndex(where: { $0.id == initialID }) ?? 0)
+    }
     var body: some View {
         NavigationStack {
             TabView(selection: $selected) {
@@ -122,7 +126,7 @@ struct MediaPreview: View {
                             Button("转发", systemImage: "arrowshape.turn.up.right") { forwarding = true }
                         } label: { Image(systemName: "ellipsis") }
                     }
-                }.onAppear { selected = messages.firstIndex(where: { $0.id == initialID }) ?? 0 }
+                }
                 .sheet(isPresented: $forwarding) { if messages.indices.contains(selected) { ForwardMessageView(message: messages[selected]) } }
                 .errorAlert($notice)
         }
@@ -156,6 +160,8 @@ struct VideoMessagePreview: View {
         ZStack {
             if let thumbnail {
                 Image(uiImage: thumbnail).resizable().scaledToFill()
+                    .frame(width: ChatMediaLayout.width, height: ChatMediaLayout.height)
+                    .clipped()
             } else {
                 Rectangle().fill(Color.black.opacity(0.78))
                 VStack(spacing: 6) {
@@ -169,7 +175,8 @@ struct VideoMessagePreview: View {
                 .symbolRenderingMode(.palette)
                 .foregroundStyle(.white, .black.opacity(0.35))
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(width: ChatMediaLayout.width, height: ChatMediaLayout.height)
+        .contentShape(RoundedRectangle(cornerRadius: 10))
         .clipped()
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .accessibilityLabel("视频，轻点播放")
@@ -235,18 +242,21 @@ final class RemoteVideoResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
         let position: (Int64, Int, Bool) = await withCheckedContinuation { continuation in
             delegateQueue.async {
                 let data = loadingRequest.dataRequest
-                continuation.resume(returning: (data.map { $0.currentOffset == 0 ? $0.requestedOffset : $0.currentOffset } ?? 0,
-                                                max(1, data?.requestedLength ?? 0), data?.requestsAllDataToEndOfResource == true))
+                let offset = data.map { max($0.requestedOffset, $0.currentOffset) } ?? 0
+                let consumed = data.map { max(0, offset - $0.requestedOffset) } ?? 0
+                let remaining = data.map { max(0, Int64($0.requestedLength) - consumed) } ?? 0
+                continuation.resume(returning: (offset, Int(remaining), data?.requestsAllDataToEndOfResource == true))
             }
         }
         guard let initial = Int(exactly: position.0), initial >= 0 else { throw APIError.invalidResponse }
         var offset = initial, remaining = position.1
         var first = true
-        while remaining > 0 {
+        while first || remaining > 0 {
             try Task.checkCancellation()
             let chunk = try await VideoRangeCache.shared.chunk(source: source, remote: sourceURL, userID: userID, offset: offset)
             let relative = offset - chunk.offset
             guard relative >= 0, relative < chunk.data.count, offset < chunk.total else { throw APIError.invalidResponse }
+            if position.2 { remaining = chunk.total - offset }
             let count = min(remaining, chunk.data.count - relative, chunk.total - offset)
             let bytes = chunk.data.subdata(in: relative..<(relative + count))
             await deliver(bytes, mimeType: chunk.mimeType, totalLength: chunk.total, request: loadingRequest, includeContentInfo: first)
@@ -263,7 +273,7 @@ final class RemoteVideoResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                 if includeContentInfo, let information = request.contentInformationRequest {
                     information.contentLength = Int64(totalLength)
                     information.isByteRangeAccessSupported = true
-                    let format = UTType(filenameExtension: self.sourceURL.pathExtension) ?? mimeType.flatMap { UTType(mimeType: $0) }
+                    let format = mimeType.flatMap { UTType(mimeType: $0) } ?? UTType(filenameExtension: self.sourceURL.pathExtension)
                     information.contentType = format?.identifier ?? UTType.movie.identifier
                 }
                 request.dataRequest?.respond(with: data)
@@ -288,6 +298,7 @@ struct MediaPage: View {
     let message: Record
     var active = true
     @EnvironmentObject private var session: SessionStore
+    @Environment(\.scenePhase) private var scenePhase
     @State private var player: AVPlayer?
     @State private var scale: CGFloat = 1
     @State private var imageOffset = CGSize.zero
@@ -300,7 +311,7 @@ struct MediaPage: View {
     @State private var buffering = false
     @State private var playbackObservation: NSKeyValueObservation?
     private var loadKey: String {
-        [String(message.id), message["media_url"].string, String(session.user?.id ?? 0), String(retry), String(active)].joined(separator: ":")
+        [String(message.id), message["media_url"].string, String(session.user?.id ?? 0), String(retry), String(active), String(describing: scenePhase)].joined(separator: ":")
     }
     var body: some View {
         pageContent
@@ -349,7 +360,12 @@ struct MediaPage: View {
     }
     @MainActor private func loadVideo() async {
         guard message["message_type"].string == "video" else { return }
-        guard active else { player?.pause(); videoLoader?.cancelAllRequests(); videoLoader = nil; return }
+        guard active, scenePhase == .active else {
+            videoLoadID = UUID(); player?.pause(); player = nil
+            videoObservation = nil; playbackObservation = nil; buffering = false
+            videoLoader?.cancelAllRequests(); videoLoader = nil
+            return
+        }
         let loadID = UUID()
         videoLoadID = loadID
         player?.pause(); player = nil
@@ -360,6 +376,10 @@ struct MediaPage: View {
             let resource = try await VideoAssetSource.make(source: message["media_url"].string, userID: session.user?.id ?? 0)
             guard !Task.isCancelled, videoLoadID == loadID else { resource.loader?.cancelAllRequests(); return }
             let item = AVPlayerItem(asset: resource.asset)
+            VoicePlayback.shared.stop()
+            let audio = AVAudioSession.sharedInstance()
+            try audio.setCategory(.playback, mode: .moviePlayback)
+            try audio.setActive(true)
             videoLoader = resource.loader
             videoObservation = item.observe(\.status, options: [.initial, .new]) { observed, _ in
                 guard observed.status == .failed else { return }
@@ -378,6 +398,7 @@ struct MediaPage: View {
                 Task { @MainActor in guard videoLoadID == loadID else { return }; buffering = waiting }
             }
             player = playback
+            playback.play()
         }
         catch is CancellationError { }
         catch { if videoLoadID == loadID { self.error = error.localizedDescription } }

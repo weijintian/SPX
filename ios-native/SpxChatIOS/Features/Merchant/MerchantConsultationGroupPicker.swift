@@ -43,7 +43,7 @@ struct MerchantConsultationGroupPicker: View {
             .navigationTitle("选择商品咨询群").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
             .task { await load(reset: true) }
-            .refreshable { await load(reset: true) }
+            .spxRefreshable { await load(reset: true) }
         }
     }
     private func load(reset: Bool) async {

@@ -16,6 +16,7 @@ struct ChatListView: View {
     @State private var listVisible = false
     @State private var loadingList = false
     @State private var reloadRequested = false
+    @State private var forceReloadRequested = false
     private var conversations: [Record] {
         let direct = chats.map { item -> Record in var value = item; value["kind"] = "chat"; return value }
         let joined = groups.map { item -> Record in var value = item; value["kind"] = "group"; return value }
@@ -45,12 +46,12 @@ struct ChatListView: View {
                         NavigationLink { GroupCreateView() } label: { Label("创建群聊", systemImage: "bubble.left.and.bubble.right") }
                     } label: { SPXIcon("plus").frame(width: 23, height: 23).frame(width: 44, height: 44) }
                 }
-            }.refreshable { await load() }.spxPage()
+            }.spxRefreshable { await load() }.spxPage()
             .onReceive(NotificationCenter.default.publisher(for: .spxRealtime)
                 .filter { notification in
                     guard let event = notification.object as? JSON else { return false }
                     let type = event["type"].string
-                    return type.hasPrefix("message") || type.hasPrefix("group.") || type.hasPrefix("chat.") || type.hasPrefix("contact.")
+                    return type == "ready" || type.hasPrefix("message") || type.hasPrefix("group.") || type.hasPrefix("chat.") || type.hasPrefix("contact.")
                 }.throttle(for: .milliseconds(600), scheduler: RunLoop.main, latest: true)) { _ in
                 guard listVisible, phase == .active else { return }
                 Task { await load() }
@@ -91,11 +92,21 @@ struct ChatListView: View {
     }
     private func update(_ item: Record, key: String, group: Bool) { Task { do { try await APIClient.shared.post(group ? "groups.settings" : "chats.settings", [group ? "group_id" : "chat_id": item["id"], key: .bool(!item[key].flag)]); await load() } catch { self.error = error.localizedDescription } } }
     private func load() async {
-        guard !loadingList else { reloadRequested = true; return }
+        guard !loadingList else {
+            reloadRequested = true
+            forceReloadRequested = forceReloadRequested || APIReadContext.forceRefresh
+            return
+        }
         loadingList = true
         defer {
             loadingList = false
-            if reloadRequested { reloadRequested = false; if listVisible && phase == .active { Task { await load() } } }
+            if reloadRequested {
+                let force = forceReloadRequested
+                reloadRequested = false; forceReloadRequested = false
+                if listVisible && phase == .active {
+                    Task { await APIReadContext.$forceRefresh.withValue(force) { await load() } }
+                }
+            }
         }
         let epoch = UUID(); loadID = epoch; let owner = session.user?.id ?? 0
         do {
@@ -115,6 +126,28 @@ struct ChatListView: View {
 }
 
 @MainActor final class ConversationStore: ObservableObject {
+    private struct Retained {
+        let store: ConversationStore
+        var lastAccess: Date
+    }
+    private static var retained: [String: Retained] = [:]
+    static func cached(target: Int, group: Bool, userID: Int) -> ConversationStore {
+        let endpoint = UserDefaults.standard.string(forKey: "spx.apiURL") ?? "default"
+        let credential = Keychain.read("token") ?? ""
+        let key = APIReadCache.digest(endpoint + ":" + credential + ":" + String(userID) + ":" + String(group) + ":" + String(target))
+        if let existing = retained[key] {
+            retained[key]?.lastAccess = Date()
+            return existing.store
+        }
+        let store = ConversationStore(target: target, group: group, userID: userID)
+        retained[key] = Retained(store: store, lastAccess: Date())
+        if retained.count > 12, let oldest = retained.filter({ $0.key != key && !$0.value.store.running }).min(by: { $0.value.lastAccess < $1.value.lastAccess })?.key { retained[oldest] = nil }
+        return store
+    }
+    static func releaseCached() { retained.removeAll() }
+    private var runID: UUID?
+    private var running: Bool { runID != nil }
+    private var lastReconciled = Date.distantPast
     @Published var messages: [Record] = [] { didSet { if oldValue != messages { timeBoundaryIDs = MessageTimeline.boundaries(in: messages) } } }
     @Published private(set) var timeBoundaryIDs: Set<Int> = []
     private var syncCursor: Int?
@@ -144,30 +177,35 @@ struct ChatListView: View {
         self.target = target; self.group = group; self.userID = userID; self.fetch = fetch; self.post = post
     }
     func run() async {
+        // A reopened view takes ownership even while the canceled view's fetch is finishing.
+        let identity = UUID(); runID = identity
+        defer { if runID == identity { runID = nil } }
         if !restored {
-            restored = true
             let restoreRevision = revision
             let snapshot: ConversationSnapshot? = await LocalStore.shared.read(cacheKey + "-sync-v2", userID: userID)
-            guard restoreRevision == revision, !Task.isCancelled else { return }
+            guard runID == identity, restoreRevision == revision, !Task.isCancelled else { return }
             if let snapshot {
                 syncCursor = snapshot.cursor; clearedThrough = snapshot.clearedThrough
                 merge(snapshot.messages); persisted = snapshot
-            } else if let saved: [Record] = await LocalStore.shared.read(cacheKey, userID: userID), restoreRevision == revision {
+            } else if let saved: [Record] = await LocalStore.shared.read(cacheKey, userID: userID), runID == identity, restoreRevision == revision, !Task.isCancelled {
                 // Legacy caches may contain gaps. Show them immediately, then establish a fresh REST window.
                 legacyIDs = Set(saved.map(\.id)); merge(saved)
             }
+            guard runID == identity, restoreRevision == revision, !Task.isCancelled else { return }
+            restored = true
+            if syncCursor != nil || !messages.isEmpty { initialLoading = false }
         }
-        var round = 0
-        while !Task.isCancelled {
+        while runID == identity, !Task.isCancelled {
             let currentRevision = revision
             do {
                 var more = true
                 while more {
+                    guard runID == identity, currentRevision == revision, !Task.isCancelled else { throw CancellationError() }
                     let cursor = syncCursor
                     var query = [key: String(target), "limit": "100"]
                     if let cursor, cursor > 0 { query["after_id"] = String(cursor) }
                     let fresh = try await fetch(action, query).list
-                    guard currentRevision == revision, !Task.isCancelled else { throw CancellationError() }
+                    guard runID == identity, currentRevision == revision, !Task.isCancelled else { throw CancellationError() }
                     if cursor == nil {
                         let upper = fresh.map(\.id).max() ?? 0
                         // Preserve newer realtime inserts while discarding untrusted legacy cache gaps.
@@ -182,20 +220,24 @@ struct ChatListView: View {
                     more = (cursor ?? 0) > 0 && fresh.count == 100 && (syncCursor ?? 0) > (cursor ?? 0)
                     await persistIfNeeded()
                 }
-                if round % 5 == 0, !messages.isEmpty {
+                guard runID == identity, currentRevision == revision, !Task.isCancelled else { throw CancellationError() }
+                if Date().timeIntervalSince(lastReconciled) >= 15, !messages.isEmpty {
                     let ids = messages.suffix(200).map { String($0.id) }.joined(separator: ",")
                     let sync = try await fetch(action + ".reconcile", [key: String(target), "ids": ids])
-                    guard currentRevision == revision, !Task.isCancelled else { throw CancellationError() }
+                    guard runID == identity, currentRevision == revision, !Task.isCancelled else { throw CancellationError() }
                     let removed = Set(sync["removed_ids"].array.map(\.int))
                     if !removed.isEmpty { messages.removeAll { removed.contains($0.id) } }
                     merge(sync["messages"].list)
+                    lastReconciled = Date()
                 }
+                guard runID == identity, currentRevision == revision, !Task.isCancelled else { throw CancellationError() }
                 await reportReadIfNeeded()
+                guard runID == identity, currentRevision == revision, !Task.isCancelled else { throw CancellationError() }
                 await persistIfNeeded()
-                guard currentRevision == revision, !Task.isCancelled else { throw CancellationError() }
-                error = nil; round += 1
+                guard runID == identity, currentRevision == revision, !Task.isCancelled else { throw CancellationError() }
+                error = nil
             } catch is CancellationError { if Task.isCancelled { return }; if currentRevision != revision { continue }; return }
-            catch { if currentRevision == revision, !Task.isCancelled { initialLoading = false; self.error = error.localizedDescription } }
+            catch { if runID == identity, currentRevision == revision, !Task.isCancelled { initialLoading = false; self.error = error.localizedDescription } }
             do { try await Task.sleep(for: .seconds(3)) } catch { return }
         }
     }
@@ -238,7 +280,7 @@ struct ChatListView: View {
     }
     func clear() {
         revision = UUID(); clearedThrough = max(clearedThrough, messages.last?.id ?? 0)
-        syncCursor = max(syncCursor ?? 0, clearedThrough); messages = []; hasOlder = false; error = nil
+        syncCursor = max(syncCursor ?? 0, clearedThrough); messages = []; hasOlder = false; error = nil; restored = true; initialLoading = false
         Task { await persistIfNeeded() }
     }
     func merge(_ rows: [Record]) {
@@ -266,6 +308,7 @@ struct ChatListView: View {
         guard event[group ? "group_id" : "chat_id"].int == target else { return }
         if ["message", "message.updated", "group.message", "group.message.updated"].contains(event["type"].string), event["message"]["id"].int > 0 { merge([event["message"].record]) }
         if event["type"].string.hasSuffix("deleted") { messages.removeAll { $0.id == event["message_id"].int } }
+        Task { await persistIfNeeded() }
     }
     func refreshNames(for peerID: Int) async {
         guard group, peerID > 0 else { return }
@@ -287,6 +330,7 @@ struct ChatListView: View {
         let value = try await post(action + ".edit", [key: .number(Decimal(target)), "message_id": message["id"], "content": .string(content)])
         guard currentRevision == revision else { return }
         merge([value.record])
+            await persistIfNeeded()
     }
     func delete(_ message: Record) async throws {
         try await post(action + ".delete", [key: .number(Decimal(target)), "message_id": message["id"]])
@@ -385,7 +429,7 @@ struct ConversationView: View {
     }
     init(item: Record, isGroup: Bool, userID: Int) {
         self.item = item; self.isGroup = isGroup; self.userID = userID
-        _model = StateObject(wrappedValue: ConversationStore(target: item.id, group: isGroup, userID: userID))
+        _model = StateObject(wrappedValue: ConversationStore.cached(target: item.id, group: isGroup, userID: userID))
     }
     private var pending: [PendingMessage] { outbox.items.filter { $0.targetID == item.id && $0.scope == (isGroup ? "group" : "chat") } }
     // Keep the initial layout bounded even when a long offline history is cached.

@@ -40,7 +40,7 @@ struct ProfileView: View {
                     .font(.system(size: 12)).foregroundStyle(SPXColor.muted).frame(maxWidth: .infinity).padding(.vertical, 12)
             }.buttonStyle(.plain).padding(16)
         }.navigationTitle("我的").spxPage().successToast($notice)
-            .refreshable { do { try await session.refreshProfile() } catch { notice = "资料暂时无法刷新，请稍后再试" } }
+            .spxRefreshable { do { try await session.refreshProfile() } catch { notice = "资料暂时无法刷新，请稍后再试" } }
     }
 }
 
@@ -222,7 +222,7 @@ struct FavoritesView: View {
             if state.more { Button("加载更多") { Task { await load(reset: false) } }.disabled(state.busy) }
             if state.page > 0, state.rows.isEmpty { EmptyState(title: "还没有收藏商品", icon: "heart") }
             if let error { ErrorBanner(message: error); Button("重试") { Task { await load(reset: state.page == 0) } } }
-        }.navigationTitle("收藏商品").task { await load(reset: true) }.refreshable { await load(reset: true) }
+        }.navigationTitle("收藏商品").task { await load(reset: true) }.spxRefreshable { await load(reset: true) }
     }
     private func load(reset: Bool) async {
         do { try await state.load(reset: reset) { next in try await APIClient.shared.get("favorites", ["page": String(next), "page_size": "30"]).list }; error = nil }
@@ -276,7 +276,7 @@ struct RecordsView: View {
             if state.more { Button("加载更多") { Task { await load(reset: false) } }.disabled(state.busy) }
             if state.page > 0, state.rows.isEmpty { EmptyState(title: "暂无记录") }
             if let error { ErrorBanner(message: error); Button("重试") { Task { await load(reset: state.page == 0) } } }
-        }.navigationTitle(title).task { await load(reset: true) }.refreshable { await load(reset: true) }
+        }.navigationTitle(title).task { await load(reset: true) }.spxRefreshable { await load(reset: true) }
     }
     private func metadata(_ row: Record) -> JSON {
         guard let data = row["metadata"].string.data(using: .utf8) else { return .null }

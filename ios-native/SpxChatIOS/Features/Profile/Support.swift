@@ -21,7 +21,7 @@ struct SupportView: View {
                 VStack(alignment: .leading, spacing: 12) { Text(ticket["content"].string); InfoRow(title: "状态", value: ticket["status"].string); if !ticket["admin_reply"].string.isEmpty { Text(ticket["admin_reply"].string).padding(12).background(SPXColor.tint, in: RoundedRectangle(cornerRadius: 12)) } }.padding(.top, 12)
             } label: { VStack(alignment: .leading, spacing: 6) { Text(ticket["subject"].string).font(.system(size: 15, weight: .semibold)); Text(ticket["created_at"].string).font(.caption).foregroundStyle(SPXColor.muted) } } } }
             if tickets.isEmpty { EmptyState(title: "暂无客服工单", description: "提交后可在这里查看回复", icon: "bubble.left") }
-        }.navigationTitle("帮助与反馈").task { await load() }.refreshable { await load() }.errorAlert($error)
+        }.navigationTitle("帮助与反馈").task { await load() }.spxRefreshable { await load() }.errorAlert($error)
     }
     private func load() async { do { faq = try await APIClient.shared.get("faq").list; tickets = try await APIClient.shared.get("support.tickets").list } catch { self.error = error.localizedDescription } }
 }

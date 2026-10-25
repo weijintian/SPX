@@ -45,6 +45,8 @@ extension Notification.Name { static let spxRealtime = Notification.Name("spx.re
                             stop()
                             return
                         }
+                        await APIClient.shared.invalidateRealtime(payload, credential: token)
+                        guard generation == epoch, !Task.isCancelled else { return }
                         if payload["type"].string == "ready" { connected = true; attempt = 0 }
                         if payload["type"].string == "contact.remark.updated" {
                             let owner = Int(Keychain.read("lastUserID") ?? "0") ?? 0

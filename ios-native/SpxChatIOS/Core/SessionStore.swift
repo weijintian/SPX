@@ -178,6 +178,7 @@ import UIKit
         VoicePlayback.shared.stop()
         RealtimeClient.shared.stop()
         MessageNotifications.shared.stop()
+        ConversationStore.releaseCached()
         token = nil;user = nil;try? Keychain.write(nil,account:"token")
         teardown = Task {await APIClient.shared.setToken(nil);await Outbox.shared.stop(userID:previous)}
     }

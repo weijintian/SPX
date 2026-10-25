@@ -305,6 +305,78 @@ final class ReliabilityTests: XCTestCase {
         XCTAssertEqual(receipts, 1)
         await LocalStore.shared.remove(key, userID: owner)
     }
+    @MainActor func testReopenedConversationUsesRetainedMessagesAndIncrementalCursor() async throws {
+        let owner = 2_147_479_975, target = 77875
+        let key = "messages-g-\(target)-sync-v2"
+        try await LocalStore.shared.save(ConversationSnapshot(messages: [Record(["id": 10])], cursor: 10, clearedThrough: 0), key: key, userID: owner)
+        let firstSynced = expectation(description: "First view synced")
+        let reopened = expectation(description: "Reopened view requests only later messages")
+        var cursors: [String] = []
+        let model = ConversationStore(target: target, group: true, userID: owner, fetch: { action, query in
+            if action.hasSuffix(".reconcile") { firstSynced.fulfill(); return .object(["messages": .array([]), "removed_ids": .array([])]) }
+            cursors.append(query["after_id"] ?? "initial")
+            if cursors.count == 2 { reopened.fulfill() }
+            return .array([.object(["id": 11])])
+        }, post: { _, _ in .null })
+        let first = Task { await model.run() }
+        await fulfillment(of: [firstSynced], timeout: 3)
+        first.cancel(); await first.value
+        XCTAssertFalse(model.initialLoading)
+        XCTAssertEqual(model.messages.map(\.id), [10, 11])
+        let second = Task { await model.run() }
+        await fulfillment(of: [reopened], timeout: 3)
+        second.cancel(); await second.value
+        XCTAssertEqual(Array(cursors.prefix(2)), ["10", "11"])
+        XCTAssertFalse(model.initialLoading)
+        XCTAssertEqual(model.messages.map(\.id), [10, 11])
+        await LocalStore.shared.remove(key, userID: owner)
+    }
+    @MainActor func testReopenedConversationTakesOwnershipOfCanceledFetch() async throws {
+        let owner = 2_147_479_976, target = 77876
+        let key = "messages-g-\(target)-sync-v2"
+        try await LocalStore.shared.save(ConversationSnapshot(messages: [Record(["id": 10])], cursor: 10, clearedThrough: 0), key: key, userID: owner)
+        let oldStarted = expectation(description: "Old view request started")
+        let newSynced = expectation(description: "New view synced before old request finishes")
+        var pending: CheckedContinuation<JSON, Never>?
+        var requests = 0
+        let model = ConversationStore(target: target, group: true, userID: owner, fetch: { action, query in
+            if action.hasSuffix(".reconcile") { newSynced.fulfill(); return .object(["messages": .array([]), "removed_ids": .array([])]) }
+            requests += 1
+            XCTAssertEqual(query["after_id"], "10")
+            if requests == 1 {
+                return await withCheckedContinuation { continuation in pending = continuation; oldStarted.fulfill() }
+            }
+            return .array([.object(["id": 11])])
+        }, post: { _, _ in .null })
+        let old = Task { await model.run() }
+        await fulfillment(of: [oldStarted], timeout: 3)
+        old.cancel()
+        let current = Task { await model.run() }
+        await fulfillment(of: [newSynced], timeout: 3)
+        pending?.resume(returning: .array([.object(["id": 99])]))
+        pending = nil
+        await old.value
+        XCTAssertEqual(model.messages.map(\.id), [10, 11], "Canceled predecessor must not merge late history")
+        XCTAssertNil(model.error)
+        XCTAssertFalse(model.initialLoading)
+        current.cancel(); await current.value
+        await LocalStore.shared.remove(key, userID: owner)
+    }
+    @MainActor func testConversationRegistryRetainsAndReleasesStores() {
+        ConversationStore.releaseCached()
+        let first = ConversationStore.cached(target: 77877, group: true, userID: 2_147_479_977)
+        let again = ConversationStore.cached(target: 77877, group: true, userID: 2_147_479_977)
+        let direct = ConversationStore.cached(target: 77877, group: false, userID: 2_147_479_977)
+        XCTAssertTrue(first === again)
+        XCTAssertFalse(first === direct)
+        first.merge([Record(["id": 10])])
+        XCTAssertEqual(again.messages.map(\.id), [10])
+        ConversationStore.releaseCached()
+        let afterLogout = ConversationStore.cached(target: 77877, group: true, userID: 2_147_479_977)
+        XCTAssertFalse(first === afterLogout)
+        XCTAssertTrue(afterLogout.messages.isEmpty)
+        ConversationStore.releaseCached()
+    }
     @MainActor func testQueuedLargeUploadDoesNotBlockTextDelivery() async throws {
         let owner = 2_147_479_982
         let started = expectation(description: "Upload waits for controlled completion")

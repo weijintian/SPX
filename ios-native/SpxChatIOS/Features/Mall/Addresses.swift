@@ -20,7 +20,7 @@ struct AddressView: View {
             }
             if rows.isEmpty { EmptyState(title: "还没有收货地址", icon: "mappin.and.ellipse") }
         }.safeAreaInset(edge: .bottom, spacing: 0) { SPXBottomAction { Button { editing = Record() } label: { Label("新增收货地址", systemImage: "plus") } } }.navigationTitle("收货地址")
-            .task { await load() }.refreshable { await load() }.errorAlert($error)
+            .task { await load() }.spxRefreshable { await load() }.errorAlert($error)
             .sheet(item: $editing, onDismiss: { Task { await load() } }) { AddressEditor(address: $0) }
             .confirmationDialog("删除这个收货地址？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) { Button("删除", role: .destructive) { if let deleting { mutate("wallet.address.delete", id: deleting.id) }; deleting = nil } }
     }

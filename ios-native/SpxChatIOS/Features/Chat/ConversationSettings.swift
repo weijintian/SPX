@@ -232,7 +232,7 @@ struct GroupMembersView: View {
                 if !loading && rows.isEmpty { EmptyState(title: "暂未读取到成员", description: "请下拉刷新或稍后重试") }
                 if !rows.isEmpty && filteredMembers.isEmpty { EmptyState(title: "没有匹配的成员", description: "试试搜索备注、昵称或 SPX ID") }
             }.padding(16)
-        }.navigationTitle("群成员").spxPage().searchable(text: $query, prompt: "搜索备注、昵称或 SPX ID").task { await load() }.refreshable { await load() }.disabled(busy).errorAlert($error)
+        }.navigationTitle("群成员").spxPage().searchable(text: $query, prompt: "搜索备注、昵称或 SPX ID").task { await load() }.spxRefreshable { await load() }.disabled(busy).errorAlert($error)
             .sheet(isPresented: $adding) {
                 NavigationStack { SPXDetailPage {
                     SPXPageHeading(title: "邀请好友", subtitle: "选择朋友加入当前群聊", icon: "person.badge.plus")

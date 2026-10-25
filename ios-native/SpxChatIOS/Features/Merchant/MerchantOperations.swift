@@ -175,7 +175,7 @@ struct MerchantOrdersView: View {
     @State private var error: String?
     var body: some View {
         SPXDetailPage { ForEach(rows.filter { !onlyAfterSale || !["none", ""].contains($0["after_sale_status"].string) }) { order in NavigationLink { MerchantFulfillmentView(order: order, sourcePage: (rows.firstIndex(where: { $0.id == order.id }) ?? 0) / 30 + 1) } label: { SPXCard { VStack(alignment: .leading, spacing: 12) { OrderSummary(order: order); MerchantSettlementSummary(order: order) } } }.buttonStyle(.plain) }; if rows.isEmpty && !busy { EmptyState(title: onlyAfterSale ? "暂无售后申请" : "暂无订单", icon: "shippingbox") }; if busy && rows.isEmpty { ProgressView("正在加载订单…").frame(maxWidth: .infinity) }; if more { Button(busy ? "正在加载…" : "加载更多") { Task { await load(reset: false) } }.disabled(busy) } }
-            .navigationTitle(onlyAfterSale ? "售后管理" : "订单管理").task { await load(reset: true) }.refreshable { await load(reset: true) }.errorAlert($error)
+            .navigationTitle(onlyAfterSale ? "售后管理" : "订单管理").task { await load(reset: true) }.spxRefreshable { await load(reset: true) }.errorAlert($error)
             .onReceive(NotificationCenter.default.publisher(for: .spxOrdersChanged).debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { event in
                 Task { if await AccountMutation.isCurrent(event) { await load(reset: true) } }
             }
@@ -264,7 +264,7 @@ struct MerchantFulfillmentView: View {
             }
             if let error { SPXPanel("加载提示") { ErrorBanner(message: error); Button("重新读取订单") { Task { await load() } }.disabled(loading) } }
         }.navigationTitle("订单处理").disabled(busy)
-            .task { await load() }.refreshable { await load() }
+            .task { await load() }.spxRefreshable { await load() }
             .confirmationDialog("确认提交此订单操作？", isPresented: Binding(get: { confirmation != nil }, set: { if !$0 { confirmation = nil } }), titleVisibility: .visible) {
                 Button("确认提交") { if let action = confirmation { confirmation = nil; submit(action) } }
             }

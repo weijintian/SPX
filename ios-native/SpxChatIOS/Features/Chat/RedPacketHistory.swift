@@ -39,7 +39,7 @@ struct RedPacketHistoryView: View {
             if let error { ErrorBanner(message: error); Button("重新加载") { Task { await load(reset: state.page == 0) } } }
             if state.more && !state.rows.isEmpty { Button("加载更多") { Task { await load(reset: false) } }.disabled(state.busy).frame(maxWidth: .infinity, minHeight: 44) }
             Text("点击红包查看领取情况，金额与退款以服务器记录为准。").font(.footnote).foregroundStyle(SPXColor.muted)
-        }.navigationTitle("红包记录").spxPage().task(id: filter) { await load(reset: true) }.refreshable { await load(reset: true) }
+        }.navigationTitle("红包记录").spxPage().task(id: filter) { await load(reset: true) }.spxRefreshable { await load(reset: true) }
     }
     private func detail(_ packet: Record) -> String {
         let direction = packet["sender_id"].int == session.user?.id ? "我发出的" : "来自 " + packet["sender_name"].string

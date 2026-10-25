@@ -118,7 +118,7 @@ struct OrdersView: View {
             if busy && rows.isEmpty { ProgressView("正在加载订单…").frame(maxWidth: .infinity).padding(30) }
             if rows.isEmpty && !busy { EmptyState(title: "暂无此类订单", description: "订单状态更新后会显示在这里", icon: "shippingbox") }
             if more && !rows.isEmpty { Button(busy ? "加载中…" : "加载更多") { Task { await load(reset: false) } }.disabled(busy).frame(maxWidth: .infinity).padding(12) }
-        }.navigationTitle("我的订单").task(id: status) { await load(reset: true) }.refreshable { await load(reset: true) }.errorAlert($error)
+        }.navigationTitle("我的订单").task(id: status) { await load(reset: true) }.spxRefreshable { await load(reset: true) }.errorAlert($error)
             .onReceive(NotificationCenter.default.publisher(for: .spxOrdersChanged).debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { event in
                 Task { if await AccountMutation.isCurrent(event) { await load(reset: true) } }
             }
@@ -233,7 +233,7 @@ struct OrderDetailView: View {
                     }
                 }
             }
-        }.navigationTitle("订单详情").task { await load() }.refreshable { await load() }
+        }.navigationTitle("订单详情").task { await load() }.spxRefreshable { await load() }
             .onReceive(NotificationCenter.default.publisher(for: .spxOrdersChanged).debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { event in
                 Task { if await AccountMutation.isCurrent(event) { await load() } }
             }
