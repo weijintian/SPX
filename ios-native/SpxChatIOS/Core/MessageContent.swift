@@ -1,6 +1,36 @@
 import Foundation
 
 enum MessageContent {
+    static func messageType(_ message: Record) -> String {
+        let value = message.text("message_type", "last_message_type").lowercased()
+        if value == "red_packet" || value == "redpacket" || value == "packet" { return "red_packet" }
+        if message["message_origin"].string.lowercased() == "red_packet" { return "red_packet" }
+        if !message.text("packet_id", "red_packet_id", "packetId").isEmpty { return "red_packet" }
+        let content = message.text("content", "last_message")
+        if let data = content.data(using: .utf8),
+           let json = try? JSONDecoder().decode(JSON.self, from: data) {
+            let object = json.object
+            if object["packet_id"] != nil || object["red_packet_id"] != nil || object["packetId"] != nil {
+                return "red_packet"
+            }
+        }
+        return value
+    }
+
+    static func isRedPacket(_ message: Record) -> Bool {
+        messageType(message) == "red_packet"
+    }
+
+    static func redPacketGreeting(_ message: Record) -> String {
+        let content = message.text("content", "last_message")
+        guard let data = content.data(using: .utf8),
+              let json = try? JSONDecoder().decode(JSON.self, from: data),
+              !json["greeting"].string.isEmpty else {
+            return "恭喜发财，大吉大利"
+        }
+        return json["greeting"].string
+    }
+
     static func product(_ message: Record) -> Record? {
         guard message["message_type"].string == "product",
               let data = message["content"].string.data(using: .utf8),
@@ -21,7 +51,7 @@ enum MessageContent {
         return metadata.name.isEmpty ? "群聊邀请" : metadata.name
     }
     static func canForward(_ message: Record) -> Bool {
-        message["message_origin"].string != "call" && !["red_packet", "call"].contains(message["message_type"].string)
+        message["message_origin"].string != "call" && !["red_packet", "call"].contains(messageType(message))
     }
     static func forwardBody(_ message: Record) -> [String: JSON] {
         var body: [String: JSON] = ["message_type": message["message_type"], "content": message["content"], "media_url": message["media_url"]]
@@ -32,7 +62,9 @@ enum MessageContent {
     static func preview(_ message: Record) -> String {
         if let card = product(message) { return "[商品] " + card.text("name", "product_name") }
         if groupCode(message) != nil { return "[群聊邀请] " + groupTitle(message) }
-        return ["image": "[图片]", "video": "[视频]", "voice": "[语音]", "file": "[文件]", "red_packet": "[红包]"][message["message_type"].string] ?? message["content"].string
+        let type = messageType(message)
+        if type == "red_packet" { return "红包" }
+        return ["image": "[图片]", "video": "[视频]", "voice": "[语音]", "file": "[文件]"][type] ?? message.text("content", "last_message")
     }
 }
 
