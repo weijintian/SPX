@@ -1,5 +1,5 @@
 {
-  "source": "Literal API actions verified against local backend on 2026-10-25; isolated API tests are separate",
+  "source": "Literal API actions verified against local backend on 2026-10-26; isolated API tests are separate",
   "actions": [
     "app.update.history",
     "auth.email.code",
@@ -53,6 +53,7 @@
     "merchant.draft.save",
     "merchant.drafts",
     "merchant.finance",
+    "merchant.groups",
     "merchant.inventory.adjust",
     "merchant.me",
     "merchant.orders",

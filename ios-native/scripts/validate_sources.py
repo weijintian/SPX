@@ -65,15 +65,16 @@ for file in files:
     if file.name == "APIClient.swift":
         api_actions.update(re.findall(r'\bget\("([a-z][a-z0-9_.]+)"', source))
 contract = ROOT / "scripts" / "backend-actions.json"
+if not contract.is_file():
+    raise SystemExit("scripts/backend-actions.json is required for reproducible CI API validation")
+known_actions = set(json.loads(contract.read_text(encoding="utf8"))["actions"])
+snapshot_missing_actions = sorted(api_actions - known_actions)
 if backend_files:
     unknown_actions = sorted(action for action in api_actions if action not in backend)
     action_validation_source = "local_backend"
-elif contract.is_file():
-    known_actions = set(json.loads(contract.read_text(encoding="utf8"))["actions"])
+else:
     unknown_actions = sorted(api_actions - known_actions)
     action_validation_source = "exported_backend_action_snapshot_not_live_server"
-else:
-    raise SystemExit("Backend source or scripts/backend-actions.json is required for API action validation")
 
 policies = []
 for name in ("privacy", "agreement"):
@@ -85,10 +86,11 @@ for name in ("privacy", "agreement"):
 
 report = {"swift_files": len(files), "lines": sum(len(f.read_text(encoding="utf8").splitlines()) for f in files),
           "syntax_errors": failures, "literal_api_actions": len(api_actions), "actions_not_found_in_local_backend": unknown_actions,
+          "actions_missing_from_backend_snapshot": snapshot_missing_actions,
           "api_action_validation_source": action_validation_source,
           "policy_resources": policies, "xcode_compilation": "not_run", "unit_tests": "not_run", "device_testing": "not_run"}
 output = ROOT / "Validation"
 output.mkdir(exist_ok=True)
 (output / "source-validation.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf8")
 print(json.dumps(report, ensure_ascii=True, indent=2))
-sys.exit(bool(failures or unknown_actions))
+sys.exit(bool(failures or unknown_actions or snapshot_missing_actions))

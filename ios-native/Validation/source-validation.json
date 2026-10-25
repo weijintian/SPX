@@ -4,6 +4,7 @@
   "syntax_errors": [],
   "literal_api_actions": 97,
   "actions_not_found_in_local_backend": [],
+  "actions_missing_from_backend_snapshot": [],
   "api_action_validation_source": "local_backend",
   "policy_resources": [
     "SpxChatIOS\\Resources\\privacy.txt",
