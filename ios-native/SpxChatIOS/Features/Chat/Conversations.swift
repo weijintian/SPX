@@ -73,7 +73,7 @@ struct ChatListView: View {
                 Avatar(url: item.avatar, name: item.name)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(item.name.isEmpty ? "会话" : item.name).font(.headline).lineLimit(1)
-                    Text((group && item["unread_count"].int > 0 && (item["mention_unread"].int > 0 || sounds.pendingMentions[item.id] != nil) ? "[有人@我] " : "") + item.text("last_message", "last_message_type")).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                    Text((group && item["unread_count"].int > 0 && (item["mention_unread"].int > 0 || sounds.pendingMentions[item.id] != nil) ? "[有人@我] " : "") + MessageContent.preview(item)).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 4)
                 VStack(alignment: .trailing, spacing: 7) {
@@ -533,7 +533,14 @@ struct ConversationView: View {
                 let index = value.index(value.startIndex, offsetBy: prefix)
                 if value[index] == "@" { mentionTrigger = prefix; mentioning = true }
             }
-            .onChange(of: composerFocused) { _, focused in if focused { plus = false; emoji = false } }
+            .onChange(of: composerFocused) { _, focused in
+                guard focused else { return }
+                plus = false
+                emoji = false
+                pendingScrollToBottom = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { pendingScrollToBottom = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) { pendingScrollToBottom = true }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .spxMentionReceived)) { event in if let value = event.object as? Record, isGroup, value["group_id"].int == item.id { mentionNotice = "有人 @ 了你"; ChatSoundEffects.shared.readGroup(item.id) } }
             .onReceive(NotificationCenter.default.publisher(for: .spxRealtime)) { notification in if let event = notification.object as? JSON { model.receive(event) } }
             .onReceive(NotificationCenter.default.publisher(for: .spxConversationRemoved)) { event in if let value = event.object as? Record, value["target"].int == item.id, value["group"].flag == isGroup { dismiss() } }
@@ -771,7 +778,7 @@ struct ConversationView: View {
         if let card = MessageContent.product(message) { sharedProduct = Record(["id": card["product_id"], "name": card["name"], "image_url": card["image_url"], "cny_price": card["cny_price"]]); return }
         if let code = MessageContent.groupCode(message) { sharedGroupCode = code; sharedGroup = true; return }
         if message["message_origin"].string == "call", !isGroup { CallCoordinator.shared.dial(chat: item, video: message["content"].string.hasPrefix("[视频通话]")); return }
-        switch message["message_type"].string {
+        switch MessageContent.messageType(message) {
         case "image", "video": selectedMedia = message
         case "voice": Task { do { try await VoicePlayback.shared.toggle(message["media_url"].string, userID: userID) } catch { self.error = error.localizedDescription } }
         case "file": filePreview = message
@@ -791,7 +798,8 @@ struct MessageBubble: View {
     var mention: (() -> Void)? = nil
     private var mine: Bool { message["sender_id"].int == currentUserID }
     private var isMedia: Bool { ["image", "video"].contains(message["message_type"].string) }
-    private var greeting: String { guard let data = message["content"].string.data(using: .utf8), let json = try? JSONDecoder().decode(JSON.self, from: data) else { return "恭喜发财，大吉大利" }; return json["greeting"].string }
+    private var type: String { MessageContent.messageType(message) }
+    private var greeting: String { MessageContent.redPacketGreeting(message) }
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             if mine { Spacer(minLength: 52) } else { Avatar(url: message.avatar, name: message.name, size: 36).onLongPressGesture { mention?() }.accessibilityAction(named: "提醒这位成员") { mention?() } }
@@ -800,17 +808,21 @@ struct MessageBubble: View {
             Button(action: open) {
                 VStack(alignment: .leading, spacing: 6) {
                     if message["reply"]["id"].int > 0 { Text("\(message["reply"]["nickname"].string)：\(message["reply"]["preview"].string)").font(.caption).lineLimit(2).padding(8).background(.black.opacity(0.07), in: RoundedRectangle(cornerRadius: 6)).onTapGesture { reply?() }.accessibilityAddTraits(.isButton).accessibilityLabel("查看引用消息") }
-                    if MessageContent.product(message) != nil || MessageContent.groupCode(message) != nil { MessageCardContent(message: message) } else { switch message["message_type"].string {
+                    if MessageContent.product(message) != nil || MessageContent.groupCode(message) != nil { MessageCardContent(message: message) } else { switch type {
                     case "image": CachedImage(source: message["media_url"].string, messagePreview: true).background(SPXColor.card).clipShape(RoundedRectangle(cornerRadius: 12))
                     case "video": VideoMessagePreview(source: message["media_url"].string).frame(width: ChatMediaLayout.width, height: ChatMediaLayout.height)
                     case "voice": VoiceMessageLabel(url: message["media_url"].string, content: message["content"].string, incoming: !mine, userID: currentUserID)
                     case "file": Label(message["content"].string, systemImage: "doc.fill")
-                    case "red_packet": Label(greeting, systemImage: "gift.fill").padding(.vertical, 20)
+                    case "red_packet":
+                        VStack(alignment: .leading, spacing: 5) {
+                            Label("红包", systemImage: "gift.fill").font(.system(size: 16, weight: .semibold))
+                            Text(greeting).font(.caption).lineLimit(1)
+                        }.padding(.vertical, 10)
                     case "call": Label(message["content"].string, systemImage: "phone.fill")
                     default: MessageText(content: message["content"].string, mine: mine)
                     } }
                 }.font(.system(size: 16)).padding(isMedia ? 0 : 12).foregroundStyle(mine ? .white : SPXColor.ink)
-                    .background(isMedia ? Color.clear : (message["message_type"].string == "red_packet" ? Color.orange : (mine ? SPXColor.primary : SPXColor.card)), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(isMedia ? Color.clear : (type == "red_packet" ? Color.orange : (mine ? SPXColor.primary : SPXColor.card)), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay { if !mine, !isMedia { RoundedRectangle(cornerRadius: 12).stroke(SPXColor.line, lineWidth: 0.5) } }
             }.buttonStyle(.plain)
             }
