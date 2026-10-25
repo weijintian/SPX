@@ -1,0 +1,17 @@
+{
+  "version": "1.0.8",
+  "build": 9,
+  "scope": "Replace custom iOS RTCRoomEngine call flow with Tencent TUICallKit_Swift UI call component",
+  "files": [
+    "ios-native/Podfile",
+    "ios-native/SpxChatIOS/Features/Calls/CallCoordinator.swift",
+    "ios-native/SpxChatIOS/Features/Main/OverlayPresenter.swift",
+    "ios-native/project.yml"
+  ],
+  "validation": [
+    "TUICallKit_Swift 4.2.1 pinned",
+    "TUILogin uses server-generated UserSig",
+    "TUICallKit calls API invoked only from explicit user interaction",
+    "Legacy custom CallOverlay removed from overlay presentation"
+  ]
+}
