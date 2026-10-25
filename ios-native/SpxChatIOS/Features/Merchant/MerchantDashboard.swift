@@ -246,7 +246,7 @@ struct MerchantProductsView: View {
 struct MerchantProductCapacity: View {
     let capacity: Record
     var body: some View {
-        if capacity.keys.contains("limit") && capacity["limit"].int >= 0 {
+        if capacity.fields.keys.contains("limit") && capacity["limit"].int >= 0 {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("已上架 \(capacity["listed"].int)/\(capacity["limit"].int)").font(.system(size: 14, weight: .semibold))
