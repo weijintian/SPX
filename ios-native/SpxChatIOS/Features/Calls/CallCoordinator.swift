@@ -193,17 +193,18 @@ struct ActiveCall: Identifiable {
             try Task.checkCancellation()
             guard generation == epoch, call?.id == id, call?.connected == false else { return }
             if let status, terminal.contains(status["state"].string) { await finish(event: "heartbeat", message: label(status["state"].string)); return }
-            guard status?["peer_ready"].flag == true else {
-                status = nil; try await Task.sleep(for: .seconds(2)); continue
-            }
+            // Do not gate the Tencent invitation on the app-level presence heartbeat.
+            // A freshly launched or backgrounded peer can have a delayed calls.presence
+            // update even though Tencent can still deliver the invitation. Waiting here
+            // made the caller hang until timeout without ever notifying the callee.
             let room = UInt32.random(in: 1...UInt32(Int32.max))
             call?.room = room
             let params = TUICallParams(); params.timeout = Int32(max(1, min(60, Int(deadline.timeIntervalSinceNow)))); params.userData = id
             let roomID = TUIRoomId(); roomID.intRoomId = room; params.roomId = roomID
             try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
                 let completion = SDKOperationCompletion(c)
-                // Use the same 1:1 API as Android; calls() selects a different Tencent call scene.
-                TUICallEngine.createInstance().call(userId: current.peer, callMediaType: current.video ? .video : .audio, params: params) { Task { @MainActor in completion.succeed() } } fail: { code, message in Task { @MainActor in completion.resolve(.failure(APIError.server(Int(code), message ?? "呼叫失败"))) } }
+                // Use Tencent's supported 1:1 API. The singular call(userId:) overload is deprecated in RTCRoomEngine 3.2.x and can fail to deliver iOS invitations.
+                TUICallEngine.createInstance().calls(userIdList: [current.peer], callMediaType: current.video ? .video : .audio, params: params) { Task { @MainActor in completion.succeed() } } fail: { code, message in Task { @MainActor in completion.resolve(.failure(APIError.server(Int(code), message ?? "呼叫失败"))) } }
             }
             try Task.checkCancellation()
             return
@@ -236,6 +237,7 @@ struct ActiveCall: Identifiable {
         }
     }
     func receive(id: String, sdkID: String, caller: String, video: Bool, room: UInt32) async {
+        let normalizedCaller = canonicalTencentUserID(caller)
         guard UUID(uuidString: id) != nil, userID > 0, call == nil, !preparing, !receiving, !finishing else { return }
         receiving = true; let generation = epoch
         defer { if generation == epoch { receiving = false } }
@@ -245,8 +247,8 @@ struct ActiveCall: Identifiable {
             guard generation == epoch else { return }
             try await presence()
             let data = try await APIClient.shared.get("calls.session", ["session_id": id, "device_id": Keychain.deviceID])
-            guard generation == epoch, data["callee_id"].int == userID, data["peer_user_id"].string == caller, data["media"].string == (video ? "video" : "audio"), data["state"].string == "ringing" else { return }
-            call = ActiveCall(id: id, peer: caller, name: data["peer_name"].string, avatar: data["peer_avatar"].string, outgoing: false, video: video, room: room, sdkID: sdkID)
+            guard generation == epoch, data["callee_id"].int == userID, canonicalTencentUserID(data["peer_user_id"].string) == normalizedCaller, data["media"].string == (video ? "video" : "audio"), data["state"].string == "ringing" else { return }
+            call = ActiveCall(id: id, peer: normalizedCaller, name: data["peer_name"].string, avatar: data["peer_avatar"].string, outgoing: false, video: video, room: room, sdkID: sdkID)
             resetControls(video: video)
             let update = CXCallUpdate(); update.remoteHandle = CXHandle(type: .generic, value: data["peer_name"].string); update.hasVideo = video
             do {
@@ -451,6 +453,11 @@ struct ActiveCall: Identifiable {
         guard let call else { return }
         if local, cameraEnabled { TUICallEngine.createInstance().openCamera(front ? .front : .back, videoView: view) {} fail: { _, message in Task { @MainActor in guard self.call?.id == call.id else { return }; self.cameraEnabled = false; self.toast(message ?? "相机打开失败") } } }
         else if !local { TUICallEngine.createInstance().startRemoteView(userId: call.peer, videoView: view) { _ in } onLoading: { _ in } onError: { _, _, message in Task { @MainActor in if self.call?.id == call.id { self.toast(message ?? "远端画面加载失败，请检查网络") } } } }
+    }
+    private func canonicalTencentUserID(_ raw: String) -> String {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !value.isEmpty else { return value }
+        return value.hasPrefix("spx_") ? value : "spx_\(value)"
     }
     func toast(_ text: String) { notice = text; noticeTask?.cancel(); noticeTask = Task { do { try await Task.sleep(for: .seconds(2)); notice = nil } catch {} } }
 }
