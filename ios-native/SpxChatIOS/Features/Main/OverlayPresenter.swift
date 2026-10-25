@@ -7,7 +7,7 @@ import UIKit
     var miniFrame: CGRect = .zero
 }
 
-/// A separate scene window keeps calls above navigation sheets while allowing chat interaction.
+/// A separate scene window keeps popups above navigation sheets.
 struct OverlayPresenter: UIViewRepresentable {
     let session: SessionStore
     func makeUIView(context: Context) -> AnchorView { let view = AnchorView(); view.session = session; return view }
@@ -36,13 +36,6 @@ struct OverlayPresenter: UIViewRepresentable {
 
 private final class OverlayWindow: UIWindow {
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        let calls = CallCoordinator.shared
-        if calls.call != nil {
-            if calls.minimized && !OverlayPresentation.shared.miniFrame.contains(point) {
-                return OverlayPresentation.shared.packetID == nil ? nil : super.hitTest(point, with: event)
-            }
-            return super.hitTest(point, with: event)
-        }
         guard OverlayPresentation.shared.packetID != nil else { return nil }
         return super.hitTest(point, with: event)
     }
@@ -58,7 +51,6 @@ private struct OverlayContents: View {
             if session.isAuthenticated, let packet = presentation.packetID {
                 RedPacketPopup(packetID: packet) { presentation.packetID = nil }.id(packet)
             }
-            if session.isAuthenticated { CallOverlay() }
             if let notice = calls.notice {
                 Text(notice).font(.subheadline).multilineTextAlignment(.center).padding(.horizontal, 22).padding(.vertical, 16)
                     .foregroundStyle(.white).background(.black.opacity(0.82), in: RoundedRectangle(cornerRadius: 16)).padding(32).allowsHitTesting(false)
