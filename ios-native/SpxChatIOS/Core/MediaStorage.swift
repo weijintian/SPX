@@ -72,9 +72,16 @@ enum MediaFiles {
             try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: target.path)
             return target
         }
-        guard let data = try await item.loadTransferable(type: Data.self),
-              let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 2048] as CFDictionary) else { throw APIError.invalidResponse }
+        guard let data = try await item.loadTransferable(type: Data.self) else { throw APIError.invalidResponse }
+        let file = try await Task.detached(priority: .userInitiated) {
+            try preparePhotoData(data, userID: userID, original: original)
+        }.value
+        if Task.isCancelled { try? FileManager.default.removeItem(at: file); throw CancellationError() }
+        return file
+    }
+    static func preparePhotoData(_ data: Data, userID: Int, original: Bool = false) throws -> URL {
+        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+              CGImageSourceGetCount(source) > 0 else { throw APIError.invalidResponse }
         // Preserve animation and alpha instead of flattening every image to JPEG.
         let imageType = CGImageSourceGetType(source) as String? ?? ""
         if imageType == UTType.gif.identifier || imageType == UTType.png.identifier || (original && imageType == UTType.jpeg.identifier) {
@@ -84,6 +91,7 @@ enum MediaFiles {
             try data.write(to: target, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
             return target
         }
+        guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 2048] as CFDictionary) else { throw APIError.invalidResponse }
         let image = UIImage(cgImage: thumbnail)
         return try jpeg(image, userID: userID)
     }

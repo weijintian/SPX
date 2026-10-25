@@ -195,7 +195,7 @@ struct ChatListView: View {
                 guard currentRevision == revision, !Task.isCancelled else { throw CancellationError() }
                 error = nil; round += 1
             } catch is CancellationError { if Task.isCancelled { return }; if currentRevision != revision { continue }; return }
-            catch { if currentRevision == revision { initialLoading = false; self.error = error.localizedDescription } }
+            catch { if currentRevision == revision, !Task.isCancelled { initialLoading = false; self.error = error.localizedDescription } }
             do { try await Task.sleep(for: .seconds(3)) } catch { return }
         }
     }
@@ -234,7 +234,7 @@ struct ChatListView: View {
         loadingOlder = true; defer { loadingOlder = false }
         let currentRevision = revision
         do { let rows = try await fetch(action, [key: String(target), "before_id": String(first.id), "limit": "100"]).list; guard currentRevision == revision, !Task.isCancelled else { return }; hasOlder = rows.count == 100; merge(rows); await persistIfNeeded() }
-        catch { self.error = error.localizedDescription }
+        catch { if currentRevision == revision, !Task.isCancelled, !(error is CancellationError) { self.error = error.localizedDescription } }
     }
     func clear() {
         revision = UUID(); clearedThrough = max(clearedThrough, messages.last?.id ?? 0)
@@ -417,6 +417,9 @@ struct ConversationView: View {
                         if model.timeBoundaryIDs.contains(message.id) || message.id == firstDisplayedID {
                             Text(MessageTimeline.label(message["created_at"].string)).font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 4)
                         }
+                        if MessageContent.isSystem(message) {
+                            SystemMessageNotice(message: message).id(entry.id)
+                        } else {
                         HStack(spacing: 10) {
                             if selecting { Button { toggleSelection(message.id) } label: { Image(systemName: selectedMessages.contains(message.id) ? "checkmark.circle.fill" : "circle").font(.title3).foregroundStyle(SPXColor.primary) }.disabled(!MessageContent.canForward(message)) }
                             MessageBubble(message: message, currentUserID: userID, isGroup: isGroup, open: { if selecting { toggleSelection(message.id) } else { open(message) } }, reply: { contextMessage = Record(["id": message["reply"]["id"]]) }, mention: isGroup ? { insertMention(id: message["sender_id"].int, name: message.name) } : nil)
@@ -432,6 +435,7 @@ struct ConversationView: View {
                                     if message["message_type"].string != "red_packet" { Button("为所有人删除", systemImage: "trash", role: .destructive) { deleting = message } }
                                 }
                             }
+                        }
                         } else if let entry = entry.pending {
                         PendingMessageBubble(entry: entry, retry: { outbox.retry(entry.id) }, discard: { Task { await outbox.discard(entry.id) } }).id(entry.id)
                     }
@@ -454,6 +458,7 @@ struct ConversationView: View {
                     if visible { latestSeenID = model.messages.last?.id ?? latestSeenID }
                 }
                 .scrollDismissesKeyboard(.interactively)
+                .defaultScrollAnchor(.bottom)
                 .overlay(alignment: .bottomTrailing) {
                     if !atBottom {
                         Button { scrollToLatest(proxy, animated: true) } label: {
@@ -480,6 +485,9 @@ struct ConversationView: View {
                     scrollToLatest(proxy, animated: false)
                 }
                 .onChange(of: outbox.acknowledgements) { _, map in model.merge(Array(map.values.filter { $0[isGroup ? "group_id" : "chat_id"].int == item.id })) }
+                .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { _ in
+                    if composerFocused, atBottom { scrollToLatest(proxy, animated: false) }
+                }
             }
             if let replied { HStack { Text("回复：\(replied["content"].string)").lineLimit(1); Spacer(); Button { self.replied = nil } label: { Image(systemName: "xmark.circle.fill") } }.font(.caption).padding(10).background(.thinMaterial) }
             if !mentions.isEmpty {
@@ -537,9 +545,7 @@ struct ConversationView: View {
                 guard focused else { return }
                 plus = false
                 emoji = false
-                pendingScrollToBottom = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { pendingScrollToBottom = true }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) { pendingScrollToBottom = true }
+                if atBottom { pendingScrollToBottom = true }
             }
             .onReceive(NotificationCenter.default.publisher(for: .spxMentionReceived)) { event in if let value = event.object as? Record, isGroup, value["group_id"].int == item.id { mentionNotice = "有人 @ 了你"; ChatSoundEffects.shared.readGroup(item.id) } }
             .onReceive(NotificationCenter.default.publisher(for: .spxRealtime)) { notification in if let event = notification.object as? JSON { model.receive(event) } }
@@ -594,9 +600,6 @@ struct ConversationView: View {
             .onReceive(CallCoordinator.shared.$call) { call in if call != nil { stopRecording(cancel: true) } }
             .onChange(of: recorder.completedURL) { _, url in if let url { ChatSoundEffects.recording = false; recordingGesture = false; recordingRequest = UUID(); recorder.completedURL = nil; Task { do { try await queue(file: url, kind: "voice", name: "语音") } catch { self.error = error.localizedDescription } } } }
             .onChange(of: recorder.errorMessage) { _, message in if let message { ChatSoundEffects.recording = false; error = message; recorder.errorMessage = nil } }
-            .onReceive(CallCoordinator.shared.$call) { call in
-                if call != nil, recorder.recording || recordingGesture { stopRecording(cancel: true) }
-            }
             .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { notification in
                 guard let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
                       AVAudioSession.InterruptionType(rawValue: raw) == .began, recorder.recording || recordingGesture else { return }
@@ -791,6 +794,21 @@ struct ConversationView: View {
     }
 }
 
+struct SystemMessageNotice: View {
+    let message: Record
+    var body: some View {
+        Text(message["content"].string)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 6)
+            .accessibilityLabel("系统通知：\(message["content"].string)")
+    }
+}
+
 struct MessageBubble: View {
     let message: Record
     let currentUserID: Int
@@ -803,6 +821,9 @@ struct MessageBubble: View {
     private var type: String { MessageContent.messageType(message) }
     private var greeting: String { MessageContent.redPacketGreeting(message) }
     var body: some View {
+        if MessageContent.isSystem(message) {
+            SystemMessageNotice(message: message)
+        } else {
         HStack(alignment: .top, spacing: 10) {
             if mine { Spacer(minLength: 52) } else { Avatar(url: message.avatar, name: message.name, size: 36).onLongPressGesture { mention?() }.accessibilityAction(named: "提醒这位成员") { mention?() } }
             VStack(alignment: mine ? .trailing : .leading, spacing: 5) {
@@ -829,6 +850,7 @@ struct MessageBubble: View {
             }.buttonStyle(.plain)
             }
             if !mine { Spacer(minLength: 44) }
+        }
         }
     }
 }

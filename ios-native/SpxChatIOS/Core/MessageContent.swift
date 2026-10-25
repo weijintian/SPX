@@ -1,6 +1,11 @@
 import Foundation
 
 enum MessageContent {
+    /// Only server metadata identifies an event. A member typing a welcome is still a message.
+    static func isSystem(_ message: Record) -> Bool {
+        message["message_origin"].string.lowercased() == "system" ||
+        message["message_type"].string.lowercased() == "system"
+    }
     static func messageType(_ message: Record) -> String {
         let value = message.text("message_type", "last_message_type").lowercased()
         if value == "red_packet" || value == "redpacket" || value == "packet" { return "red_packet" }
@@ -51,7 +56,7 @@ enum MessageContent {
         return metadata.name.isEmpty ? "群聊邀请" : metadata.name
     }
     static func canForward(_ message: Record) -> Bool {
-        message["message_origin"].string != "call" && !["red_packet", "call"].contains(messageType(message))
+        !isSystem(message) && message["message_origin"].string != "call" && !["red_packet", "call"].contains(messageType(message))
     }
     static func forwardBody(_ message: Record) -> [String: JSON] {
         var body: [String: JSON] = ["message_type": message["message_type"], "content": message["content"], "media_url": message["media_url"]]

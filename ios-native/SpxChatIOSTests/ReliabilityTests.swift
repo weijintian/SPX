@@ -3,6 +3,80 @@ import Combine
 @testable import SpxChatIOS
 
 final class ReliabilityTests: XCTestCase {
+    func testStakingPhaseAndRemainingQuotaUseServerValues() {
+        let phase: JSON = .object(["phase_no": 7, "total_quota": "20000000", "reserved_quota": "19500000", "remaining_quota": "500000"])
+        XCTAssertEqual(StakingPresentation.phaseTitle(phase), "第 7 期")
+        XCTAssertEqual(StakingPresentation.phaseTitle(.null), "暂未开放")
+        XCTAssertEqual(StakingPresentation.remainingFraction(phase) ?? -1, 0.025, accuracy: 0.000001)
+        XCTAssertEqual(StakingPresentation.remainingFraction(.object(["total_quota": "100", "remaining_quota": "0"])), 0)
+        XCTAssertEqual(StakingPresentation.remainingFraction(.object(["total_quota": "100", "remaining_quota": "150"])), 1)
+        let invalidPhases: [JSON] = [.null, .object(["total_quota": "0", "remaining_quota": "50"]), .object(["total_quota": "100"]), .object(["total_quota": "100", "remaining_quota": "-1"])]
+        for phase in invalidPhases {
+            XCTAssertNil(StakingPresentation.remainingFraction(phase))
+        }
+    }
+    func testStakingAmountPresentationKeepsMissingAndDustDistinctFromZero() {
+        XCTAssertEqual(StakingPresentation.amount("19541369.869"), "19,541,369.86")
+        XCTAssertEqual(StakingPresentation.amount("0"), "0.00")
+        XCTAssertEqual(StakingPresentation.amount("0.000000000000000001"), "<0.01")
+        for raw in ["", "invalid", "-1"] { XCTAssertEqual(StakingPresentation.amount(raw), "—") }
+        XCTAssertEqual(StakingPresentation.rate(nil), "—")
+    }
+    func testStakingActivePrincipalExcludesRedeemedRecordsAndRejectsMissingAmounts() {
+        let active = Record(["id": 1, "status": "active", "amount": "100000"])
+        let redeemed = Record(["id": 2, "status": "redeemed", "amount": "900000"])
+        XCTAssertEqual(StakingPresentation.activeTotal([active, redeemed]), Decimal(100000))
+        XCTAssertEqual(StakingPresentation.activeTotal([]), Decimal.zero)
+        XCTAssertNil(StakingPresentation.activeTotal([active, Record(["status": "active"])]))
+        XCTAssertNil(StakingPresentation.activeTotal([Record(["status": "active", "amount": "-1"])]))
+    }
+    func testStakingSubmissionRequiresWholeIncrementAndCompleteSnapshot() {
+        let plan = Record(["id": 1, "minimum_amount": "100000", "apy": "60", "plan_days": 90])
+        XCTAssertNil(StakingPresentation.validationMessage(amount: "100000", plan: plan, balance: Decimal(100000), activeTotal: 0))
+        for amount in ["", "0", "99999", "100001", "100000.0", "0100000", " 100000", "100000 ", "+100000", "1e5", "１０００００", "10100000", String(repeating: "9", count: 40)] {
+            XCTAssertNotNil(StakingPresentation.validationMessage(amount: amount, plan: plan, balance: Decimal(10000000), activeTotal: 0), amount)
+        }
+        XCTAssertNotNil(StakingPresentation.validationMessage(amount: "100000", plan: plan, balance: nil, activeTotal: 0))
+        XCTAssertNotNil(StakingPresentation.validationMessage(amount: "100000", plan: plan, balance: Decimal(100000), activeTotal: nil))
+        XCTAssertNotNil(StakingPresentation.validationMessage(amount: "100000", plan: nil, balance: Decimal(100000), activeTotal: 0))
+    }
+    func testStakingSubmissionChecksPlanMinimumBalanceAndCumulativeCap() {
+        let plan = Record(["id": 2, "minimum_amount": "200000", "apy": "60", "plan_days": 90])
+        XCTAssertNotNil(StakingPresentation.validationMessage(amount: "100000", plan: plan, balance: Decimal(10000000), activeTotal: 0))
+        XCTAssertNotNil(StakingPresentation.validationMessage(amount: "200000", plan: plan, balance: Decimal(199999), activeTotal: 0))
+        XCTAssertNil(StakingPresentation.validationMessage(amount: "200000", plan: plan, balance: Decimal(200000), activeTotal: Decimal(9800000)))
+        XCTAssertNotNil(StakingPresentation.validationMessage(amount: "200000", plan: plan, balance: Decimal(200000), activeTotal: Decimal(9900000)))
+    }
+    func testStakingIncompletePlansDoNotInventMinimumOrEnableSubmission() {
+        let plan = Record(["id": 1, "minimum_amount": "100000", "apy": "60", "plan_days": 90])
+        XCTAssertEqual(StakingPresentation.minimum(Record(["minimum_amount": "50000"])), Decimal(100000))
+        let invalidMinimums: [JSON] = [.null, "invalid", "-1"]
+        for raw in invalidMinimums {
+            var incomplete = plan; incomplete["minimum_amount"] = raw
+            XCTAssertNil(StakingPresentation.minimum(incomplete))
+            XCTAssertNotNil(StakingPresentation.validationMessage(amount: "100000", plan: incomplete, balance: Decimal(100000), activeTotal: 0))
+        }
+        for key in ["apy", "plan_days"] {
+            var incomplete = plan; incomplete[key] = .null
+            XCTAssertNotNil(StakingPresentation.validationMessage(amount: "100000", plan: incomplete, balance: Decimal(100000), activeTotal: 0))
+            XCTAssertNil(StakingPresentation.expectedReward(amount: "100000", plan: incomplete))
+        }
+    }
+    func testStakingEstimatedDividendUsesAnnualRateAndPlanDays() {
+        var plan = Record(["apy": "60", "plan_days": 73])
+        XCTAssertEqual(StakingPresentation.expectedReward(amount: "100000", plan: plan), Decimal(12000))
+        plan["plan_days"] = 365
+        XCTAssertEqual(StakingPresentation.expectedReward(amount: "100000", plan: plan), Decimal(60000))
+        plan["apy"] = "36.5"
+        XCTAssertEqual(StakingPresentation.expectedReward(amount: "100000", plan: plan, days: 1), Decimal(100))
+        XCTAssertEqual(StakingPresentation.expectedReward(amount: "100000", plan: plan, days: 10), Decimal(1000))
+        plan["plan_days"] = 7
+        XCTAssertEqual(StakingPresentation.expectedReward(amount: "100000", plan: plan, days: 10), Decimal(700))
+        XCTAssertNil(StakingPresentation.expectedReward(amount: "100000", plan: plan, days: 0))
+        plan["apy"] = 0
+        XCTAssertEqual(StakingPresentation.expectedReward(amount: "100000", plan: plan), Decimal.zero)
+        XCTAssertNil(StakingPresentation.expectedReward(amount: "invalid", plan: plan))
+    }
     func testContactsUseRemarksAndAllowClearingThem() {
         let contact = Record(["id": 8, "nickname": "原昵称", "remark": "  客户小张  "])
         XCTAssertEqual(contact.normalizedContact.name, "客户小张")
@@ -98,6 +172,43 @@ final class ReliabilityTests: XCTestCase {
         XCTAssertEqual(publishes, 1)
         XCTAssertTrue(model.timeBoundaryIDs.contains(7))
         withExtendedLifetime(subscription) { }
+    }
+    @MainActor func testCanceledHistoryLoadDoesNotShowAnError() async {
+        let model = ConversationStore(target: 77890, group: true, userID: 2_147_479_990, fetch: { _, _ in
+            throw CancellationError()
+        })
+        model.merge([Record(["id": 7])])
+        await model.older()
+        XCTAssertNil(model.error)
+        XCTAssertFalse(model.loadingOlder)
+        XCTAssertEqual(model.messages.map(\.id), [7])
+    }
+    @MainActor func testLateHistoryFailureAfterClearDoesNotRestoreAnError() async {
+        let started = expectation(description: "History request started")
+        var pending: CheckedContinuation<JSON, Error>?
+        let model = ConversationStore(target: 77891, group: true, userID: 2_147_479_991, fetch: { _, _ in
+            try await withCheckedThrowingContinuation { continuation in pending = continuation; started.fulfill() }
+        })
+        model.merge([Record(["id": 7])])
+        let operation = Task { await model.older() }
+        await fulfillment(of: [started], timeout: 3)
+        model.clear()
+        pending?.resume(throwing: URLError(.networkConnectionLost)); pending = nil
+        await operation.value
+        XCTAssertNil(model.error)
+        XCTAssertFalse(model.loadingOlder)
+        XCTAssertTrue(model.messages.isEmpty)
+        await LocalStore.shared.remove(model.cacheKey + "-sync-v2", userID: model.userID)
+    }
+    @MainActor func testCurrentHistoryFailureStillShowsAnError() async {
+        let model = ConversationStore(target: 77892, group: true, userID: 2_147_479_992, fetch: { _, _ in
+            throw URLError(.networkConnectionLost)
+        })
+        model.merge([Record(["id": 7])])
+        await model.older()
+        XCTAssertNotNil(model.error)
+        XCTAssertFalse(model.loadingOlder)
+        XCTAssertEqual(model.messages.map(\.id), [7])
     }
     @MainActor func testRealtimeArrivalDoesNotSkipRESTCatchupPages() async throws {
         let owner = 2_147_479_981, target = 77881

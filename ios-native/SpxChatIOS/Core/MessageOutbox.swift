@@ -32,6 +32,26 @@ struct LiveOutboxTransport: OutboxTransport {
     }
 }
 
+/// Filter byte callbacks before scheduling UI work. All mutable state is lock protected.
+final class UploadProgressGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var active = true
+    private var lastValue: Double = -1
+    private var lastUpdate: TimeInterval = -.infinity
+
+    func accept(_ value: Double, now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard active, value.isFinite else { return false }
+        let value = min(1, max(0, value))
+        guard value > lastValue else { return false }
+        guard lastValue < 0 || value == 1 || (value - lastValue >= 0.01 && now - lastUpdate >= 0.1) else { return false }
+        lastValue = value; lastUpdate = now
+        return true
+    }
+    var isActive: Bool { lock.lock(); defer { lock.unlock() }; return active }
+    func finish() { lock.lock(); defer { lock.unlock() }; active = false }
+}
+
 @MainActor final class Outbox: ObservableObject {
     static let shared = Outbox()
     @Published private(set) var items: [PendingMessage] = []
@@ -82,7 +102,9 @@ struct LiveOutboxTransport: OutboxTransport {
                 return value
             }
             durableIDs = Set(restored.map(\.id))
-            for index in items.indices where items[index].state != .failed { items[index].state = .queued }
+            for index in items.indices where items[index].state != .failed {
+                items[index].state = .queued; items[index].progress = 0
+            }
             acknowledgements = [:]
         }
         drain()
@@ -164,16 +186,18 @@ struct LiveOutboxTransport: OutboxTransport {
             var payload = item.body
             if let url = item.localURL, payload["media_url"]?.string.isEmpty != false {
                 update(item.id, state: .uploading)
+                let progressGate = UploadProgressGate()
+                defer { progressGate.finish() }
                 let result = try await transport.upload(file: url, userID: item.userID, uploadID: item.uploadID) { progress in
-                    Task { @MainActor in
-                        guard activeEpoch == self.epoch, let index = self.items.firstIndex(where: { $0.id == item.id }) else { return }
-                        let value = min(1, max(0, progress))
-                        // Byte-level callbacks must not repeatedly sort and redraw the entire timeline.
-                        if value == 0 || value == 1 || abs(value - self.items[index].progress) >= 0.01 {
-                            self.items[index].progress = value
-                        }
+                    guard progressGate.accept(progress) else { return }
+                    Task { @MainActor [weak self] in
+                        guard let self, progressGate.isActive, activeEpoch == self.epoch,
+                              let index = self.items.firstIndex(where: { $0.id == item.id }),
+                              self.items[index].state == .uploading else { return }
+                        self.items[index].progress = max(self.items[index].progress, min(1, max(0, progress)))
                     }
                 }
+                progressGate.finish()
                 guard activeEpoch == epoch else { return }
                 // Upload responses have used both `url` and `media_url` over the
                 // lifetime of the API. Keep the locally selected type when the
@@ -229,6 +253,10 @@ struct LiveOutboxTransport: OutboxTransport {
     }
 
     private func update(_ id: String, state: PendingMessage.State, error: String? = nil) {
-        if let index = items.firstIndex(where: { $0.id == id }) { items[index].state = state; items[index].error = error }
+        if let index = items.firstIndex(where: { $0.id == id }) {
+            items[index].state = state; items[index].error = error
+            if state == .uploading { items[index].progress = 0 }
+            if state == .sending, items[index].localURL != nil { items[index].progress = 1 }
+        }
     }
 }

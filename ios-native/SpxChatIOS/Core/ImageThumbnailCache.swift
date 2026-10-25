@@ -19,10 +19,10 @@ actor ImageThumbnailCache {
     func video(_ source: String, userID: Int) async throws -> UIImage {
         try await thumbnail(source, userID: userID, pixels: 480, video: true)
     }
-    func local(_ file: URL, maximumPixelSize: Int = 480) throws -> UIImage {
-        try Self.decode(file, pixels: maximumPixelSize)
+    func local(_ file: URL, userID: Int, video: Bool = false, maximumPixelSize: Int = 480) async throws -> UIImage {
+        try await thumbnail(file.absoluteString, userID: userID, pixels: maximumPixelSize, video: video, localURL: file)
     }
-    private func thumbnail(_ source: String, userID: Int, pixels: Int, video: Bool) async throws -> UIImage {
+    private func thumbnail(_ source: String, userID: Int, pixels: Int, video: Bool, localURL: URL? = nil) async throws -> UIImage {
         guard userID > 0, !source.isEmpty else { throw APIError.unauthorized }
         let pixels = min(4096, max(64, pixels))
         let key = "\(userID):\(video ? "v" : "i"):\(pixels):\(source)"
@@ -41,7 +41,9 @@ actor ImageThumbnailCache {
                 try await VideoThumbnailLimiter.shared.acquire(permit)
                 defer { Task { await VideoThumbnailLimiter.shared.release() } }
                 try Task.checkCancellation()
-                let resource = try await VideoAssetSource.make(source: source, userID: userID)
+                let resource: VideoAssetSource
+                if let localURL { resource = VideoAssetSource(asset: AVURLAsset(url: localURL), loader: nil) }
+                else { resource = try await VideoAssetSource.make(source: source, userID: userID) }
                 defer { resource.loader?.cancelAllRequests() }
                 let generator = AVAssetImageGenerator(asset: resource.asset)
                 generator.appliesPreferredTrackTransform = true
@@ -49,7 +51,9 @@ actor ImageThumbnailCache {
                 let frame = try await withTaskCancellationHandler(operation: { try await generator.image(at: .zero) }, onCancel: { generator.cancelAllCGImageGeneration() })
                 image = UIImage(cgImage: frame.image)
             } else {
-                let original = try await MediaCache.shared.file(source, userID: userID)
+                let original: URL
+                if let localURL { original = localURL }
+                else { original = try await MediaCache.shared.file(source, userID: userID) }
                 try Task.checkCancellation()
                 image = try Self.decode(original, pixels: pixels)
             }

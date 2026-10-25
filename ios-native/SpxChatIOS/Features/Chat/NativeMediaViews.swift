@@ -31,6 +31,7 @@ private struct ChatImageLayout: Layout {
 struct LocalAttachmentPreview: View {
     let url: URL
     let kind: String
+    @EnvironmentObject private var session: SessionStore
     @State private var thumbnail: UIImage?
     var body: some View {
         Group {
@@ -44,12 +45,15 @@ struct LocalAttachmentPreview: View {
                 if kind == "image" { ChatImageLayout(imageSize: thumbnail?.size) { preview }.clipShape(RoundedRectangle(cornerRadius: 12)) }
                 else { preview.frame(width: ChatMediaLayout.width, height: ChatMediaLayout.height).clipShape(RoundedRectangle(cornerRadius: 12)) }
             }
-        }.task(id: url) {
-            if kind == "image" { thumbnail = try? await ImageThumbnailCache.shared.local(url) }
-            else if kind == "video" {
-                let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url)); generator.appliesPreferredTrackTransform = true; generator.maximumSize = CGSize(width: 480, height: 480)
-                if let result = try? await generator.image(at: .zero) { thumbnail = UIImage(cgImage: result.image) }
-            }
+        }.task(id: "\(session.user?.id ?? 0):\(kind):\(url.absoluteString)") {
+            thumbnail = nil
+            guard let owner = session.user?.id, owner > 0, kind == "image" || kind == "video" else { return }
+            do {
+                let image = try await ImageThumbnailCache.shared.local(url, userID: owner, video: kind == "video")
+                try Task.checkCancellation()
+                guard session.user?.id == owner else { return }
+                thumbnail = image
+            } catch { }
         }
     }
 }
@@ -67,18 +71,19 @@ struct CachedImage: View {
         Group {
             if messagePreview { ChatImageLayout(imageSize: image?.size) { content } }
             else { content }
-        }.task(id: source + ":" + String(retry)) {
+        }.task(id: "\(session.user?.id ?? 0):\(maximumPixelSize):\(source):\(retry)") {
             let requestedSource = source
+            let owner = session.user?.id ?? 0
             image = nil; failed = false
             guard !source.isEmpty else { failed = true; return }
             do {
-                let decoded = try await ImageThumbnailCache.shared.image(requestedSource, userID: session.user?.id ?? 0, maximumPixelSize: maximumPixelSize)
+                let decoded = try await ImageThumbnailCache.shared.image(requestedSource, userID: owner, maximumPixelSize: maximumPixelSize)
                 try Task.checkCancellation()
-                guard source == requestedSource else { return }
+                guard source == requestedSource, session.user?.id == owner else { return }
                 image = decoded; failed = false
             }
             catch is CancellationError { }
-            catch { failed = true }
+            catch { if !Task.isCancelled, session.user?.id == owner { failed = true } }
         }
     }
     @ViewBuilder private var content: some View {
@@ -168,12 +173,14 @@ struct VideoMessagePreview: View {
         .clipped()
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .accessibilityLabel("视频，轻点播放")
-        .task(id: source) {
+        .task(id: "\(session.user?.id ?? 0):\(source)") {
             thumbnail = nil
             guard !source.isEmpty, let userID = session.user?.id, userID > 0 else { return }
             do {
                 let image = try await ImageThumbnailCache.shared.video(source, userID: userID)
-                try Task.checkCancellation(); thumbnail = image
+                try Task.checkCancellation()
+                guard session.user?.id == userID else { return }
+                thumbnail = image
             } catch { /* The video remains playable if its optional poster cannot be generated. */ }
         }
     }

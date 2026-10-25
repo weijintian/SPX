@@ -126,6 +126,8 @@ actor APIClient {
     func uploadRequest(_ action:String,boundary:String) throws -> URLRequest {
         var r = URLRequest(url:try requestURL(action));r.httpMethod = "POST";r.timeoutInterval = 180
         r.setValue("multipart/form-data; boundary=\(boundary)",forHTTPHeaderField:"Content-Type")
+        r.setValue("application/json", forHTTPHeaderField: "Accept")
+        r.setValue("zh-CN,zh;q=0.9", forHTTPHeaderField: "Accept-Language")
         if let token {r.setValue("Bearer \(token)",forHTTPHeaderField:"Authorization")};return r
     }
     func backgroundUploadRequest(_ action: String, boundary: String, userID: Int) throws -> URLRequest {

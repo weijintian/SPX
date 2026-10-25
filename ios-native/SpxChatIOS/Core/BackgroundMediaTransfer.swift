@@ -1,5 +1,13 @@
 import Foundation
 
+/// Cancellation can arrive before the serial queue installs the upload record.
+final class UploadRegistrationCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var canceled = false
+    var isCanceled: Bool { lock.lock(); defer { lock.unlock() }; return canceled }
+    func cancel() { lock.lock(); defer { lock.unlock() }; canceled = true }
+}
+
 private struct BackgroundUploadRecord: Codable {
     let userID: Int
     let uploadID: String
@@ -73,10 +81,13 @@ final class BackgroundMediaTransfer: NSObject, URLSessionDataDelegate, URLSessio
 
     func upload(file: URL, userID: Int, uploadID: String, totalBytes: Int, chunkSize: Int, totalChunks: Int,
                 receivedChunks: Set<Int>, progress: @escaping @Sendable (Double) -> Void) async throws -> JSON {
-        try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
+        let cancellation = UploadRegistrationCancellation()
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await withCheckedThrowingContinuation { continuation in
                 stateQueue.async {
                     do {
+                        guard !cancellation.isCanceled else { throw CancellationError() }
                         let key = "\(userID):\(uploadID)"
                         guard self.continuations[key] == nil else {
                             throw APIError.server(409, "附件正在上传，请稍候")
@@ -108,6 +119,7 @@ final class BackgroundMediaTransfer: NSObject, URLSessionDataDelegate, URLSessio
                 }
             }
         } onCancel: {
+            cancellation.cancel()
             self.cancel(userID: userID, uploadID: uploadID)
         }
     }

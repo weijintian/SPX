@@ -1,8 +1,114 @@
 import XCTest
 import Combine
+import UIKit
 @testable import SpxChatIOS
 
 final class ChatMediaRegressionTests: XCTestCase {
+    func testSystemNoticesUseMetadataAndCannotBeForwarded() {
+        let text = "欢迎新朋友加入群聊"
+        let ordinary = SpxChatIOS.Record(["id": 1, "message_type": "text", "content": .string(text)])
+        XCTAssertFalse(MessageContent.isSystem(ordinary))
+        XCTAssertTrue(MessageContent.canForward(ordinary))
+        for metadata in [["message_origin": "system"], ["message_type": "system"], ["message_origin": "SYSTEM"]] {
+            var notice = ordinary
+            for (key, value) in metadata { notice[key] = .string(value) }
+            XCTAssertTrue(MessageContent.isSystem(notice))
+            XCTAssertFalse(MessageContent.canForward(notice))
+            XCTAssertEqual(MessageContent.preview(notice), text)
+        }
+    }
+
+    func testUploadProgressDropsBurstsRegressionsAndStaleCallbacks() {
+        let gate = UploadProgressGate()
+        XCTAssertFalse(gate.accept(.nan, now: 0))
+        XCTAssertFalse(gate.accept(.infinity, now: 0))
+        XCTAssertTrue(gate.accept(0, now: 0))
+        XCTAssertFalse(gate.accept(0.001, now: 0.02))
+        XCTAssertFalse(gate.accept(0.5, now: 0.05))
+        XCTAssertTrue(gate.accept(0.5, now: 0.11))
+        XCTAssertFalse(gate.accept(0.4, now: 0.3))
+        XCTAssertFalse(gate.accept(0.505, now: 0.3))
+        XCTAssertTrue(gate.accept(1, now: 0.12))
+        XCTAssertFalse(gate.accept(1.1, now: 0.4))
+        gate.finish()
+        XCTAssertFalse(gate.isActive)
+        XCTAssertFalse(gate.accept(1, now: 1))
+        XCTAssertTrue(UploadProgressGate().accept(0, now: 0))
+    }
+
+    func testDownloadProgressRetainsUnknownSizeAndDropsBurstUpdates() {
+        let gate = DownloadProgressGate()
+        XCTAssertFalse(gate.accept(.nan, now: 0))
+        XCTAssertFalse(gate.accept(.infinity, now: 0))
+        XCTAssertTrue(gate.accept(-1, now: 0))
+        XCTAssertFalse(gate.accept(-1, now: 0.01))
+        XCTAssertTrue(gate.accept(0, now: 0.02))
+        XCTAssertFalse(gate.accept(-1, now: 0.03))
+        XCTAssertFalse(gate.accept(0.5, now: 0.04))
+        XCTAssertTrue(gate.accept(0.5, now: 0.13))
+        XCTAssertFalse(gate.accept(0.4, now: 0.3))
+        XCTAssertFalse(gate.accept(0.505, now: 0.3))
+        XCTAssertTrue(gate.accept(1, now: 0.14))
+        XCTAssertFalse(gate.accept(1, now: 0.4))
+    }
+
+    func testCanceledUploadDoesNotRegisterOrReportProgress() async {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mp4")
+        let operation = Task<JSON, Error> {
+            // Cancel deterministically before entering registration; no file or network is needed.
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await BackgroundMediaTransfer.shared.upload(
+                file: file, userID: 0, uploadID: UUID().uuidString.lowercased(),
+                totalBytes: 1, chunkSize: 1, totalChunks: 1, receivedChunks: []
+            ) { _ in XCTFail("A canceled upload must not publish progress") }
+        }
+        do {
+            _ = try await operation.value
+            XCTFail("An upload canceled before registration must not start")
+        } catch is CancellationError {
+        } catch {
+            XCTFail("Expected cancellation, received \(error)")
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+    }
+
+    func testInvalidPhotoDataFailsBeforeCreatingAnAttachment() {
+        XCTAssertThrowsError(try MediaFiles.preparePhotoData(Data("invalid-image".utf8), userID: 2_147_479_950)) { error in
+            if case APIError.invalidResponse = error { } else { XCTFail("Invalid photo bytes must be rejected") }
+        }
+    }
+
+    @MainActor func testLocalThumbnailReusesCacheAndRemainsAccountScoped() async throws {
+        let owner = 2_147_479_950
+        let cache = ImageThumbnailCache()
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 16, height: 16)).image { context in
+            UIColor.red.setFill(); context.fill(CGRect(x: 0, y: 0, width: 16, height: 16))
+        }
+        let data = try XCTUnwrap(image.pngData())
+        let file = try MediaFiles.preparePhotoData(data, userID: owner)
+        addTeardownBlock {
+            try? await cache.clear(userID: owner)
+            try? await cache.clear(userID: owner + 1)
+            try? FileManager.default.removeItem(at: file)
+        }
+        XCTAssertEqual(file.pathExtension, "png")
+        XCTAssertEqual(try Data(contentsOf: file), data)
+        let first = try await cache.local(file, userID: owner)
+        try FileManager.default.removeItem(at: file)
+        let reused = try await cache.local(file, userID: owner)
+        XCTAssertEqual(first.size, reused.size)
+        do {
+            _ = try await cache.local(file, userID: owner + 1)
+            XCTFail("Another account must not receive a cached private thumbnail")
+        } catch { }
+        try await cache.clear(userID: owner)
+        do {
+            _ = try await cache.local(file, userID: owner)
+            XCTFail("Cleared thumbnails must not survive a missing source")
+        } catch { }
+        try await cache.clear(userID: owner + 1)
+    }
+
     func testUploadEnvelopeAccepts201AndUTF8BOM() throws {
         let url = URL(string: "https://example.test/upload")!
         let response = HTTPURLResponse(url: url, statusCode: 201, httpVersion: nil, headerFields: nil)!

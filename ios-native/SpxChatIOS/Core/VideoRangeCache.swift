@@ -19,7 +19,12 @@ actor VideoRangeCache {
         let validator: String
         var completed: Set<Int>
     }
-    private var tasks: [String: (id: UUID, task: Task<VideoChunk, Error>)] = [:]
+    private struct PendingChunk {
+        let id: UUID
+        let task: Task<VideoChunk, Error>
+        var waiters: [UUID: CheckedContinuation<VideoChunk, Error>] = [:]
+    }
+    private var tasks: [String: PendingChunk] = [:]
     private var promotions: [String: (id: UUID, task: Task<Void, Never>)] = [:]
     private var generations: [Int: UUID] = [:]
     private var versions: [String: UUID] = [:]
@@ -32,6 +37,7 @@ actor VideoRangeCache {
         try Task.checkCancellation()
         let start = Self.alignedOffset(offset)
         if let file = try await MediaCache.shared.cachedFile(source, userID: userID) {
+            try Task.checkCancellation()
             let total = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
             guard start < total else { throw APIError.invalidResponse }
             let input = try FileHandle(forReadingFrom: file); defer { try? input.close() }
@@ -42,11 +48,13 @@ actor VideoRangeCache {
         }
         let hash = SHA256.hash(data: Data(source.utf8)).map { String(format: "%02x", $0) }.joined()
         let ownerKey = "\(userID):\(hash)", key = "\(userID):\(hash):\(start)"
-        if let existing = tasks[key] { return try await existing.task.value }
+        try Task.checkCancellation()
+        if let existing = tasks[key] { return try await waitForChunk(key: key, taskID: existing.id) }
         let generation = generations[userID] ?? UUID(); generations[userID] = generation
         let version = versions[ownerKey] ?? UUID(); versions[ownerKey] = version
         let id = UUID()
         let task = Task<VideoChunk, Error> {
+            try Task.checkCancellation()
             let directory = try MediaFiles.directory(userID: userID, component: "media-ranges").appendingPathComponent(hash, isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let index = start / Self.chunkSize
@@ -97,9 +105,36 @@ actor VideoRangeCache {
             guard generations[userID] == generation, versions[ownerKey] == version else { throw CancellationError() }
             return VideoChunk(data: bytes, offset: start, total: range.total, mimeType: http.mimeType)
         }
-        tasks[key] = (id, task)
-        defer { if tasks[key]?.id == id { tasks[key] = nil } }
-        return try await task.value
+        tasks[key] = PendingChunk(id: id, task: task)
+        return try await waitForChunk(key: key, taskID: id)
+    }
+    private func waitForChunk(key: String, taskID: UUID) async throws -> VideoChunk {
+        let waiter = UUID()
+        let chunk = try await withTaskCancellationHandler(operation: {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<VideoChunk, Error>) in
+                guard !Task.isCancelled, let entry = tasks[key], entry.id == taskID else {
+                    cancelWaiter(waiter, key: key, taskID: taskID)
+                    continuation.resume(throwing: CancellationError()); return
+                }
+                tasks[key]?.waiters[waiter] = continuation
+                Task {
+                    let result = await entry.task.result
+                    finishWaiter(waiter, key: key, taskID: taskID, result: result)
+                }
+            }
+        }, onCancel: { Task { await self.cancelWaiter(waiter, key: key, taskID: taskID) } })
+        try Task.checkCancellation()
+        return chunk
+    }
+    private func cancelWaiter(_ waiter: UUID, key: String, taskID: UUID) {
+        finishWaiter(waiter, key: key, taskID: taskID, result: .failure(CancellationError()))
+    }
+    private func finishWaiter(_ waiter: UUID, key: String, taskID: UUID, result: Result<VideoChunk, Error>) {
+        guard tasks[key]?.id == taskID else { return }
+        tasks[key]?.waiters.removeValue(forKey: waiter)?.resume(with: result)
+        if tasks[key]?.waiters.isEmpty == true {
+            tasks.removeValue(forKey: key)?.task.cancel()
+        }
     }
     private static func manifest(_ url: URL) -> Manifest? {
         guard let data = try? Data(contentsOf: url) else { return nil }
@@ -116,18 +151,21 @@ actor VideoRangeCache {
             let assembled = directory.appendingPathComponent(UUID().uuidString + ".assembled")
             defer { try? FileManager.default.removeItem(at: assembled) }
             do {
-                try await Task.detached(priority: .utility) {
+                let assembly = Task.detached(priority: .utility) {
+                    try Task.checkCancellation()
                     guard FileManager.default.createFile(atPath: assembled.path, contents: nil) else { throw APIError.invalidResponse }
                     let output = try FileHandle(forWritingTo: assembled); defer { try? output.close() }
                     let count = (manifest.total + Self.chunkSize - 1) / Self.chunkSize
                     for index in 0..<count {
+                        try Task.checkCancellation()
                         let file = directory.appendingPathComponent("\(index).bin")
                         let bytes = try Data(contentsOf: file)
                         guard bytes.count == min(Self.chunkSize, manifest.total - index * Self.chunkSize) else { throw APIError.invalidResponse }
                         try output.write(contentsOf: bytes)
                     }
                     try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: assembled.path)
-                }.value
+                }
+                try await withTaskCancellationHandler(operation: { try await assembly.value }, onCancel: { assembly.cancel() })
                 try Task.checkCancellation()
                 guard generations[userID] == generation, versions[key] == version else { return }
                 try await MediaCache.shared.seed(assembled, source: source, userID: userID)
@@ -140,7 +178,11 @@ actor VideoRangeCache {
     }
     func clear(userID: Int) throws {
         generations[userID] = UUID()
-        for key in tasks.keys.filter({ $0.hasPrefix("\(userID):") }) { tasks.removeValue(forKey: key)?.task.cancel() }
+        for key in tasks.keys.filter({ $0.hasPrefix("\(userID):") }) {
+            guard let entry = tasks.removeValue(forKey: key) else { continue }
+            entry.task.cancel()
+            for continuation in entry.waiters.values { continuation.resume(throwing: CancellationError()) }
+        }
         for key in promotions.keys.filter({ $0.hasPrefix("\(userID):") }) { promotions.removeValue(forKey: key)?.task.cancel() }
         let directory = try MediaFiles.directory(userID: userID, component: "media-ranges")
         for file in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) { try FileManager.default.removeItem(at: file) }
