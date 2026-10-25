@@ -78,8 +78,9 @@ struct ActiveCall: Identifiable {
         let expectedGeneration = generation
         loginTask = Task { [weak self] in
             defer {
-                guard let self, self.generation == expectedGeneration else { return }
-                self.loginTask = nil
+                if let self, self.generation == expectedGeneration {
+                    self.loginTask = nil
+                }
             }
             do {
                 let credentials = try await APIClient.shared.get("calls.credentials")
@@ -106,9 +107,9 @@ struct ActiveCall: Identifiable {
     }
 
     private func tencentLogin(sdkAppID: Int32, userID: String, userSig: String) async throws {
-        try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             TUILogin.login(sdkAppID, userID: userID, userSig: userSig) {
-                continuation.resume(returning: ())
+                continuation.resume()
             } fail: { code, message in
                 continuation.resume(throwing: APIError.server(Int(code), message ?? "腾讯云通话登录失败"))
             }
