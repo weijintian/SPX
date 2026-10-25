@@ -195,11 +195,21 @@ final class BackgroundMediaTransfer: NSObject, URLSessionDataDelegate, URLSessio
             if self.canceledJobs.contains(tag.key) || record.paused == true { return }
 
             do {
+                record.activeTaskID = nil
+                try self.persist(record)
+                self.records[tag.key] = record
                 if let error { throw error }
                 let result = try Self.decodeResponse(body, response: task.response)
                 if !UploadedMedia.url(in: result).isEmpty {
                     self.complete(tag.key, result: result)
                     return
+                }
+                // A 2xx response alone does not prove that this chunk was saved.
+                guard result["total"].int == record.totalChunks, result["received"].int > 0,
+                      result["received"].int <= record.totalChunks,
+                      result["upload_id"].string.isEmpty || result["upload_id"].string == tag.uploadID,
+                      result["chunk_index"].string.isEmpty || result["chunk_index"].int == tag.index else {
+                    throw APIError.invalidResponse
                 }
                 var completed = Set(record.completedChunks)
                 completed.insert(tag.index)
@@ -212,7 +222,7 @@ final class BackgroundMediaTransfer: NSObject, URLSessionDataDelegate, URLSessio
                 self.publishProgress(for: tag.key)
                 self.scheduleNext(for: tag.key)
             } catch {
-                self.retryOrFail(error, tag: tag, record: record)
+                self.reconcileChunk(tag, after: error)
             }
         }
     }
@@ -303,43 +313,96 @@ final class BackgroundMediaTransfer: NSObject, URLSessionDataDelegate, URLSessio
 
     private func retryOrFail(_ error: Error, tag: BackgroundUploadTag, record: BackgroundUploadRecord) {
         let key = tag.key
-        if canceledJobs.contains(key) { return }
+        guard !canceledJobs.contains(key), var updated = records[key], updated.paused != true else { return }
         let retryable = (error as? URLError) != nil || (error as? APIError)?.retryable == true
-        let count = record.attempts[String(tag.index), default: 0]
+        let count = updated.attempts[String(tag.index), default: 0]
         guard retryable, count < 5 else {
             fail(key, error: error)
             return
         }
-        var updated = record
+        updated.activeTaskID = nil
         updated.attempts[String(tag.index)] = count + 1
         let delay = min(30, 1 << min(count, 4))
         updated.retryNotBefore = Date().addingTimeInterval(TimeInterval(delay))
-        try? persist(updated)
+        do { try persist(updated) } catch { fail(key, error: error); return }
         records[key] = updated
         scheduleNext(for: key)
     }
 
-    private func fetchFinalResult(for key: String) {
-        guard let record = records[key], !scheduling.contains(key) else { return }
-        scheduling.insert(key)
+    // A proxy may lose a successful response (including HTTP 201). Ask the
+    // idempotent status endpoint before retransmitting or merging the file again.
+    private func reconcileChunk(_ tag: BackgroundUploadTag, after error: Error) {
+        guard let record = records[tag.key], record.paused != true, !canceledJobs.contains(tag.key) else { return }
+        guard (error as? URLError) != nil || (error as? APIError)?.retryable == true else {
+            fail(tag.key, error: error); return
+        }
+        guard !scheduling.contains(tag.key) else { return }
+        scheduling.insert(tag.key)
         Task {
             do {
                 let status = try await APIClient.shared.uploadStatus(userID: record.userID, uploadID: record.uploadID,
                                                                     totalChunks: record.totalChunks, totalBytes: record.totalBytes)
                 self.stateQueue.async {
+                    self.scheduling.remove(tag.key)
+                    defer { self.finishBackgroundEventsIfReady() }
+                    guard var current = self.records[tag.key], current.paused != true,
+                          !self.canceledJobs.contains(tag.key) else { return }
+                    if !UploadedMedia.url(in: status["result"]).isEmpty {
+                        self.complete(tag.key, result: status["result"]); return
+                    }
+                    let received = Set(status["received_chunks"].array.map(\.int).filter { $0 >= 0 && $0 < current.totalChunks })
+                    guard received.contains(tag.index) else { self.retryOrFail(error, tag: tag, record: current); return }
+                    current.completedChunks = received.sorted()
+                    current.activeTaskID = nil; current.retryNotBefore = nil
+                    current.attempts[String(tag.index)] = nil
+                    do {
+                        try self.persist(current); self.records[tag.key] = current
+                        self.publishProgress(for: tag.key); self.scheduleNext(for: tag.key)
+                    } catch { self.fail(tag.key, error: error) }
+                }
+            } catch {
+                self.stateQueue.async {
+                    self.scheduling.remove(tag.key)
+                    self.retryOrFail(error, tag: tag, record: record)
+                    self.finishBackgroundEventsIfReady()
+                }
+            }
+        }
+    }
+
+    private func fetchFinalResult(for key: String) {
+        guard var record = records[key], record.paused != true, !canceledJobs.contains(key), !scheduling.contains(key) else { return }
+        if let deadline = record.retryNotBefore, deadline > Date() {
+            scheduling.insert(key)
+            stateQueue.asyncAfter(deadline: .now() + deadline.timeIntervalSinceNow) {
+                self.scheduling.remove(key); self.fetchFinalResult(for: key); self.finishBackgroundEventsIfReady()
+            }
+            return
+        }
+        let count = record.attempts["finalize", default: 0]
+        guard count < 5 else { fail(key, error: APIError.server(503, "附件确认超时，请点击重试继续上传")); return }
+        record.attempts["finalize"] = count + 1
+        record.activeTaskID = nil
+        do { try persist(record); records[key] = record } catch { fail(key, error: error); return }
+        scheduling.insert(key)
+        let snapshot = record
+        Task {
+            do {
+                let status = try await APIClient.shared.uploadStatus(userID: snapshot.userID, uploadID: snapshot.uploadID,
+                                                                    totalChunks: snapshot.totalChunks, totalBytes: snapshot.totalBytes)
+                self.stateQueue.async {
                     self.scheduling.remove(key)
                     defer { self.finishBackgroundEventsIfReady() }
-                    guard !self.canceledJobs.contains(key), self.records[key]?.paused != true,
-                          self.records[key] != nil else { return }
+                    guard !self.canceledJobs.contains(key), var recovery = self.records[key], recovery.paused != true else { return }
                     if !UploadedMedia.url(in: status["result"]).isEmpty { self.complete(key, result: status["result"]) }
                     else {
-                        var recovery = record
                         recovery.completedChunks = status["received_chunks"].array.map(\.int)
-                            .filter { $0 >= 0 && $0 < record.totalChunks }
-                        let lastChunk = record.totalChunks - 1
-                        if Set(recovery.completedChunks).count == record.totalChunks {
+                            .filter { $0 >= 0 && $0 < snapshot.totalChunks }
+                        let lastChunk = snapshot.totalChunks - 1
+                        if Set(recovery.completedChunks).count == snapshot.totalChunks {
                             recovery.completedChunks.removeAll { $0 == lastChunk }
                         }
+                        recovery.retryNotBefore = Date().addingTimeInterval(TimeInterval(1 << min(count, 4)))
                         do {
                             try self.persist(recovery)
                             self.records[key] = recovery
@@ -352,7 +415,13 @@ final class BackgroundMediaTransfer: NSObject, URLSessionDataDelegate, URLSessio
             } catch {
                 self.stateQueue.async {
                     self.scheduling.remove(key)
-                    self.fail(key, error: error)
+                    if var current = self.records[key], current.paused != true, !self.canceledJobs.contains(key) {
+                        if (error as? URLError) != nil || (error as? APIError)?.retryable == true {
+                            current.retryNotBefore = Date().addingTimeInterval(TimeInterval(1 << min(count, 4)))
+                            do { try self.persist(current); self.records[key] = current; self.fetchFinalResult(for: key) }
+                            catch { self.fail(key, error: error) }
+                        } else { self.fail(key, error: error) }
+                    }
                     self.finishBackgroundEventsIfReady()
                 }
             }
@@ -459,14 +528,6 @@ final class BackgroundMediaTransfer: NSObject, URLSessionDataDelegate, URLSessio
     }
 
     private static func decodeResponse(_ data: Data, response: URLResponse?) throws -> JSON {
-        guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
-        if http.statusCode == 401 { throw APIError.unauthorized }
-        guard let envelope = try? JSONDecoder().decode(APIEnvelope.self, from: data) else {
-            throw APIError.server(http.statusCode, "服务器暂时不可用（\(http.statusCode)）")
-        }
-        guard (200..<300).contains(http.statusCode), envelope.code.string == "0" else {
-            throw APIError.server(http.statusCode, envelope.message ?? "附件上传失败")
-        }
-        return envelope.data ?? .null
+        try APIClient.decodeEnvelope(data, response: response)
     }
 }

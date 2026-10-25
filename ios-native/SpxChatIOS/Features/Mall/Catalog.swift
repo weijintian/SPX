@@ -119,44 +119,193 @@ struct ProductDetailView: View {
     @State private var report = false
     @State private var reason = ""
     @State private var visible = false
+    @State private var selectedImage = 0
+    @State private var previewImages = false
+    @State private var selectedSection = "details"
+    @State private var loading = false
+    @State private var contacting = false
+    @State private var merchantChat: Record?
     @Environment(\.scenePhase) private var phase
     private var current: Record { detail.id > 0 ? detail : product }
     private var images: [String] { let urls = current["images"].array.map(\.string).filter { !$0.isEmpty }; return urls.isEmpty ? [current.image] : urls }
+    private var shop: JSON { current["shop"] }
+    private var group: JSON { current["consultation_group"] }
+    private var physical: Bool { current["product_type"].string == "physical" }
+    private var local: Bool { current["product_type"].string == "local" }
+    private var fulfillment: String {
+        if local { return "\(current["service_valid_days"] == .null ? 30 : current["service_valid_days"].int) 天内有效" }
+        let days = current["delivery_days"] == .null ? 3 : current["delivery_days"].int
+        return (days == 0 ? "当日" : "\(days) 天内") + (physical ? "发货" : "交付")
+    }
+    private var deliveryFee: String {
+        if physical { return Money.positive(current["shipping_fee"].string) ? "运费 \(DisplayLabels.amount(current["shipping_fee"].string)) SPX001" : "包邮" }
+        return local ? (current["appointment_required"].flag ? "需预约" : "到店使用") : "线上交付"
+    }
+    private var carousel: some View {
+        GeometryReader { geometry in
+            TabView(selection: $selectedImage) {
+                ForEach(Array(images.enumerated()), id: \.offset) { index, url in
+                    CachedImage(source: url, fit: true, maximumPixelSize: 1200)
+                        .frame(width: geometry.size.width, height: geometry.size.height, alignment: .center)
+                        .background(.white).contentShape(Rectangle()).onTapGesture { previewImages = true }.tag(index)
+                }
+            }.tabViewStyle(.page(indexDisplayMode: .never))
+        }.aspectRatio(1, contentMode: .fit).background(.white)
+            .clipShape(RoundedRectangle(cornerRadius: 18))
+            .overlay(alignment: .bottomTrailing) {
+                Text("\(min(selectedImage + 1, images.count)) / \(images.count)").font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white).padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(.black.opacity(0.45), in: Capsule()).padding(12).allowsHitTesting(false)
+            }
+    }
+    private var summaryCard: some View {
+        SPXCard { VStack(alignment: .leading, spacing: 14) {
+            PriceLabel(cny: current["cny_price"].string, estimate: Money.estimate(cny: current["cny_price"].string, usd: usd), legacy: current["spx_price"].string)
+            Text(current.name).font(.system(size: 21, weight: .bold)).foregroundStyle(SPXColor.ink)
+            Text(current["description"].string).font(.system(size: 14)).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
+            Divider()
+            HStack(spacing: 8) {
+                Text(fulfillment).frame(maxWidth: .infinity)
+                Text(deliveryFee).frame(maxWidth: .infinity)
+                Text("库存 \(current["stock"].int) 件").frame(maxWidth: .infinity)
+            }.font(.system(size: 11)).foregroundStyle(SPXColor.muted)
+        } }
+    }
+    private var consultationCard: some View {
+        Group {
+            if group["id"].int > 0, !group["group_code"].string.isEmpty {
+                NavigationLink { GroupJoinView(initialCode: group["group_code"].string) } label: {
+                    HStack(spacing: 12) {
+                        SPXIcon("chat").frame(width: 28, height: 28).foregroundStyle(SPXColor.commerce)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("加入商品群").font(.system(size: 15, weight: .semibold)).foregroundStyle(SPXColor.ink)
+                            Text(group["name"].string + " · 购买前问一问").font(.system(size: 12)).foregroundStyle(SPXColor.muted).lineLimit(2)
+                            Text("群号 " + group["group_code"].string).font(.system(size: 11)).foregroundStyle(SPXColor.muted)
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                        Text("加入").font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
+                            .padding(.horizontal, 16).frame(minHeight: 36).background(SPXColor.commerce, in: RoundedRectangle(cornerRadius: 10))
+                    }.padding(16).background(SPXColor.tint, in: RoundedRectangle(cornerRadius: 16))
+                }.buttonStyle(.plain).accessibilityLabel("商品咨询群，\(group["name"].string)，点击加入")
+            } else {
+                HStack(spacing: 12) {
+                    SPXIcon("chat").frame(width: 24, height: 24).foregroundStyle(SPXColor.muted)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("商品咨询群").font(.system(size: 14, weight: .medium)).foregroundStyle(SPXColor.ink)
+                        Text(loading ? "正在读取咨询群…" : "商家暂未设置可用咨询群，可联系商家咨询").font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+                    }
+                    Spacer(minLength: 0)
+                }.padding(16).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 16))
+            }
+        }
+    }
+    private var shopCard: some View {
+        NavigationLink { ShopDetailView(id: shop["id"].int) } label: {
+            SPXCard { VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    Avatar(url: shop["logo_url"].string, name: shop["name"].string, size: 44)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(shop["name"].string).font(.system(size: 16, weight: .semibold)).foregroundStyle(SPXColor.ink)
+                        if !shop["business_hours"].string.isEmpty { Text("服务时间 " + shop["business_hours"].string).font(.system(size: 11)).foregroundStyle(SPXColor.muted) }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                    Text(shop["level"].string == "gold" ? "黄金店铺" : "初级店铺").font(.system(size: 10, weight: .medium)).foregroundStyle(SPXColor.commerce)
+                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(SPXColor.muted)
+                }
+                if !shop["address"].string.isEmpty { Text(shop["address"].string).font(.system(size: 12)).foregroundStyle(SPXColor.muted) }
+            } }
+        }.buttonStyle(.plain)
+    }
+    @ViewBuilder private var sectionContent: some View {
+        if selectedSection == "details" {
+            SPXCard { Text(current.text("detail_text", "description")).font(.system(size: 14)).foregroundStyle(SPXColor.ink).textSelection(.enabled).fixedSize(horizontal: false, vertical: true) }
+            ForEach(Array(current["detail_images"].array.enumerated()), id: \.offset) { _, image in
+                CachedImage(source: image.string, fit: true, maximumPixelSize: 1200).frame(maxWidth: .infinity).background(.white).clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            if !current["video_url"].string.isEmpty { ProductVideo(source: current["video_url"].string).frame(height: 220) }
+            NavigationLink { ProductReviewsView(productID: current.id) } label: { SPXCard { SPXSettingsRow(title: "查看买家评价", icon: "star", detail: "了解购买体验") } }.buttonStyle(.plain)
+        } else if selectedSection == "parameters" {
+            SPXCard { VStack(alignment: .leading, spacing: 12) {
+                SPXSectionTitle(title: "规格参数")
+                Text(current["parameters"].string.isEmpty ? "商家暂未填写更多参数，可查看商品规格或加入商品群咨询。" : current["parameters"].string).font(.system(size: 14)).foregroundStyle(SPXColor.muted).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            } }
+        } else {
+            SPXCard { VStack(alignment: .leading, spacing: 14) {
+                SPXSectionTitle(title: "配送与使用")
+                Text(fulfillment + " · " + deliveryFee).font(.system(size: 14)).foregroundStyle(SPXColor.ink)
+                if local { Text("到店接受服务时出示订单核销码").font(.system(size: 13)).foregroundStyle(SPXColor.muted) }
+                if !current["delivery_note"].string.isEmpty { Text(current["delivery_note"].string).font(.system(size: 13)).foregroundStyle(SPXColor.muted) }
+                Divider()
+                SPXSectionTitle(title: "售后与服务")
+                Text(current["service_terms"].string.isEmpty ? "购买前请核对规格和服务说明，售后可在订单详情中申请。" : current["service_terms"].string).font(.system(size: 14)).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
+                Text("SPX001 为实时估算，1 USD 按 6.7 CNY 换算，最终支付以确认订单的锁定报价为准。").font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+            } }
+        }
+    }
+    private var purchaseBar: some View {
+        HStack(spacing: 12) {
+            if shop["id"].int > 0 {
+                NavigationLink { ShopDetailView(id: shop["id"].int) } label: { footerLabel("店铺", icon: "store") }
+                Button { contactMerchant() } label: { footerLabel(contacting ? "连接中" : "联系商家", icon: "chat") }.disabled(contacting || shop["owner_user_id"].int < 1)
+            }
+            Button { toggleFavorite() } label: { footerLabel("收藏", icon: favorite ? "heart.fill" : "heart") }.disabled(favoriteBusy)
+            NavigationLink { CheckoutView(product: current) } label: {
+                Text(current["stock"].int > 0 ? "选择规格 · 立即购买" : "暂时缺货").font(.system(size: 15, weight: .semibold))
+                    .frame(maxWidth: .infinity, minHeight: 48).foregroundStyle(.white)
+                    .background(SPXColor.commerce.opacity(current["stock"].int > 0 ? 1 : 0.5), in: RoundedRectangle(cornerRadius: 14))
+            }.disabled(loading || detail.id == 0 || current["stock"].int < 1)
+        }.buttonStyle(.plain).padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 8).background(SPXColor.card)
+    }
+    private func footerLabel(_ title: String, icon: String) -> some View {
+        VStack(spacing: 4) { SPXIcon(icon).frame(width: 21, height: 21); Text(title).font(.system(size: 10)) }
+            .foregroundStyle(SPXColor.muted).frame(minWidth: 32, minHeight: 48)
+    }
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                TabView { ForEach(images, id: \.self) { CachedImage(source: $0).frame(maxWidth: .infinity, maxHeight: .infinity).background(.white) } }
-                    .tabViewStyle(.page).aspectRatio(1, contentMode: .fit).background(.white)
-                VStack(alignment: .leading, spacing: 18) {
-                    PriceLabel(cny: current["cny_price"].string, estimate: Money.estimate(cny: current["cny_price"].string, usd: usd), legacy: current["spx_price"].string)
-                    Text(current.name).font(.title2.bold())
-                    Text(current["description"].string).foregroundStyle(.secondary)
-                    HStack { Label(current["product_type"].string == "physical" ? "实物配送" : current["product_type"].string == "local" ? "到店服务" : "数字交付", systemImage: "shippingbox"); Spacer(); Text("库存 \(current["stock"].string)") }.font(.caption).foregroundStyle(.secondary)
-                    if current["shop"]["id"].int > 0 { NavigationLink { ShopDetailView(id: current["shop"]["id"].int) } label: { SPXCard { HStack { Avatar(url: current["shop"]["logo_url"].string, name: current["shop"]["name"].string); Text(current["shop"]["name"].string).font(.headline); Spacer(); Image(systemName: "chevron.right") } } } }
-                    if current["consultation_group"]["id"].int > 0 { NavigationLink("商品咨询群") { GroupJoinView(initialCode: current["consultation_group"]["group_code"].string) } }
-                    NavigationLink("商品评价") { ProductReviewsView(productID: current.id) }
-                    Text("商品详情").font(.title3.bold())
-                    Text(current.text("detail_text", "description")).textSelection(.enabled)
-                    ForEach(current["detail_images"].array.map(\.string), id: \.self) { CachedImage(source: $0).frame(maxWidth: .infinity) }
-                    if !current["video_url"].string.isEmpty { ProductVideo(source: current["video_url"].string).frame(height: 220) }
-                    ForEach(["parameters", "service_terms", "delivery_note"], id: \.self) { key in if !current[key].string.isEmpty { Text(current[key].string).font(.subheadline).foregroundStyle(.secondary) } }
-                    Text("SPX001 为实时估算，1 USD 固定按 6.7 CNY 换算，最终支付以确认订单的锁定报价为准。").font(.caption).foregroundStyle(.secondary)
-                    if let error { ErrorBanner(message: error) }
-                }.padding(.horizontal, 18).padding(.bottom, 24)
-            }
+            LazyVStack(alignment: .leading, spacing: 14) {
+                carousel
+                summaryCard
+                NavigationLink { CheckoutView(product: current) } label: { SPXCard { SPXSettingsRow(title: "选择规格与数量", icon: "square.grid.2x2", detail: current["variants"].array.isEmpty ? "默认规格" : "\(current["variants"].array.count) 种规格可选") } }.buttonStyle(.plain).disabled(loading || detail.id == 0 || current["stock"].int < 1)
+                consultationCard
+                if shop["id"].int > 0 { shopCard }
+                SPXFilterTabs(options: [("details", "商品详情"), ("parameters", "规格参数"), ("service", "购买须知")], selection: $selectedSection)
+                sectionContent
+                if let error { ErrorBanner(message: error); Button("重新读取商品") { Task { await loadProduct() } }.disabled(loading).frame(maxWidth: .infinity, minHeight: 44) }
+            }.padding(16)
         }.spxPage().navigationTitle("商品详情").navigationBarTitleDisplayMode(.inline)
-            .safeAreaInset(edge: .bottom) {
-                HStack(spacing: 18) {
-                    Button { toggleFavorite() } label: { Image(systemName: favorite ? "heart.fill" : "heart").font(.title2) }.accessibilityLabel("收藏").disabled(favoriteBusy)
-                    NavigationLink { CheckoutView(product: current) } label: { Text("立即购买").fontWeight(.semibold).frame(maxWidth: .infinity).padding(14).background(SPXColor.primary, in: RoundedRectangle(cornerRadius: 15)).foregroundStyle(.white) }.disabled(current["stock"].int < 1)
-                }.padding().background(SPXColor.card)
-            }
+            .safeAreaInset(edge: .bottom, spacing: 0) { purchaseBar }
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Menu { Button("分享给朋友", systemImage: "bubble.left") { shareInChat = true }; if let url = URL(string: "https://spx001.top/spxchat/product-share.php?id=\(current.id)") { ShareLink(item: url) }; Button("举报商品") { report = true } } label: { Image(systemName: "ellipsis") } } }
             .sheet(isPresented: $shareInChat) { ForwardMessageView(message: Record(["message_type": "product", "content": .string(String(data: (try? JSONEncoder().encode(Record(["product_id": current["id"]]))) ?? Data(), encoding: .utf8) ?? "")])) }
             .alert("举报商品", isPresented: $report) { TextField("原因", text: $reason); Button("提交") { Task { do { try await APIClient.shared.post("product.report", ["product_id": .number(Decimal(current.id)), "reason": .string(reason)]) } catch { self.error = error.localizedDescription } } }; Button("取消", role: .cancel) { } }
-            .task { do { detail = try await APIClient.shared.get("product", ["id": String(product.id)]).record; favorite = try await APIClient.shared.get("product.favorite.status", ["product_id": String(product.id)])["enabled"].flag } catch { self.error = error.localizedDescription } }
+            .task(id: product.id) { await loadProduct(); await loadFavorite() }
+            .refreshable { await loadProduct() }
+            .navigationDestination(item: $merchantChat) { ChatDetailView(item: $0, isGroup: false) }
+            .fullScreenCover(isPresented: $previewImages) { MediaPreview(messages: images.enumerated().map { index, url in Record(["id": .number(Decimal(index + 1)), "message_type": "image", "media_url": .string(url)]) }, initialID: selectedImage + 1) }
             .onAppear { visible = true }.onDisappear { visible = false }
             .task(id: String(describing: phase) + String(visible)) { guard visible, phase == .active else { return }; while !Task.isCancelled { do { usd = try await APIClient.shared.get("mall.valuation")["spx_usdt"].string; try await Task.sleep(for: .seconds(30)) } catch is CancellationError { return } catch { self.error = error.localizedDescription; do { try await Task.sleep(for: .seconds(30)) } catch { return } } } }
+    }
+    private func loadProduct() async {
+        guard !loading else { return }
+        loading = true; defer { loading = false }
+        do {
+            let value = try await APIClient.shared.get("product", ["id": String(product.id)]).record
+            guard value.id > 0 else { throw APIError.invalidResponse }
+            detail = value; selectedImage = min(selectedImage, max(0, images.count - 1)); error = nil
+        } catch is CancellationError { return } catch { self.error = error.localizedDescription; return }
+    }
+    private func loadFavorite() async {
+        do { favorite = try await APIClient.shared.get("product.favorite.status", ["product_id": String(product.id)])["enabled"].flag }
+        catch is CancellationError { } catch { self.error = error.localizedDescription }
+    }
+    private func contactMerchant() {
+        guard !contacting, shop["owner_user_id"].int > 0 else { return }
+        contacting = true
+        Task {
+            defer { contacting = false }
+            do {
+                let result = try await APIClient.shared.post("chats.create", ["peer_user_id": shop["owner_user_id"]])
+                guard result["chat_id"].int > 0 else { throw APIError.invalidResponse }
+                merchantChat = Record(["id": result["chat_id"], "peer_user_id": shop["owner_user_id"], "nickname": shop["name"], "avatar_url": shop["logo_url"]])
+            } catch { self.error = error.localizedDescription }
+        }
     }
     private func toggleFavorite() { guard !favoriteBusy else { return }; favoriteBusy = true; Task { defer { favoriteBusy = false }; do { try await APIClient.shared.post("product.favorite", ["product_id": .number(Decimal(current.id)), "enabled": .bool(!favorite)]); favorite.toggle() } catch { self.error = error.localizedDescription } } }
 }

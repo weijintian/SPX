@@ -638,7 +638,7 @@ struct ConversationView: View {
             .sheet(item: $filePreview) { message in FileAttachmentView(message: message, userID: userID) }
     }
     private var plusGrid: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 20) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 16) {
             PhotosPicker(selection: $photos, maxSelectionCount: 9, matching: .any(of: [.images, .videos])) { PlusAction(title: sendOriginal ? "相册 · 原图" : "相册", icon: "photo.on.rectangle") }
                 .contextMenu { Toggle("发送原图", isOn: $sendOriginal) }
                 .disabled(processingPhotos)
@@ -649,8 +649,10 @@ struct ConversationView: View {
             }
             Button { packet = true } label: { PlusAction(title: "红包", icon: "gift") }
             Button { documents = true } label: { PlusAction(title: "文件", icon: "doc") }
-            Button { schedule = true } label: { PlusAction(title: "定时发送", icon: "clock") }
             Button { location = true } label: { PlusAction(title: "位置", icon: "location") }
+            Menu {
+                Button { schedule = true } label: { Label("定时发送", systemImage: "clock") }
+            } label: { PlusAction(title: "更多", icon: "ellipsis") }
             if isGroup { Button { mentioning = true } label: { PlusAction(title: "提醒成员", icon: "at") } }
         }.buttonStyle(.plain)
     }
@@ -869,5 +871,12 @@ struct PendingMessageBubble: View {
 struct PlusAction: View {
     let title: String
     let icon: String
-    var body: some View { VStack(spacing: 8) { Image(systemName: icon).font(.system(size: 23, weight: .regular)).frame(width: 54, height: 52).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 16)); Text(title).font(.caption2) }.foregroundStyle(SPXColor.ink).frame(maxWidth: .infinity) }
+    var body: some View {
+        VStack(spacing: 8) {
+            SPXIcon(icon).frame(width: 25, height: 25).frame(width: 48, height: 48)
+                .background(SPXColor.card, in: RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(SPXColor.line, lineWidth: 0.7))
+            Text(title).font(.system(size: 12)).lineLimit(1).minimumScaleFactor(0.85)
+        }.foregroundStyle(SPXColor.ink).frame(maxWidth: .infinity, minHeight: 82).contentShape(Rectangle())
+    }
 }

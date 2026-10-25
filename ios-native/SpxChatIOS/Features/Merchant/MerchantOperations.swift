@@ -174,7 +174,7 @@ struct MerchantOrdersView: View {
     @State private var busy = false
     @State private var error: String?
     var body: some View {
-        SPXDetailPage { ForEach(rows.filter { !onlyAfterSale || !["none", ""].contains($0["after_sale_status"].string) }) { order in NavigationLink { MerchantFulfillmentView(order: order, sourcePage: (rows.firstIndex(where: { $0.id == order.id }) ?? 0) / 30 + 1) } label: { SPXCard { OrderSummary(order: order) } }.buttonStyle(.plain) }; if rows.isEmpty && !busy { EmptyState(title: onlyAfterSale ? "暂无售后申请" : "暂无订单", icon: "shippingbox") }; if busy && rows.isEmpty { ProgressView("正在加载订单…").frame(maxWidth: .infinity) }; if more { Button(busy ? "正在加载…" : "加载更多") { Task { await load(reset: false) } }.disabled(busy) } }
+        SPXDetailPage { ForEach(rows.filter { !onlyAfterSale || !["none", ""].contains($0["after_sale_status"].string) }) { order in NavigationLink { MerchantFulfillmentView(order: order, sourcePage: (rows.firstIndex(where: { $0.id == order.id }) ?? 0) / 30 + 1) } label: { SPXCard { VStack(alignment: .leading, spacing: 12) { OrderSummary(order: order); MerchantSettlementSummary(order: order) } } }.buttonStyle(.plain) }; if rows.isEmpty && !busy { EmptyState(title: onlyAfterSale ? "暂无售后申请" : "暂无订单", icon: "shippingbox") }; if busy && rows.isEmpty { ProgressView("正在加载订单…").frame(maxWidth: .infinity) }; if more { Button(busy ? "正在加载…" : "加载更多") { Task { await load(reset: false) } }.disabled(busy) } }
             .navigationTitle(onlyAfterSale ? "售后管理" : "订单管理").task { await load(reset: true) }.refreshable { await load(reset: true) }.errorAlert($error)
             .onReceive(NotificationCenter.default.publisher(for: .spxOrdersChanged).debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { event in
                 Task { if await AccountMutation.isCurrent(event) { await load(reset: true) } }
@@ -191,6 +191,22 @@ struct MerchantOrdersView: View {
             if reset { rows = list } else { let ids = Set(rows.map(\.id)); rows += list.filter { !ids.contains($0.id) } }
             page = next; more = list.count == 30; error = nil
         } catch is CancellationError { } catch { if loadID == requestID { self.error = error.localizedDescription } }
+    }
+}
+
+struct MerchantSettlementSummary: View {
+    let order: Record
+    private var net: String { order["merchant_net_amount"].string.isEmpty ? order["total_spx"].string : order["merchant_net_amount"].string }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            InfoRow(title: "平台手续费", value: DisplayLabels.amount(order["settlement_fee"].string) + " SPX001")
+            if ["refunded", "cancelled"].contains(order["status"].string) || order["settlement_status"].string == "refunded" {
+                Text("订单已退款或取消，不结算货款").font(.caption).foregroundStyle(SPXColor.muted)
+            } else {
+                InfoRow(title: order["settlement_status"].string == "settled" ? "实际到账" : "预计净到账", value: DisplayLabels.amount(net) + " SPX001")
+                if order["settlement_status"].string != "settled" { Text("完成履约且无待处理售后后结算；退款不结算").font(.caption).foregroundStyle(SPXColor.muted) }
+            }
+        }
     }
 }
 
@@ -212,7 +228,7 @@ struct MerchantFulfillmentView: View {
     private var activeAfterSale: Bool { ["requested", "return_approved", "return_shipped"].contains(order["after_sale_status"].string) }
     var body: some View {
         SPXDetailPage {
-            SPXPanel("订单信息") { OrderSummary(order: order, showDetail: false); InfoRow(title: "订单编号", value: order["id"].string); InfoRow(title: "买家备注", value: order["buyer_note"].string) }
+            SPXPanel("订单信息") { OrderSummary(order: order, showDetail: false); MerchantSettlementSummary(order: order); InfoRow(title: "订单编号", value: order["id"].string); InfoRow(title: "买家备注", value: order["buyer_note"].string) }
             if loading { SPXCard { ProgressView("正在核对订单状态…") } }
             if !OrderPresentation.address(order).fields.isEmpty {
                 SPXPanel("收货信息") {

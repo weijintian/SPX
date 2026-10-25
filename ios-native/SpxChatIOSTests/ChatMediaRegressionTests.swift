@@ -3,6 +3,32 @@ import Combine
 @testable import SpxChatIOS
 
 final class ChatMediaRegressionTests: XCTestCase {
+    func testUploadEnvelopeAccepts201AndUTF8BOM() throws {
+        let url = URL(string: "https://example.test/upload")!
+        let response = HTTPURLResponse(url: url, statusCode: 201, httpVersion: nil, headerFields: nil)!
+        let body = Data(#"{"code":0,"data":{"url":"https://example.test/video.mp4"}}"#.utf8)
+        for data in [body, Data([0xEF, 0xBB, 0xBF]) + body] {
+            let result = try APIClient.decodeEnvelope(data, response: response)
+            XCTAssertEqual(result["url"].string, "https://example.test/video.mp4")
+        }
+    }
+
+    func testMalformed201IsRecoverableAndBusinessRejectionIsPreserved() {
+        let url = URL(string: "https://example.test/upload")!
+        let response = HTTPURLResponse(url: url, statusCode: 201, httpVersion: nil, headerFields: nil)!
+        XCTAssertThrowsError(try APIClient.decodeEnvelope(Data("truncated".utf8), response: response)) { error in
+            XCTAssertTrue((error as? APIError)?.retryable == true)
+        }
+        let rejected = Data(#"{"code":422,"message":"文件超过限制","data":null}"#.utf8)
+        XCTAssertThrowsError(try APIClient.decodeEnvelope(rejected, response: response)) { error in
+            XCTAssertEqual(error.localizedDescription, "文件超过限制")
+            XCTAssertFalse((error as? APIError)?.retryable == true)
+        }
+        let unauthorized = HTTPURLResponse(url: url, statusCode: 401, httpVersion: nil, headerFields: nil)!
+        XCTAssertThrowsError(try APIClient.decodeEnvelope(Data(), response: unauthorized)) { error in
+            if case APIError.unauthorized = error { } else { XCTFail("401 must require login") }
+        }
+    }
     func testImageBubbleUsesAndroidAspectBoundsAndFitsNarrowProposals() {
         let cases: [(CGSize, CGFloat, CGSize)] = [
             (CGSize(width: 480, height: 480), 220, CGSize(width: 220, height: 220)),

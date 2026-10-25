@@ -8,7 +8,8 @@ struct RedPacketSendView: View {
     @EnvironmentObject private var session: SessionStore
     @Environment(\.dismiss) private var dismiss
     @State private var mode = "ordinary"
-    @State private var count = 1
+    @State private var countText = "1"
+    @FocusState private var inputFocus: PacketInput?
     @State private var amount = ""
     @State private var greeting = "恭喜发财，大吉大利"
     @State private var password = ""
@@ -18,6 +19,9 @@ struct RedPacketSendView: View {
     @State private var error: String?
     @State private var confirm = false
     @State private var restored = false
+    private enum PacketInput: Hashable { case count, amount, greeting }
+    private var count: Int { scope == "group" ? Int(countText) ?? 0 : 1 }
+    private var validCount: Bool { (1...100).contains(count) }
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -25,11 +29,27 @@ struct RedPacketSendView: View {
                     HStack { SPXIcon("gift").frame(width: 22,height: 22); Text("SPX001 红包").font(.system(size: 15,weight: .semibold)); Spacer() }.foregroundStyle(SPXColor.hex(0xC34438))
                     SPXPanel("红包信息") {
                         Picker("红包类型",selection: $mode) { Text("普通红包").tag("ordinary"); if scope == "group" { Text("拼手气红包").tag("random") } }.pickerStyle(.segmented)
-                        if scope == "group" { Stepper("红包个数：\(count)",value: $count,in: 1...100) }
-                        HStack { Text("总金额").font(.system(size: 15)); Spacer(); TextField("0.00",text: $amount).keyboardType(.decimalPad).multilineTextAlignment(.trailing); Text("SPX001").font(.system(size: 12)).foregroundStyle(SPXColor.muted) }
+                        if scope == "group" {
+                            HStack {
+                                Text("红包个数").font(.system(size: 15))
+                                Spacer()
+                                TextField("填写个数", text: $countText)
+                                    .keyboardType(.numberPad).multilineTextAlignment(.trailing)
+                                    .frame(minWidth: 70, maxWidth: 130).focused($inputFocus, equals: .count)
+                                    .accessibilityLabel("红包个数，1 至 100 个")
+                                    .onChange(of: countText) { _, value in
+                                        let digits = value.filter { $0.isASCII && $0.isNumber }
+                                        if digits != value { countText = digits }
+                                    }
+                                Text("个").font(.system(size: 13)).foregroundStyle(SPXColor.muted)
+                            }.frame(minHeight: 44)
+                            Text(validCount ? "每次可发送 1–100 个红包" : "请输入 1–100 之间的整数")
+                                .font(.system(size: 12)).foregroundStyle(validCount ? SPXColor.muted : Color.red)
+                        }
+                        HStack { Text("总金额").font(.system(size: 15)); Spacer(); TextField("0.00",text: $amount).keyboardType(.decimalPad).multilineTextAlignment(.trailing).focused($inputFocus, equals: .amount); Text("SPX001").font(.system(size: 12)).foregroundStyle(SPXColor.muted) }.frame(minHeight: 44)
                         Text(mode == "random" ? "每个人领取的金额随机分配" : "每个人领取相同金额").font(.system(size: 12)).foregroundStyle(SPXColor.muted)
                     }
-                    SPXPanel("祝福语") { TextField("恭喜发财，大吉大利",text: $greeting).onChange(of: greeting) { _, value in if value.count > 50 { greeting = String(value.prefix(50)) } } }
+                    SPXPanel("祝福语") { TextField("恭喜发财，大吉大利",text: $greeting).focused($inputFocus, equals: .greeting).onChange(of: greeting) { _, value in if value.count > 50 { greeting = String(value.prefix(50)) } } }
                     Text("\(DisplayLabels.amount(amount.isEmpty ? "0" : amount)) SPX001").font(.system(size: 30,weight: .semibold)).monospacedDigit().minimumScaleFactor(0.5).lineLimit(1).padding(.vertical,16)
                     if uncertain { ErrorBanner(message: "上次发送结果待确认，请先核对，避免重复扣款。") }
                     Text("红包到账至 SPX001 资产，未领取部分由服务器按到期规则退回。普通红包按六位小数均分，实际金额以确认结果为准。")
@@ -37,13 +57,16 @@ struct RedPacketSendView: View {
                 }.padding(20).disabled(!restored || uncertain || busy)
             }.scrollDismissesKeyboard(.interactively)
                 .safeAreaInset(edge: .bottom) {
-                    Button { if uncertain { resolve() } else { password = ""; confirm = true } } label: {
+                    Button { inputFocus = nil; if uncertain { resolve() } else { password = ""; confirm = true } } label: {
                         HStack { Spacer(); if busy { ProgressView().tint(.white) }; Text(uncertain ? "核对上次发送结果" : "塞钱进红包"); Spacer() }
                             .font(.system(size: 16,weight: .semibold)).foregroundStyle(.white).frame(minHeight: 50).background(SPXColor.hex(0xD34B3F).opacity(busy ? 0.5 : 1),in: RoundedRectangle(cornerRadius: 14))
-                    }.disabled(!restored || busy || (!uncertain && !Money.positive(amount,scale: 6))).padding(16).background(SPXColor.card)
+                    }.disabled(!restored || busy || (!uncertain && (!validCount || !Money.positive(amount,scale: 6)))).padding(16).background(SPXColor.card)
                 }
                 .navigationTitle("发红包").spxPage()
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() }.disabled(busy) } }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() }.disabled(busy) }
+                    ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("完成") { inputFocus = nil } }
+                }
                 .tint(SPXColor.hex(0xC34438)).errorAlert($error)
                 .alert("确认发送红包",isPresented: $confirm) {
                     SecureField("请输入账号密码",text: $password).textContentType(.password)
@@ -55,6 +78,7 @@ struct RedPacketSendView: View {
     }
     private func send() {
         guard restored, !busy, !uncertain, let owner = session.user?.id, owner > 0 else { return }
+        guard validCount else { error = "红包个数请输入 1–100 之间的整数"; return }
         guard greeting.count <= 50 else { error = "祝福语最多 50 字"; return }
         guard let total = Decimal(string: amount), total >= Decimal(count) * Decimal(string: "0.000001")! else { error = "每个红包至少 0.000001 SPX001"; return }
         if mode == "ordinary" { let each = total / Decimal(count); var raw = each; var rounded = Decimal(); NSDecimalRound(&rounded, &raw, 6, .down); guard rounded * Decimal(count) == total else { error = "普通红包需可按六位小数平均分配，请调整总额或个数"; return } }

@@ -153,7 +153,7 @@ function chatReceiveChunk(int $uid, array $post, array $file, string $directory,
             if (is_file($part)) { $received++; $bytes += (int)filesize($part); }
         }
         if ($bytes > CHAT_UPLOAD_MAX_BYTES) throw new DomainException('附件不能超过 1 GB', 413);
-        if ($received !== $total) return ['received'=>$received,'total'=>$total];
+        if ($received !== $total) return ['received'=>$received,'total'=>$total,'upload_id'=>$id,'chunk_index'=>$index];
         if ($expected !== null && $bytes !== $expected) throw new DomainException('附件大小不一致，请重新选择附件', 422);
         $assembled = tempnam($folder, 'assembled_');
         if ($assembled === false) throw new RuntimeException('无法合并附件');

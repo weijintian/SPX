@@ -213,7 +213,10 @@ struct GroupJoinView: View {
         }.navigationTitle("加入群组").navigationDestination(item: $chat) { ChatDetailView(item: $0, isGroup: true) }
             .safeAreaInset(edge: .bottom) { if let result, resultCode == normalizedCode { SPXBottomAction { Button(joining ? "正在加入…" : "加入群组") { join(result, code: resultCode) }.disabled(joining) } } }
             .onAppear { if code.isEmpty { code = initialCode } }
-            .onChange(of: code) { _, _ in result = nil; resultCode = ""; requestID = UUID(); searching = false }
+            .onChange(of: code) { _, _ in
+                result = nil; resultCode = ""; requestID = UUID(); searching = false
+                if normalizedCode.count == 6, normalizedCode == initialCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() { search() }
+            }
             .errorAlert($error)
     }
     private func search() {

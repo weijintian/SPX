@@ -52,7 +52,7 @@ struct SPXPrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.font(.system(size: 15, weight: .semibold))
             .foregroundStyle(.white).frame(minHeight: 48)
-            .background(SPXColor.hex(0x2D4ECF).opacity(enabled ? (configuration.isPressed ? 0.8 : 1) : 0.4), in: RoundedRectangle(cornerRadius: 14))
+            .background(SPXColor.hex(0x2869EA).opacity(enabled ? (configuration.isPressed ? 0.8 : 1) : 0.4), in: RoundedRectangle(cornerRadius: 14))
             .contentShape(RoundedRectangle(cornerRadius: 14))
     }
 }
@@ -73,9 +73,9 @@ struct SPXMenuRow: View {
             Spacer(minLength: 8)
             SPXIcon("chevron").foregroundStyle(SPXColor.muted.opacity(0.6)).frame(width: 17, height: 17)
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
-            .background(SPXColor.card, in: RoundedRectangle(cornerRadius: 18))
-            .overlay(RoundedRectangle(cornerRadius: 18).stroke(SPXColor.line, lineWidth: 0.7))
-            .contentShape(RoundedRectangle(cornerRadius: 18))
+            .background(SPXColor.card, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(SPXColor.line, lineWidth: 0.7))
+            .contentShape(RoundedRectangle(cornerRadius: 16))
     }
 }
 
@@ -131,6 +131,12 @@ private struct SPXGlyph: Shape {
         case "search": p.addEllipse(in: CGRect(x: 4,y: 3,width: 13,height: 13)); line([CGPoint(x: 15,y: 15),CGPoint(x: 21,y: 21)])
         case "plus": line([CGPoint(x: 12,y: 4),CGPoint(x: 12,y: 20)]); line([CGPoint(x: 4,y: 12),CGPoint(x: 20,y: 12)])
         case "chevron": line([CGPoint(x: 9,y: 6),CGPoint(x: 15,y: 12),CGPoint(x: 9,y: 18)])
+        case "settings":
+            p.addEllipse(in: CGRect(x: 6,y: 6,width: 12,height: 12)); p.addEllipse(in: CGRect(x: 10,y: 10,width: 4,height: 4))
+            for index in 0..<8 {
+                let angle = Double(index) * .pi / 4
+                line([CGPoint(x: 12 + cos(angle) * 8,y: 12 + sin(angle) * 8),CGPoint(x: 12 + cos(angle) * 10,y: 12 + sin(angle) * 10)])
+            }
         default: p.addEllipse(in: CGRect(x: 3,y: 3,width: 18,height: 18)); p.addEllipse(in: CGRect(x: 9,y: 9,width: 6,height: 6))
         }
         return p.applying(CGAffineTransform(scaleX: rect.width / 24, y: rect.height / 24).concatenating(CGAffineTransform(translationX: rect.minX, y: rect.minY)))

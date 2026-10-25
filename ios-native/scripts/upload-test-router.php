@@ -10,7 +10,9 @@ if (PHP_SAPI !== 'cli-server' || !$root || !is_dir($root) || !is_file($root . '/
 $source = dirname(__DIR__, 2) . '/spxchat/chat_upload.php';
 if (!is_file($source)) $source = dirname(__DIR__, 2) . '/server-companion/chat_upload.php';
 require $source;
-header('Content-Type: application/json');
+$response = dirname(__DIR__, 2) . '/spxchat/response.php';
+if (!is_file($response)) $response = dirname(__DIR__, 2) . '/server-companion/response.php';
+require $response;
 try {
     $uid = (int)($_GET['uid'] ?? 9);
     $operation = $_GET['operation'] ?? '';
@@ -29,9 +31,9 @@ try {
     } else {
         throw new DomainException('Unknown test operation', 404);
     }
-    echo json_encode(['code' => 0, 'data' => $data], JSON_THROW_ON_ERROR);
+    // Exercise the production response encoder and status, rather than a test-only envelope.
+    jsonResponse($data, '附件上传成功');
 } catch (Throwable $error) {
     $status = $error instanceof DomainException ? $error->getCode() : 500;
-    http_response_code($status >= 400 && $status <= 599 ? $status : 500);
-    echo json_encode(['code' => $status, 'message' => $error->getMessage()], JSON_THROW_ON_ERROR);
+    jsonResponse(null, $error->getMessage(), $status >= 400 && $status <= 599 ? $status : 500);
 }

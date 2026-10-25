@@ -27,6 +27,7 @@ struct PublishProductView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var values: [String: String] = [:]
     @State private var type = "physical"
+    @State private var choosingGroup = false
     @State private var images: [String] = []
     @State private var detailImages: [String] = []
     @State private var mainPicker: [PhotosPickerItem] = []
@@ -41,6 +42,8 @@ struct PublishProductView: View {
     private var videoRecoveryKey: String { localKey + "-video-upload" }
     @State private var variants: [ProductVariant] = []
     @State private var appointment = false
+    @State private var variantsExpanded = false
+    @State private var detailsExpanded = false
     @State private var draft = 0
     @State private var version = 0
     @State private var categories: [String] = ["服饰", "数码", "家居", "食品", "本地服务", "数字商品", "其他"]
@@ -139,6 +142,7 @@ struct PublishProductView: View {
         pendingPublication = await LocalStore.shared.read(publicationKey, userID: session.user?.id ?? 0)
         restored = true
         pendingVideo = await LocalStore.shared.read(videoRecoveryKey, userID: session.user?.id ?? 0)
+        if pendingVideo != nil { detailsExpanded = true }
         if let config = try? await APIClient.shared.get("mall.config") {
             recoverySupported = config["product_request_recovery"].flag
             let configured = config["categories"].array.map(\.string)
@@ -206,7 +210,27 @@ struct PublishProductView: View {
 
     private var editorForm: some View {
         ScrollView {
-            VStack(spacing: 16) { mainImageSection; basicSection; variantSection; detailSection; statusSections }.padding(18)
+            VStack(spacing: 14) {
+                mainImageSection
+                basicSection
+                SPXCard {
+                    DisclosureGroup(isExpanded: $variantsExpanded) { variantSection.padding(.top, 12) } label: {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("多规格商品").font(.system(size: 16, weight: .semibold))
+                            Text(variants.isEmpty ? "选填 · 颜色、尺码或套餐" : "已添加 \(variants.count) 个规格").font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+                        }
+                    }.tint(SPXColor.primary)
+                }
+                SPXCard {
+                    DisclosureGroup(isExpanded: $detailsExpanded) { detailSection.padding(.top, 12) } label: {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("详情与交付").font(.system(size: 16, weight: .semibold))
+                            Text("图文详情、视频、运费与服务说明").font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+                        }
+                    }.tint(SPXColor.primary)
+                }
+                statusSections
+            }.padding(16)
         }.scrollDismissesKeyboard(.interactively).spxPage()
             .safeAreaInset(edge: .bottom, spacing: 0) { saveSection }
     }
@@ -220,6 +244,9 @@ struct PublishProductView: View {
             if let estimate = Money.estimate(cny: values["cny_price"] ?? "", usd: usd) { Text("参考约 \(DisplayLabels.amount(estimate)) SPX001").font(.caption).foregroundStyle(.secondary) }
             field("stock", "总库存", keyboard: .numberPad).disabled(editing)
             field("consultation_group_code", "咨询群号（六位）")
+                .textInputAutocapitalization(.characters).autocorrectionDisabled()
+            Button { choosingGroup = true } label: { Label("从我管理的群选择", systemImage: "person.2") }
+                .sheet(isPresented: $choosingGroup) { MerchantConsultationGroupPicker(code: bind("consultation_group_code")) }
         }
     }
     private var mainImageSection: some View {
@@ -230,7 +257,7 @@ struct PublishProductView: View {
         }
     }
     private var variantSection: some View {
-        SPXPanel("规格与库存") {
+        VStack(alignment: .leading, spacing: 16) {
             ForEach($variants) { $variant in
                 VStack(alignment: .leading, spacing: 10) {
                     TextField("规格名称，例如 黑色 / L", text: $variant.name)
@@ -241,10 +268,10 @@ struct PublishProductView: View {
                 }.padding(.vertical, 6)
             }
             if variants.count < 50, !editing || !product["variants"].array.isEmpty { Button("添加规格", systemImage: "plus.circle") { variants.append(ProductVariant()) } }
-        }
+        }.textFieldStyle(SPXInputStyle())
     }
     private var detailSection: some View {
-        SPXPanel("详情与服务") {
+        VStack(alignment: .leading, spacing: 16) {
             field("detail_text", "详细介绍", multiline: true)
             PhotosPicker(selection: $detailPicker, maxSelectionCount: max(1, 20 - detailImages.count), matching: .images) { Label("批量添加详情图", systemImage: "photo.stack") }.disabled(detailImages.count >= 20)
             imageStrip($detailImages)
@@ -265,7 +292,7 @@ struct PublishProductView: View {
             field("delivery_note", "交付说明", multiline: true)
             if type == "physical" { field("shipping_fee", "运费（SPX001）", keyboard: .decimalPad); field("delivery_days", "预计发货天数", keyboard: .numberPad) }
             if type == "local" { field("service_valid_days", "服务有效期（天）", keyboard: .numberPad); Toggle("需预约", isOn: $appointment) }
-        }
+        }.textFieldStyle(SPXInputStyle())
     }
     @ViewBuilder private var statusSections: some View {
         if !progress.isEmpty { SPXPanel("上传状态") { HStack { ProgressView(); Text(progress).font(.subheadline) } } }
@@ -276,7 +303,9 @@ struct PublishProductView: View {
         HStack(spacing: 14) {
             Button("保存草稿") { save(publishing: false) }.font(.system(size: 14, weight: .medium)).frame(minWidth: 86, minHeight: 48)
             Button(editing ? "保存商品修改" : "提交发布") { publish = true }.frame(maxWidth: .infinity).buttonStyle(SPXPrimaryButtonStyle())
-        }.padding(.horizontal, 18).padding(.vertical, 12).background(SPXColor.card).disabled(busy || !restored || pendingPublication != nil)
+        }.padding(.horizontal, 16).padding(.vertical, 12).background(SPXColor.card)
+            .overlay(alignment: .top) { Rectangle().fill(SPXColor.line).frame(height: 0.7) }
+            .disabled(busy || !restored || pendingPublication != nil)
     }
 
     private func bind(_ key: String) -> Binding<String> { Binding(get: { values[key] ?? "" }, set: { values[key] = $0 }) }
@@ -291,8 +320,9 @@ struct PublishProductView: View {
                         if index + 1 < urls.wrappedValue.count { Button("向后移动", systemImage: "arrow.right") { var items = urls.wrappedValue; items.swapAt(index, index + 1); urls.wrappedValue = items } }
                         Button("移除", role: .destructive) { urls.wrappedValue.remove(at: index) }
                     } label: {
-                        CachedImage(source: url).frame(width: 78, height: 78).background(.white, in: RoundedRectangle(cornerRadius: 12)).overlay(alignment: .bottomLeading) { if index == 0 { Text("首图").font(.caption2).padding(4).foregroundStyle(.white).background(SPXColor.primary, in: RoundedRectangle(cornerRadius: 6)) } }.clipShape(RoundedRectangle(cornerRadius: 12))
+                        CachedImage(source: url).frame(width: 88, height: 88).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 12)).overlay(alignment: .bottomLeading) { if index == 0 { Text("封面").font(.caption2).padding(5).foregroundStyle(.white).background(SPXColor.primary, in: RoundedRectangle(cornerRadius: 6)) } }.clipShape(RoundedRectangle(cornerRadius: 12))
                     }
+                    .accessibilityLabel(index == 0 ? "商品封面，点击管理" : "商品图片 \(index + 1)，点击管理")
                 }
             }.padding(.vertical, 6)
         }
@@ -305,11 +335,15 @@ struct PublishProductView: View {
         type = product["product_type"].string.isEmpty ? "physical" : product["product_type"].string
         images = product["images"].array.map(\.string); detailImages = product["detail_images"].array.map(\.string); appointment = product["appointment_required"].flag
         variants = product["variants"].array.map { v in ProductVariant(id: v["id"].string, name: v["name"].string, cny: v["cny_price"].string, stock: v["stock"].string, enabled: v["enabled"] == .null || v["enabled"].flag, attributes: v["attributes"].object, imageURL: v["image_url"].string) }
+        variantsExpanded = !variants.isEmpty
+        detailsExpanded = editing
     }
     private func restore(_ saved: Record) {
         for key in values.keys { values[key] = saved[key].string }
         type = saved["product_type"].string; images = saved["images"].array.map(\.string); detailImages = saved["detail_images"].array.map(\.string); appointment = saved["appointment_required"].flag
         variants = saved["variants"].array.map { v in ProductVariant(id: v["id"].string, name: v["name"].string, cny: v["cny_price"].string, stock: v["stock"].string, enabled: v["enabled"].flag, attributes: v["attributes"].object, imageURL: v["image_url"].string) }
+        variantsExpanded = !variants.isEmpty
+        detailsExpanded = !detailImages.isEmpty || !saved["detail_text"].string.isEmpty || !saved["video_url"].string.isEmpty || pendingVideo != nil
     }
     @ViewBuilder private func failedImageRows(_ pending: [PhotosPickerItem], detail: Bool) -> some View {
         if !pending.isEmpty {
@@ -408,6 +442,7 @@ struct PublishProductView: View {
         guard restored, pendingPublication == nil else { error = "请先核对上次商品提交结果"; return }
         guard pendingVideo == nil else { error = "请先继续上传或放弃未完成的商品视频"; return }
         if publishing, !recoverySupported { error = "正在确认发布服务，请稍后重新进入；本地草稿可继续保存"; return }
+        values["consultation_group_code"] = (values["consultation_group_code"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         if publishing {
             guard (values["name"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).count <= 150 else { error = "商品名称最多 150 字"; return }
             guard !(values["name"] ?? "").isEmpty, !(values["description"] ?? "").isEmpty, Money.positive(values["cny_price"] ?? ""), let stock = Int(values["stock"] ?? ""), (0...1_000_000).contains(stock), values["consultation_group_code"]?.count == 6, !images.isEmpty else { error = "请完善名称、描述、人民币售价、库存、咨询群号及至少一张主图"; return }

@@ -9,10 +9,10 @@ enum APIError: LocalizedError {
         case .unauthorized: return "登录已过期，请重新登录"
         case .staleSession: return "账号已切换，请重试"
         case .server(_, let message): return message
-        case .invalidResponse: return "服务器返回了无法识别的数据"
+        case .invalidResponse: return "服务器返回结果尚未确认，请检查网络后重试"
         }
     }
-    var retryable: Bool { if case .server(let c,_) = self { return c == 409 || c == 429 || c >= 500 }; return false }
+    var retryable: Bool { if case .invalidResponse = self { return true }; if case .server(let c,_) = self { return c == 409 || c == 429 || c >= 500 }; return false }
     var definitiveRejection: Bool {
         if case .unauthorized = self { return true }
         if case .server(let status, _) = self { return [400, 403, 404, 409, 422, 429].contains(status) }
@@ -103,13 +103,23 @@ actor APIClient {
         return data
     }
     func decode(_ data:Data,response:URLResponse) throws -> JSON {
-        guard let http = response as? HTTPURLResponse else {throw APIError.invalidResponse}
-        if http.statusCode == 401, let token {
+        do { return try Self.decodeEnvelope(data, response: response) }
+        catch APIError.unauthorized {
             let message = (try? JSONDecoder().decode(APIEnvelope.self,from:data))?.message ?? "登录已失效，请重新登录"
+            if let token {
             NotificationCenter.default.post(name:.spxUnauthorized,object:token,userInfo:["message":message])
+            }
             throw APIError.unauthorized
         }
-        guard let envelope = try? JSONDecoder().decode(APIEnvelope.self,from:data) else {throw APIError.server(http.statusCode,"服务器暂时不可用（\(http.statusCode)）")}
+    }
+    nonisolated static func decodeEnvelope(_ data: Data, response: URLResponse?) throws -> JSON {
+        guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        if http.statusCode == 401 { throw APIError.unauthorized }
+        let bytes = data.starts(with: [0xEF, 0xBB, 0xBF]) ? Data(data.dropFirst(3)) : data
+        guard let envelope = try? JSONDecoder().decode(APIEnvelope.self, from: bytes) else {
+            if (200..<300).contains(http.statusCode) { throw APIError.invalidResponse }
+            throw APIError.server(http.statusCode, "服务器暂时不可用（\(http.statusCode)）")
+        }
         guard (200..<300).contains(http.statusCode), envelope.code.string == "0" else {throw APIError.server(http.statusCode,envelope.message ?? "操作未完成")}
         return envelope.data ?? .null
     }

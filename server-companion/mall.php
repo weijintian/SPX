@@ -103,7 +103,7 @@ function mallProductSelect(): string
 
 function mallVisibleWhere(): string
 {
-    return "p.status=1 AND p.review_status='approved' AND (p.merchant_id IS NULL OR (m.status='active' AND m.deposit_frozen>=IF(m.level='gold',1000000,100000)))";
+    return "p.deleted_at IS NULL AND p.status=1 AND p.review_status='approved' AND (p.merchant_id IS NULL OR (m.status='active' AND m.deposit_frozen>=IF(m.level='gold',1000000,100000)))";
 }
 
 function mallProducts(PDO $pdo, int $merchantId = 0, string $search = '', string $category = '', int $page = 1): array
@@ -143,7 +143,7 @@ function mallDecorateProduct(PDO $pdo, array $product, bool $withShop = true, ?a
     $product['detail_images'] = json_decode((string) ($product['detail_images'] ?? ''), true) ?: [];
     $product['consultation_group'] = null;
     if ($withShop && !empty($product['consultation_group_id'])) {
-        $q=$pdo->prepare("SELECT g.id,g.name,g.group_code FROM chat_groups g JOIN merchants m ON m.id=? JOIN chat_group_members gm ON gm.group_id=g.id AND gm.user_id=m.owner_user_id AND gm.role IN ('owner','admin') WHERE g.id=?");
+        $q=$pdo->prepare("SELECT g.id,g.name,g.group_code FROM chat_groups g JOIN merchants m ON m.id=? JOIN chat_group_members gm ON gm.group_id=g.id AND gm.user_id=m.owner_user_id AND (g.owner_user_id=gm.user_id OR gm.role='admin') WHERE g.id=?");
         $q->execute([$product['merchant_id'],$product['consultation_group_id']]);
         $product['consultation_group']=$q->fetch() ?: null;
     }
@@ -186,10 +186,11 @@ function mallSaveProduct(PDO $pdo, array $merchant, array $body): int
     $id=max(0,(int)($body["id"] ?? 0));$old=null;
     if ($id) {
         $q=$pdo->prepare("SELECT * FROM products WHERE id=? AND merchant_id=? FOR UPDATE");$q->execute([$id,$merchant["id"]]);$old=$q->fetch();
-        if (!$old) throw new InvalidArgumentException("商品不存在或无权编辑");
+        if (!$old || !empty($old["deleted_at"])) throw new InvalidArgumentException("商品不存在、已删除或无权编辑");
         if ((int)($body["version"] ?? 0)!==(int)$old["version"]) throw new InvalidArgumentException("商品资料已更新，请刷新后编辑");
         if ($old["review_status"]==="rejected") throw new InvalidArgumentException("商品已被平台限制，请联系平台处理");
     }
+    mallRequireProductSlot($pdo, $merchant, $old);
     $type=mallText($body,"product_type",20,true);
     if (!in_array($type,["physical","digital","local"],true)) throw new InvalidArgumentException("商品类型无效");
     if ($old && $type!==$old["product_type"]) throw new InvalidArgumentException("已发布商品不能变更交付类型，请发布新商品");
@@ -272,7 +273,7 @@ function mallHandleApi(string $action, string $method, array $body): void
 {
     mallCommerceApi($action, $method, $body);
     $read = ['mall.config', 'mall.valuation', 'shops', 'shop', 'merchant.me', 'merchant.products', 'merchant.orders', 'merchant.qualification.image'];
-    $write = ['merchant.apply', 'merchant.profile.save', 'merchant.deposit.pay', 'merchant.product.save', 'merchant.product.offline', 'merchant.close', 'merchant.media.upload', 'merchant.logo.upload', 'merchant.qualification.upload', 'merchant.order.ship', 'merchant.order.deliver', 'merchant.order.redeem', 'orders.receive', 'orders.after_sale'];
+    $write = ['merchant.apply', 'merchant.profile.save', 'merchant.deposit.pay', 'merchant.product.save', 'merchant.product.offline', 'merchant.product.delete', 'merchant.close', 'merchant.media.upload', 'merchant.logo.upload', 'merchant.qualification.upload', 'merchant.order.ship', 'merchant.order.deliver', 'merchant.order.redeem', 'orders.receive', 'orders.after_sale'];
     if (!in_array($action, array_merge($read, $write), true)) return;
     if (($method === 'GET' && !in_array($action, $read, true)) || ($method !== 'GET' && $method !== 'POST') || ($method === 'POST' && !in_array($action, $write, true))) jsonResponse(null, '请求方式无效', 405);
     $pdo = db();
@@ -283,7 +284,7 @@ function mallHandleApi(string $action, string $method, array $body): void
             catch (Throwable $e) { jsonResponse(null, '人民币参考行情暂不可用', 503); }
             jsonResponse($valuation);
         }
-        if ($action === 'mall.config') jsonResponse(['product_request_recovery' => true, 'symbol' => 'SPX001', 'basic_deposit' => MALL_BASIC_DEPOSIT, 'gold_deposit' => MALL_GOLD_DEPOSIT, 'after_sale_days' => MALL_AFTER_SALE_DAYS, 'categories' => ['服饰', '数码', '家居', '食品', '本地服务', '数字商品', '其他']]);
+        if ($action === 'mall.config') jsonResponse(['product_request_recovery' => true, 'symbol' => 'SPX001', 'basic_deposit' => MALL_BASIC_DEPOSIT, 'gold_deposit' => MALL_GOLD_DEPOSIT, 'after_sale_days' => MALL_AFTER_SALE_DAYS, 'settlement_fee_rate' => '0.1000', 'settlement_fee_basis' => 'paid_total_spx', 'categories' => ['服饰', '数码', '家居', '食品', '本地服务', '数字商品', '其他']]);
         if ($action === 'shops') {
             [$shopLimit,$shopOffset]=mallPage();
             $where = "m.status='active' AND m.deposit_frozen>=IF(m.level='gold',1000000,100000)";
@@ -322,13 +323,13 @@ function mallHandleApi(string $action, string $method, array $body): void
             $m['qualification_images'] = json_decode((string) ($m['qualification_images'] ?? ''), true) ?: [];
             $q = $pdo->prepare('SELECT * FROM merchant_deposit_ledger WHERE merchant_id=? ORDER BY id DESC LIMIT 30'); $q->execute([$m['id']]);
             $ledger = $q->fetchAll();
-            $q = $pdo->prepare("SELECT COALESCE(SUM(IF(settlement_status='held' AND status NOT IN ('cancelled','refunded'),total_spx,0)),0) AS held_amount,COALESCE(SUM(IF(settlement_status='settled',total_spx,0)),0) AS settled_amount,COUNT(*) AS order_count FROM orders WHERE merchant_id=?"); $q->execute([$m['id']]);
-            jsonResponse(['merchant' => $m, 'required_deposit' => mallRequiredDeposit($m['level']), 'deposit_ledger' => $ledger, 'statistics' => $q->fetch()]);
+            $q = $pdo->prepare("SELECT COALESCE(SUM(IF(settlement_status='held' AND status NOT IN ('cancelled','refunded'),COALESCE(merchant_net_amount,total_spx),0)),0) AS held_amount,COALESCE(SUM(IF(settlement_status='settled',COALESCE(merchant_net_amount,total_spx),0)),0) AS settled_amount,COALESCE(SUM(IF(settlement_status='settled',settlement_fee,0)),0) AS settled_fee,COUNT(*) AS order_count FROM orders WHERE merchant_id=?"); $q->execute([$m['id']]);
+            jsonResponse(['merchant' => $m, 'required_deposit' => mallRequiredDeposit($m['level']), 'deposit_ledger' => $ledger, 'statistics' => $q->fetch(), 'product_capacity' => mallProductCapacity($pdo, $m)]);
         }
         if ($action === 'merchant.products' || $action === 'merchant.orders') {
             [$pageSize,$pageOffset]=mallPage();
             $m = mallOwnMerchant($pdo, $uid);
-            $q = $pdo->prepare($action === 'merchant.products' ? 'SELECT p.*,g.group_code AS consultation_group_code FROM products p LEFT JOIN chat_groups g ON g.id=p.consultation_group_id WHERE p.merchant_id=? ORDER BY p.id DESC LIMIT '.$pageSize.' OFFSET '.$pageOffset : 'SELECT o.*,COALESCE(JSON_UNQUOTE(JSON_EXTRACT(o.product_snapshot,"$.name")),p.name) AS product_name FROM orders o JOIN products p ON p.id=o.product_id WHERE o.merchant_id=? ORDER BY o.id DESC LIMIT '.$pageSize.' OFFSET '.$pageOffset);
+            $q = $pdo->prepare($action === 'merchant.products' ? 'SELECT p.*,g.group_code AS consultation_group_code FROM products p LEFT JOIN chat_groups g ON g.id=p.consultation_group_id WHERE p.merchant_id=? AND p.deleted_at IS NULL ORDER BY p.id DESC LIMIT '.$pageSize.' OFFSET '.$pageOffset : 'SELECT o.*,COALESCE(JSON_UNQUOTE(JSON_EXTRACT(o.product_snapshot,"$.name")),p.name) AS product_name FROM orders o JOIN products p ON p.id=o.product_id WHERE o.merchant_id=? ORDER BY o.id DESC LIMIT '.$pageSize.' OFFSET '.$pageOffset);
             $q->execute([$m['id']]); $rows = $q->fetchAll();
             if ($action === 'merchant.products') $rows = array_map(static fn(array $p): array => mallDecorateProduct($pdo, $p, false), $rows);
             // The buyer must present the code. Never let a shop retrieve it and self-redeem.
@@ -384,8 +385,8 @@ function mallHandleApi(string $action, string $method, array $body): void
                 mallFreezeDeposit($pdo, $m, mallText($body, 'level', 20, true));
             } elseif ($action === 'merchant.product.save') {
                 $id = mallSaveProduct($pdo, $m, $body);
-            } elseif ($action === 'merchant.product.offline') {
-                $pdo->prepare('UPDATE products SET status=0 WHERE id=? AND merchant_id=?')->execute([(int) ($body['id'] ?? 0), $m['id']]); mallAudit($pdo, $m, 'product.offline', (int) ($body['id'] ?? 0));
+            } elseif ($action === 'merchant.product.offline' || $action === 'merchant.product.delete') {
+                mallRemoveProduct($pdo, $m, (int) ($body['id'] ?? 0), $action === 'merchant.product.delete');
             } elseif ($action === 'merchant.close') {
                 mallRequestClosure($pdo,$m);
             } else {

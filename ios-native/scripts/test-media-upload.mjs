@@ -115,7 +115,11 @@ try {
     assert.equal(r.status, 200); assert.deepEqual(r.envelope.data.received_chunks, []);
   });
   await check('first chunk is persisted and reported', async () => {
-    assert.equal((await chunk(id, 0)).status, 200);
+    const ack = await chunk(id, 0);
+    assert.equal(ack.status, 200);
+    assert.equal(ack.envelope.data.total, 2);
+    assert.equal(ack.envelope.data.upload_id, id);
+    assert.equal(ack.envelope.data.chunk_index, 0);
     assert.deepEqual((await request('status', query(id))).envelope.data.received_chunks, [0]);
   });
   await check('duplicate chunk is idempotent', async () => {

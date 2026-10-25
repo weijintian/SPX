@@ -3,7 +3,7 @@ import UIKit
 
 enum SPXColor {
     static let ink = adaptive(0x181F33, dark: 0xF2F4F9)
-    static let primary = adaptive(0x2D4ECF, dark: 0x8EA9FF)
+    static let primary = adaptive(0x2869EA, dark: 0x8EA9FF)
     static let commerce = adaptive(0x2869EA, dark: 0x8EA9FF)
     static let surface = adaptive(0xF6F8FC, dark: 0x10151E)
     static let card = adaptive(0xFFFFFF, dark: 0x1C2432)
@@ -25,8 +25,8 @@ struct SPXCard<Content: View>: View {
     init(@ViewBuilder _ content: () -> Content) { self.content = content() }
     var body: some View {
         content.padding(16).frame(maxWidth: .infinity, alignment: .leading)
-            .background(SPXColor.card, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(SPXColor.line, lineWidth: 0.7))
+            .background(SPXColor.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(SPXColor.line, lineWidth: 0.7))
     }
 }
 

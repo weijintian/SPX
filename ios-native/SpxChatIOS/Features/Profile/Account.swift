@@ -15,14 +15,14 @@ struct ProfileView: View {
                         Text(session.user?.name ?? "我的账号").font(.system(size: 23, weight: .semibold)).foregroundStyle(.white).lineLimit(2)
                         Button { guard !spxID.isEmpty else { return }; UIPasteboard.general.string = spxID; notice = "SPX ID 已复制" } label: {
                             Label(spxID.isEmpty ? "SPX ID 读取中…" : spxID, systemImage: "square.on.square")
-                                .font(.system(size: 12, weight: .medium)).foregroundStyle(SPXColor.hex(0x2D4ECF))
-                                .padding(.horizontal, 10).padding(.vertical, 6).background(SPXColor.hex(0xEEF2FF), in: Capsule())
+                                .font(.system(size: 12, weight: .medium)).foregroundStyle(SPXColor.primary)
+                                .padding(.horizontal, 10).padding(.vertical, 6).background(SPXColor.hex(0xEDF3FF), in: Capsule())
                         }.disabled(spxID.isEmpty)
                         NavigationLink { QRCodeView(value: "SPXUSER:\(spxID)", title: session.user?.name ?? "我的二维码") } label: {
                             Label("我的二维码", systemImage: "qrcode").font(.system(size: 12)).foregroundStyle(.white.opacity(0.8))
                         }.disabled(spxID.isEmpty)
                     }.frame(maxWidth: .infinity, alignment: .leading)
-                    NavigationLink { ProfileEditView() } label: { Text("编辑").font(.system(size: 14, weight: .medium)).foregroundStyle(.white).padding(12).background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 12)) }
+                    NavigationLink { ProfileEditView() } label: { Text("编辑").font(.system(size: 14, weight: .medium)).foregroundStyle(.white).frame(minWidth: 54, minHeight: 44).background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 12)) }
                 }.padding(20).background(LinearGradient(colors: [SPXColor.hex(0x182647), SPXColor.hex(0x324D82)], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 24))
                 SPXSectionTitle(title: "账号资产")
                 NavigationLink { WalletView() } label: { SPXMenuRow(title: "我的资产", subtitle: "资产余额、充值与提现", icon: "wallet") }
@@ -35,7 +35,7 @@ struct ProfileView: View {
                 NavigationLink { QuestionsView() } label: { SPXMenuRow(title: "我的提问", subtitle: "提交问题，查看回复", icon: "questionmark.bubble") }
                 NavigationLink { SupportView() } label: { SPXMenuRow(title: "帮助与反馈", subtitle: "常见问题、客服工单与建议", icon: "bubble.left.and.text.bubble.right") }
                 SPXSectionTitle(title: "通用")
-                NavigationLink { SettingsView() } label: { SPXMenuRow(title: "设置", subtitle: "账号安全、通知、显示与隐私", icon: "gearshape") }
+                NavigationLink { SettingsView() } label: { SPXMenuRow(title: "设置", subtitle: "账号安全、通知、显示与隐私", icon: "settings") }
                 Text("版本 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")")
                     .font(.system(size: 12)).foregroundStyle(SPXColor.muted).frame(maxWidth: .infinity).padding(.vertical, 12)
             }.buttonStyle(.plain).padding(16)
@@ -246,6 +246,11 @@ struct RecordsView: View {
                     if finance {
                         InfoRow(title: "处理状态", value: DisplayLabels.transactionStatus(row["status"].string))
                         if row["mall_order_id"].int > 0 { InfoRow(title: "关联订单", value: "#" + row["mall_order_id"].string) }
+                        if row["type"].string == "merchant_settlement" {
+                            InfoRow(title: "订单总额", value: DisplayLabels.amount(row["gross_amount"].string) + " SPX001")
+                            InfoRow(title: "平台手续费", value: DisplayLabels.amount(row["fee_amount"].string) + " SPX001")
+                            InfoRow(title: "实际到账", value: DisplayLabels.amount(row["net_amount"].string) + " SPX001")
+                        }
                         if let stakeable = row["stakeable_amount"].decimal, stakeable > 0 { InfoRow(title: "其中可质押数量", value: DisplayLabels.amount(Money.format(stakeable, scale: 18)) + " SPX001") }
                     } else {
                         if row["target_id"].int > 0 { InfoRow(title: "关联业务编号", value: "#" + row["target_id"].string) }

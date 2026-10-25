@@ -2,6 +2,26 @@
   "passed": true,
   "checks": [
     {
+      "name": "small image uploads through the same single-file contract as Android",
+      "passed": true
+    },
+    {
+      "name": "image chunks assemble into a complete image and retain its type",
+      "passed": true
+    },
+    {
+      "name": "voice WAV upload retains its voice type and all bytes",
+      "passed": true
+    },
+    {
+      "name": "iOS M4A container is classified as a voice attachment",
+      "passed": true
+    },
+    {
+      "name": "a multi-chunk MP4 container retains video type and all bytes",
+      "passed": true
+    },
+    {
       "name": "new upload has no completed chunks",
       "passed": true
     },

@@ -13,7 +13,7 @@ struct EcosystemView: View {
                 NavigationLink { VideoRewardIntroView() } label: {
                     EcosystemCard(title: "视频奖励", detail: "了解视频奖励与活动进展", badge: "筹备中", image: "", icon: "play.rectangle", color: SPXColor.success)
                 }
-            }.buttonStyle(.plain).padding(18)
+            }.buttonStyle(.plain).padding(16)
         }.navigationTitle("生态").spxPage()
     }
 }
@@ -38,8 +38,8 @@ private struct EcosystemCard: View {
                     .padding(.horizontal, 9).padding(.vertical, 4).background(color.opacity(0.09), in: Capsule())
             }.frame(maxWidth: .infinity, alignment: .leading)
             SPXIcon("chevron").frame(width: 18, height: 18).foregroundStyle(SPXColor.muted.opacity(0.5))
-        }.padding(18).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 20))
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(SPXColor.line, lineWidth: 0.6))
+        }.padding(16).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(SPXColor.line, lineWidth: 0.7))
     }
 }
 

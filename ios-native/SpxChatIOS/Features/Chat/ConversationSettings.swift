@@ -87,8 +87,11 @@ struct ConversationSettingsView: View {
             }
             SPXCard { VStack(spacing: 12) {
                 if isGroup {
-                    Button("退出群聊", role: .destructive) { destructive = "groups.leave" }.frame(maxWidth: .infinity, minHeight: 44)
-                    if info["permissions"]["dissolve_group"].flag { Divider(); Button("解散群聊", role: .destructive) { destructive = "groups.dissolve" }.frame(maxWidth: .infinity, minHeight: 44) }
+                    if info["permissions"]["dissolve_group"].flag {
+                        Button("解散群聊", role: .destructive) { destructive = "groups.dissolve" }.frame(maxWidth: .infinity, minHeight: 44)
+                    } else {
+                        Button("退出群聊", role: .destructive) { destructive = "groups.leave" }.frame(maxWidth: .infinity, minHeight: 44)
+                    }
                 } else {
                     Button("清空本机聊天记录", role: .destructive) { destructive = "messages.clear" }.frame(maxWidth: .infinity, minHeight: 44)
                     Divider()
@@ -163,7 +166,20 @@ struct ConversationSettingsView: View {
     }
 }
 
+private struct GroupMemberRoleBadge: View {
+    let role: String
+    private var title: String { role == "owner" ? "群主" : role == "admin" ? "管理员" : "成员" }
+    private var color: Color { role == "owner" ? Color(red: 0.61, green: 0.38, blue: 0.09) : role == "admin" ? SPXColor.primary : SPXColor.muted }
+    var body: some View {
+        Text(title).font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(color).padding(.horizontal, 7).padding(.vertical, 4)
+            .background(color.opacity(0.09), in: RoundedRectangle(cornerRadius: 5))
+            .accessibilityLabel("群身份：\(title)")
+    }
+}
+
 struct GroupMembersView: View {
+    @EnvironmentObject private var session: SessionStore
     let group: Record
     @State private var info = Record()
     @State private var rows: [Record] = []
@@ -174,20 +190,30 @@ struct GroupMembersView: View {
     @State private var error: String?
     @State private var transfer: Record?
     @State private var remove: Record?
+    @State private var query = ""
     private var current: Record { info.id > 0 ? info : group }
     private var canManage: Bool { current["permissions"]["manage_settings"].flag }
+    private var filteredMembers: [Record] {
+        let keyword = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return rows.filter { member in
+            keyword.isEmpty || [member.name, member["nickname"].string, member["contact_remark"].string, member["spx_id"].string].contains { $0.localizedCaseInsensitiveContains(keyword) }
+        }.sorted { lhs, rhs in
+            let left = roleOrder(role(lhs)), right = roleOrder(role(rhs))
+            return left == right ? userID(lhs) < userID(rhs) : left < right
+        }
+    }
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 SPXSectionTitle(title: "群成员", detail: "\(rows.count) 人")
                 if loading && rows.isEmpty { ProgressView().frame(maxWidth: .infinity) }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 60), spacing: 10)], alignment: .leading, spacing: 20) {
-                    ForEach(rows, id: \.fields) { member in
+                    ForEach(filteredMembers, id: \.fields) { member in
                         VStack(spacing: 7) {
                             NavigationLink { UserProfileView(userID: userID(member)) } label: {
-                                VStack(spacing: 7) { Avatar(url: member.avatar, name: member.name, size: 48); Text(member.name).font(.system(size: 12)).foregroundStyle(SPXColor.ink).lineLimit(1) }
+                                VStack(spacing: 7) { Avatar(url: member.avatar, name: member.name, size: 48); Text(member.name).font(.system(size: 12)).foregroundStyle(SPXColor.ink).lineLimit(1); GroupMemberRoleBadge(role: role(member)) }
                             }.buttonStyle(.plain)
-                            if canManage && member["role"].string != "owner" {
+                            if canManageMember(member) {
                                 Menu {
                                     if current["role"].string == "owner" {
                                         Button(member["role"].string == "admin" ? "取消管理员" : "设为管理员") { act("groups.members.role", member: member, extra: ["role": .string(member["role"].string == "admin" ? "member" : "admin")]) }
@@ -195,8 +221,8 @@ struct GroupMembersView: View {
                                     }
                                     Button(member["mute"].flag ? "解除禁言" : "禁言") { act("groups.members.mute", member: member, extra: ["mute": .bool(!member["mute"].flag)]) }
                                     Button("移出群聊", role: .destructive) { remove = member }
-                                } label: { Label(member["role"].string == "admin" ? "管理员" : "管理", systemImage: "ellipsis").font(.system(size: 10)).foregroundStyle(SPXColor.muted) }
-                            } else { Text(member["role"].string == "owner" ? "群主" : member["role"].string == "admin" ? "管理员" : "成员").font(.system(size: 10)).foregroundStyle(SPXColor.muted) }
+                                } label: { Label("管理", systemImage: "ellipsis").font(.system(size: 11)).foregroundStyle(SPXColor.primary).frame(minHeight: 36) }
+                            }
                         }.frame(maxWidth: .infinity).accessibilityElement(children: .contain)
                     }
                     if current["permissions"]["invite_members"].flag {
@@ -204,8 +230,9 @@ struct GroupMembersView: View {
                     }
                 }.padding(16).background(SPXColor.card,in: RoundedRectangle(cornerRadius: 20))
                 if !loading && rows.isEmpty { EmptyState(title: "暂未读取到成员", description: "请下拉刷新或稍后重试") }
+                if !rows.isEmpty && filteredMembers.isEmpty { EmptyState(title: "没有匹配的成员", description: "试试搜索备注、昵称或 SPX ID") }
             }.padding(16)
-        }.navigationTitle("群成员").spxPage().task { await load() }.refreshable { await load() }.disabled(busy).errorAlert($error)
+        }.navigationTitle("群成员").spxPage().searchable(text: $query, prompt: "搜索备注、昵称或 SPX ID").task { await load() }.refreshable { await load() }.disabled(busy).errorAlert($error)
             .sheet(isPresented: $adding) {
                 NavigationStack { SPXDetailPage {
                     SPXPageHeading(title: "邀请好友", subtitle: "选择朋友加入当前群聊", icon: "person.badge.plus")
@@ -223,6 +250,17 @@ struct GroupMembersView: View {
             }
     }
     private func userID(_ member: Record) -> Int { member["user_id"].int > 0 ? member["user_id"].int : member.id }
+    private func role(_ member: Record) -> String {
+        if current["owner_user_id"].int > 0 {
+            return userID(member) == current["owner_user_id"].int ? "owner" : member["role"].string == "admin" ? "admin" : "member"
+        }
+        return member["role"].string
+    }
+    private func roleOrder(_ role: String) -> Int { role == "owner" ? 0 : role == "admin" ? 1 : 2 }
+    private func canManageMember(_ member: Record) -> Bool {
+        canManage && userID(member) != session.user?.id && role(member) != "owner"
+            && (current["role"].string == "owner" || role(member) != "admin")
+    }
     private func load() async {
         loading = true; defer { loading = false }
         do {
