@@ -21,13 +21,13 @@ struct QRCodeView: View {
             Image(systemName: "qrcode").font(.system(size: 35)).foregroundStyle(SPXColor.primary)
             Text(title).font(.title2.bold())
             if let image { Image(uiImage: image).interpolation(.none).resizable().scaledToFit().frame(width: 250, height: 250).padding(22).background(.white, in: RoundedRectangle(cornerRadius: 22)); SPXImageShareLink(image: image, title: title) }
-            Text("使用 SPX Chat 扫一�?).font(.subheadline).foregroundStyle(.secondary)
-            Button("保存到相�?, systemImage: "square.and.arrow.down") { save() }.disabled(saving || image == nil)
-        }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity).background(SPXColor.surface).navigationTitle("二维�?).errorAlert($notice)
+            Text("使用 SPX Chat 扫一扫").font(.subheadline).foregroundStyle(.secondary)
+            Button("保存到相册", systemImage: "square.and.arrow.down") { save() }.disabled(saving || image == nil)
+        }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity).background(SPXColor.surface).navigationTitle("二维码").errorAlert($notice)
     }
     private func save() {
         guard !saving, let image else { return }; saving = true
-        Task { defer { saving = false }; do { let allowed = await PHPhotoLibrary.requestAuthorization(for: .addOnly); guard allowed == .authorized || allowed == .limited else { throw APIError.server(403, "请在系统设置允许保存到相�?) }; try await PHPhotoLibrary.shared().performChanges { PHAssetChangeRequest.creationRequestForAsset(from: image) }; notice = "二维码已保存" } catch { notice = error.localizedDescription } }
+        Task { defer { saving = false }; do { let allowed = await PHPhotoLibrary.requestAuthorization(for: .addOnly); guard allowed == .authorized || allowed == .limited else { throw APIError.server(403, "请在系统设置允许保存到相册") }; try await PHPhotoLibrary.shared().performChanges { PHAssetChangeRequest.creationRequestForAsset(from: image) }; notice = "二维码已保存" } catch { notice = error.localizedDescription } }
     }
 }
 
@@ -43,10 +43,10 @@ struct ScanCodeView: View {
         VStack(spacing: 18) {
             if #available(iOS 16.0, *), cameraAllowed, DataScannerViewController.isSupported, DataScannerViewController.isAvailable {
                 QRScanner { value in process(value) }.clipShape(RoundedRectangle(cornerRadius: 24)).padding(.horizontal, 20)
-            } else { EmptyState(title: "当前设备无法扫码", description: "可输�?SPX ID 或六位群�?, icon: "qrcode.viewfinder") }
-            HStack { TextField("SPXUSER:用户ID �?SPXGROUP:群号", text: $value).textInputAutocapitalization(.never).textFieldStyle(.roundedBorder); Button("识别") { process(value) } }.padding()
+            } else { EmptyState(title: "当前设备无法扫码", description: "可输入 SPX ID 或六位群号", icon: "qrcode.viewfinder") }
+            HStack { TextField("SPXUSER:用户ID 或 SPXGROUP:群号", text: $value).textInputAutocapitalization(.never).textFieldStyle(.roundedBorder); Button("识别") { process(value) } }.padding()
             SPXPhotosPicker(selection: $selectedPhoto, matching: .images) { Label("从相册识别二维码", systemImage: "photo") }.disabled(busy).padding(.bottom)
-        }.navigationTitle("扫一�?).errorAlert($error)
+        }.navigationTitle("扫一扫").errorAlert($error)
             .task { cameraAllowed = await AVCaptureDevice.requestAccess(for: .video) }
             .onChange(of: selectedPhoto) { item in
                 guard let item else { return }
@@ -56,7 +56,7 @@ struct ScanCodeView: View {
                         guard let data = try await item.loadTransferable(type: Data.self), let image = UIImage(data: data), let cg = image.cgImage else { throw APIError.invalidResponse }
                         let request = VNDetectBarcodesRequest(); request.symbologies = [.qr]
                         try VNImageRequestHandler(cgImage: cg).perform([request])
-                        guard let result = request.results?.compactMap(\.payloadStringValue).first else { throw APIError.server(400, "图片中未找到二维�?) }
+                        guard let result = request.results?.compactMap(\.payloadStringValue).first else { throw APIError.server(400, "图片中未找到二维码") }
                         process(result)
                     } catch { self.error = error.localizedDescription }
                 }
@@ -67,7 +67,7 @@ struct ScanCodeView: View {
     private func process(_ value: String) {
         guard !busy, userID == 0, groupCode.isEmpty else { return }
         let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if value.hasPrefix("SPXGROUP:") { let code = String(value.dropFirst(9).prefix { !$0.isWhitespace }).uppercased(); guard code.count == 6, code.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) else { error = "群号格式不正�?; return }; groupCode = code }
+        if value.hasPrefix("SPXGROUP:") { let code = String(value.dropFirst(9).prefix { !$0.isWhitespace }).uppercased(); guard code.count == 6, code.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) else { error = "群号格式不正确"; return }; groupCode = code }
         else if value.hasPrefix("SPXUSER:") {
             let id = String(value.dropFirst(8))
             busy = true
@@ -77,7 +77,7 @@ struct ScanCodeView: View {
             Task { defer { busy = false }; do { let result = try await APIClient.shared.get("user.profile", ["id": value]); guard result["id"].int > 0 else { throw APIError.invalidResponse }; userID = result["id"].int } catch {
                 if value.count == 6 { do { let found = try await APIClient.shared.get("groups.search", ["group_code": value.uppercased()]); guard found["id"].int > 0 else { throw APIError.invalidResponse }; groupCode = value.uppercased() } catch { self.error = error.localizedDescription } } else { self.error = error.localizedDescription }
             } }
-        } else { error = "请扫�?SPX 用户或群组二维码" }
+        } else { error = "请扫描 SPX 用户或群组二维码" }
     }
 }
 
