@@ -12,6 +12,7 @@ struct SPXDetailPage<Content: View>: View {
             LazyVStack(alignment: .leading, spacing: 16) { content }
                 .padding(16).frame(maxWidth: 680).frame(maxWidth: .infinity)
         }.spxDismissKeyboardOnTap().spxPage()
+
     }
 }
 
