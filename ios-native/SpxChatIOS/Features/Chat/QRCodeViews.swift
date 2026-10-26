@@ -41,7 +41,7 @@ struct ScanCodeView: View {
     @State private var busy = false
     var body: some View {
         VStack(spacing: 18) {
-            if cameraAllowed, DataScannerViewController.isSupported, DataScannerViewController.isAvailable {
+            if #available(iOS 16.0, *), cameraAllowed, DataScannerViewController.isSupported, DataScannerViewController.isAvailable {
                 QRScanner { value in process(value) }.clipShape(RoundedRectangle(cornerRadius: 24)).padding(.horizontal, 20)
             } else { EmptyState(title: "当前设备无法扫码", description: "可输入 SPX ID 或六位群号", icon: "qrcode.viewfinder") }
             HStack { TextField("SPXUSER:用户ID 或 SPXGROUP:群号", text: $value).textInputAutocapitalization(.never).textFieldStyle(.roundedBorder); Button("识别") { process(value) } }.padding()
@@ -81,6 +81,7 @@ struct ScanCodeView: View {
     }
 }
 
+@available(iOS 16.0, *)
 private struct QRScanner: UIViewControllerRepresentable {
     let found: (String) -> Void
     func makeCoordinator() -> Coordinator { Coordinator(found) }

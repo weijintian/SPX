@@ -134,7 +134,18 @@ struct RedPacketPopup: View {
                 else { Text(ineligibleMessage).foregroundStyle(.white.opacity(0.86)).multilineTextAlignment(.center); Button(loading ? "正在刷新…" : "刷新领取状态") { load() }.font(.footnote.weight(.semibold)).disabled(loading || busy) }
                 if let error { Text(error).font(.footnote).foregroundStyle(.yellow) }
                 if !packet["claims"].array.isEmpty {
-                    ScrollView { LazyVStack(spacing: 12) { ForEach(Array(packet["claims"].array.enumerated()), id: \.offset) { claim in HStack { Text(claim["nickname"].string); Spacer(); Text(DisplayLabels.amount(claim["amount"].string) + " SPX001") }.font(.caption) } } }.frame(maxHeight: 200)
+                    ScrollView {
+                        LazyVStack(spacing: 12) {
+                            ForEach(packet["claims"].array.indices, id: \.self) { index in
+                                let claim = packet["claims"].array[index]
+                                HStack {
+                                    Text(claim["nickname"].string)
+                                    Spacer()
+                                    Text(DisplayLabels.amount(claim["amount"].string) + " SPX001")
+                                }.font(.caption)
+                            }
+                        }
+                    }.frame(maxHeight: 200)
                 }
                 Button("关闭") { close() }.foregroundStyle(.white.opacity(0.8)).disabled(busy)
             }.padding(30).frame(maxWidth: 320).foregroundStyle(.white).background(LinearGradient(colors: [Color(red: 0.86, green: 0.24, blue: 0.18), Color(red: 0.67, green: 0.1, blue: 0.1)], startPoint: .top, endPoint: .bottom), in: RoundedRectangle(cornerRadius: 24))
