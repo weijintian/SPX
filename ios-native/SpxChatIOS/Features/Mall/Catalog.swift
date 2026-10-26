@@ -229,7 +229,8 @@ struct ProductDetailView: View {
     @ViewBuilder private var sectionContent: some View {
         if selectedSection == "details" {
             SPXCard { Text(current.text("detail_text", "description")).font(.system(size: 14)).foregroundStyle(SPXColor.ink).textSelection(.enabled).fixedSize(horizontal: false, vertical: true) }
-            ForEach(Array(current["detail_images"].array.enumerated()), id: \.offset) { image in
+            ForEach(current["detail_images"].array.indices, id: \.self) { index in
+                let image = current["detail_images"].array[index]
                 CachedImage(source: image.string, fit: true, maximumPixelSize: 1200).frame(maxWidth: .infinity).background(.white).clipShape(RoundedRectangle(cornerRadius: 12))
             }
             if !current["video_url"].string.isEmpty { ProductVideo(source: current["video_url"].string).frame(height: 220) }

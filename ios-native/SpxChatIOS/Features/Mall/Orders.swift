@@ -209,14 +209,14 @@ struct OrderDetailView: View {
                         Text(order["after_sale_reason"].string).font(.subheadline)
                         if !order["after_sale_reply"].string.isEmpty { InfoRow(title: "处理回复", value: order["after_sale_reply"].string) }
                         if !order["merchant_service_reply"].string.isEmpty { InfoRow(title: "商家回复", value: order["merchant_service_reply"].string) }
-                        if !order["after_sale_images"].array.isEmpty { ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 10) { ForEach(Array(order["after_sale_images"].array.enumerated()), id: \.offset) { image in CachedImage(source: image.string).frame(width: 88, height: 88).clipShape(RoundedRectangle(cornerRadius: 12)) } } } }
+                         if !order["after_sale_images"].array.isEmpty { ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 10) { ForEach(order["after_sale_images"].array.indices, id: \.self) { index in CachedImage(source: order["after_sale_images"].array[index].string).frame(width: 88, height: 88).clipShape(RoundedRectangle(cornerRadius: 12)) } } } }
                         if !order["return_address"].string.isEmpty { InfoRow(title: "退货地址", value: order["return_address"].string) }
                         if !order["return_tracking"].string.isEmpty { InfoRow(title: "退货物流", value: order["return_carrier"].string + " " + order["return_tracking"].string) }
                         if order["after_sale_status"].string == "return_approved" { Button("填写退货物流") { returns = true }.buttonStyle(.bordered) }
                     }
                 }
                 SPXPanel("订单进度") {
-                    ForEach(Array(order["events"].array.enumerated()), id: \.offset) { event in SPXTimelineRow(title: event["message"].string, date: event["created_at"].string) }
+                     ForEach(order["events"].array.indices, id: \.self) { index in let event = order["events"].array[index]; SPXTimelineRow(title: event["message"].string, date: event["created_at"].string) }
                     if order["events"].array.isEmpty { Text("暂无进度记录").font(.subheadline).foregroundStyle(SPXColor.muted) }
                 }
                 if let error { ErrorBanner(message: error) }
