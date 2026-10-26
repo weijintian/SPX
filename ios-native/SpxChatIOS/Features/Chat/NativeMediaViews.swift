@@ -87,7 +87,7 @@ struct CachedImage: View {
             if let image { if fit { Image(uiImage: image).resizable().scaledToFit() } else { Image(uiImage: image).resizable().scaledToFill() } }
             else if failed {
                 VStack(spacing: 5) { Image(systemName: "photo").foregroundStyle(.secondary); Text("轻点重试").font(.caption2).foregroundStyle(.secondary) }
-                    .contentShape(Rectangle()).onTapGesture { retry += 1 }.accessibilityAddTraits(.isButton).accessibilityLabel("图片加载失败，轻点重�?)
+                    .contentShape(Rectangle()).onTapGesture { retry += 1 }.accessibilityAddTraits(.isButton).accessibilityLabel("图片加载失败，轻点重试")
             }
             else { ProgressView() }
     }
@@ -119,7 +119,7 @@ struct MediaPreview: View {
                     ToolbarItem(placement: .principal) { Text("\(selected + 1) / \(messages.count)").foregroundStyle(.white) }
                     ToolbarItem(placement: .navigationBarTrailing) {
                         Menu {
-                            Button("保存到相�?, systemImage: "square.and.arrow.down") { save() }.disabled(busy)
+                            Button("保存到相册", systemImage: "square.and.arrow.down") { save() }.disabled(busy)
                             Button("转发", systemImage: "arrowshape.turn.up.right") { forwarding = true }
                         } label: { Image(systemName: "ellipsis") }
                     }
@@ -136,7 +136,7 @@ struct MediaPreview: View {
             defer { busy = false }
             do {
                 let authorization = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
-                guard authorization == .authorized || authorization == .limited else { throw APIError.server(403, "请在系统设置允许保存到相�?) }
+                guard authorization == .authorized || authorization == .limited else { throw APIError.server(403, "请在系统设置允许保存到相册") }
                 let file = try await MediaCache.shared.file(message["media_url"].string, userID: session.user?.id ?? 0)
                 try await PHPhotoLibrary.shared().performChanges {
                     if message["message_type"].string == "video" { PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: file) }
@@ -176,7 +176,7 @@ struct VideoMessagePreview: View {
         .contentShape(RoundedRectangle(cornerRadius: 10))
         .clipped()
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .accessibilityLabel("视频，轻点播�?)
+        .accessibilityLabel("视频，轻点播放")
         .task(id: "\(session.user?.id ?? 0):\(source)") {
             thumbnail = nil
             guard !source.isEmpty, let userID = session.user?.id, userID > 0 else { return }
@@ -327,7 +327,7 @@ struct MediaPage: View {
         else { imageContent }
     }
     @ViewBuilder private var videoContent: some View {
-        if let player { VideoPlayer(player: player).overlay { if buffering { ProgressView("正在缓冲�?).tint(.white).foregroundStyle(.white).padding(14).background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 12)).allowsHitTesting(false) } } }
+        if let player { VideoPlayer(player: player).overlay { if buffering { ProgressView("正在缓冲…").tint(.white).foregroundStyle(.white).padding(14).background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 12)).allowsHitTesting(false) } } }
         else if let error {
             VStack(spacing: 14) {
                 Text(error).font(.footnote).multilineTextAlignment(.center)
@@ -445,13 +445,13 @@ struct DocumentPreview: UIViewControllerRepresentable {
     private var request = UUID()
     private var starting = false
     func start(userID: Int) async throws {
-        guard !starting, !recording else { throw APIError.server(409, "正在准备录音，请稍�?) }
+        guard !starting, !recording else { throw APIError.server(409, "正在准备录音，请稍候") }
         starting = true; let requestID = UUID(); request = requestID
         defer { if request == requestID { starting = false } }
         let allowed = await withCheckedContinuation { continuation in AVAudioSession.sharedInstance().requestRecordPermission { continuation.resume(returning: $0) } }
         guard request == requestID else { throw CancellationError() }
-        guard allowed else { throw APIError.server(403, "请在系统设置允许麦克风权�?) }
-        guard CallCoordinator.shared.call == nil, !recording else { throw APIError.server(409, "当前正在通话或录音，请稍后再�?) }
+        guard allowed else { throw APIError.server(403, "请在系统设置允许麦克风权限") }
+        guard CallCoordinator.shared.call == nil, !recording else { throw APIError.server(409, "当前正在通话或录音，请稍后再试") }
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
         try session.setActive(true)
@@ -477,7 +477,7 @@ struct DocumentPreview: UIViewControllerRepresentable {
         if duration >= 0.5 { completedURL = url }
         else {
             if let url { try? FileManager.default.removeItem(at: url) }
-            completedURL = nil; errorMessage = "录音时间太短，请长按至少半秒后发�?
+            completedURL = nil; errorMessage = "录音时间太短，请长按至少半秒后发送"
         }
         if CallCoordinator.shared.call == nil { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
     }
@@ -494,7 +494,7 @@ struct DocumentPreview: UIViewControllerRepresentable {
             let duration = recorder.currentTime
             recording = false; self.recorder = nil
             if flag && duration >= 0.5 { completedURL = url }
-            else { try? FileManager.default.removeItem(at: url); errorMessage = flag ? "录音时间太短，请长按至少半秒后发�? : "录音未完成，请重�? }
+            else { try? FileManager.default.removeItem(at: url); errorMessage = flag ? "录音时间太短，请长按至少半秒后发送" : "录音未完成，请重试" }
             if CallCoordinator.shared.call == nil { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
         }
     }
