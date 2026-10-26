@@ -29,7 +29,7 @@ struct ChatListView: View {
     var body: some View {
         SPXList(plain: true) {
             ForEach(conversations, id: \.key) { item in row(item, group: item.isGroup) }
-            if !loadingList && chats.isEmpty && groups.isEmpty { EmptyState(title: "还没有会话", description: "添加朋友，开始第一段聊天", icon: "bubble.left.and.bubble.right") }
+            if !loadingList && chats.isEmpty && groups.isEmpty { EmptyState(title: "还没有会�?, description: "添加朋友，开始第一段聊�?, icon: "bubble.left.and.bubble.right") }
             if let error { ErrorBanner(message: error); Button("重新加载") { Task { await load() } } }
         }.navigationTitle("聊天").safeAreaInset(edge: .top, spacing: 0) {
                 VStack(spacing: 12) {
@@ -41,7 +41,7 @@ struct ChatListView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
                         NavigationLink { AddContactView() } label: { Label("添加朋友", systemImage: "person.badge.plus") }
-                        NavigationLink { ScanCodeView() } label: { Label("扫一扫", systemImage: "qrcode.viewfinder") }
+                        NavigationLink { ScanCodeView() } label: { Label("扫一�?, systemImage: "qrcode.viewfinder") }
                         NavigationLink { GroupJoinView() } label: { Label("加入群组", systemImage: "person.2.badge.plus") }
                         NavigationLink { GroupCreateView() } label: { Label("创建群聊", systemImage: "bubble.left.and.bubble.right") }
                     } label: { SPXIcon("plus").frame(width: 23, height: 23).frame(width: 44, height: 44) }
@@ -86,7 +86,7 @@ struct ChatListView: View {
         }
         .listRowBackground(item["pinned"].flag ? SPXColor.primary.opacity(0.035) : Color.clear)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            Button(item["mute"].flag ? "取消免打扰" : "免打扰", systemImage: item["mute"].flag ? "bell" : "bell.slash") { update(item, key: "mute", group: group) }.tint(.gray)
+            Button(item["mute"].flag ? "取消免打�? : "免打�?, systemImage: item["mute"].flag ? "bell" : "bell.slash") { update(item, key: "mute", group: group) }.tint(.gray)
             Button(item["pinned"].flag ? "取消置顶" : "置顶", systemImage: item["pinned"].flag ? "pin.slash" : "pin") { update(item, key: "pinned", group: group) }.tint(SPXColor.primary)
         }
     }
@@ -393,6 +393,7 @@ struct ConversationView: View {
     @State private var lastViewportHeight: CGFloat = 0
     @State private var timelineCache = ChatTimelineCache()
     @State private var latestSeenID = 0
+    @State private var observedLastMessageID: Int?
     @State private var replied: Record?
     @State private var editing: Record?
     @State private var editText = ""
@@ -416,6 +417,7 @@ struct ConversationView: View {
     @State private var mentionTrigger: Int?
     @State private var insertingMention = false
     @State private var mentionNotice: String?
+    @State private var observedText = ""
     @FocusState private var composerFocused: Bool
     @State private var emoji = false
     @State private var voiceMode = false
@@ -450,13 +452,13 @@ struct ConversationView: View {
         VStack(spacing: 0) {
             if let value = model.error { ErrorBanner(message: value).padding(.horizontal).padding(.vertical, 5) }
             if isGroup, !groupInfo["announcement"].string.isEmpty { Button { announcement = true } label: { HStack(spacing: 8) { Image(systemName: "megaphone"); Text(groupInfo["announcement"].string).lineLimit(1); Spacer(); Image(systemName: "chevron.right").font(.caption2) }.font(.caption).foregroundStyle(SPXColor.primary).padding(.horizontal, 16).padding(.vertical, 10).background(SPXColor.card) } }
-            if model.initialLoading, model.messages.isEmpty { HStack(spacing: 8) { ProgressView(); Text("正在同步消息…").font(.caption).foregroundStyle(.secondary) }.padding(10) }
-            if processingPhotos { HStack(spacing: 8) { ProgressView(); Text("正在从相册准备附件…").font(.caption); Spacer() }.padding(.horizontal, 16).padding(.vertical, 8) }
+            if model.initialLoading, model.messages.isEmpty { HStack(spacing: 8) { ProgressView(); Text("正在同步消息�?).font(.caption).foregroundStyle(.secondary) }.padding(10) }
+            if processingPhotos { HStack(spacing: 8) { ProgressView(); Text("正在从相册准备附件�?).font(.caption); Spacer() }.padding(.horizontal, 16).padding(.vertical, 8) }
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 12) {
                     if (model.hasOlder || firstDisplayedID != model.messages.first?.id), !model.messages.isEmpty {
-                        Button(model.loadingOlder ? "加载中…" : "查看更早消息") { Task { await loadEarlier(proxy) } }.font(.caption).disabled(model.loadingOlder)
+                        Button(model.loadingOlder ? "加载中�? : "查看更早消息") { Task { await loadEarlier(proxy) } }.font(.caption).disabled(model.loadingOlder)
                     }
                     ForEach(timeline) { entry in
                         if let message = entry.message {
@@ -475,7 +477,7 @@ struct ConversationView: View {
                                 Button("复制", systemImage: "doc.on.doc") { UIPasteboard.general.string = message["content"].string }
                                 Button("引用", systemImage: "arrowshape.turn.up.left") { replied = message }
                                 if MessageContent.canForward(message) { Button("转发", systemImage: "arrowshape.turn.up.right") { forward = message } }
-                                if MessageContent.canForward(message) { Button("多选", systemImage: "checkmark.circle") { selectedMessages = [message.id]; selecting = true } }
+                                if MessageContent.canForward(message) { Button("多�?, systemImage: "checkmark.circle") { selectedMessages = [message.id]; selecting = true } }
                                 if message["sender_id"].int == userID, message["message_origin"].string != "call", message["message_origin"].string != "system" {
                                     if message["message_type"].string == "text", MessageContent.groupCode(message) == nil { Button("编辑", systemImage: "pencil") { editing = message; editText = message["content"].string } }
                                     if message["message_type"].string != "red_packet" { Button("为所有人删除", systemImage: "trash", role: .destructive) { deleting = message } }
@@ -513,19 +515,20 @@ struct ConversationView: View {
                 }
                 
                 .spxDismissKeyboardOnTap { dismissInputPanels() }
-                .accessibilityAction(named: "收起键盘和输入面板") { dismissInputPanels() }
+                .accessibilityAction(named: "收起键盘和输入面�?) { dismissInputPanels() }
                 
-
                 .overlay(alignment: .bottomTrailing) {
                     if !atBottom {
                         Button { scrollToLatest(proxy, animated: true) } label: {
-                            Label(newMessageCount > 0 ? "\(newMessageCount) 条新消息" : "回到最新", systemImage: "arrow.down")
+                            Label(newMessageCount > 0 ? "\(newMessageCount) 条新消息" : "回到最�?, systemImage: "arrow.down")
                                 .font(.caption.weight(.semibold)).padding(.horizontal, 13).padding(.vertical, 10)
                                 .background(.regularMaterial, in: Capsule()).overlay(Capsule().stroke(SPXColor.line))
                         }.padding(12)
                     }
                 }
                 .onChange(of: model.messages.last?.id) { last in
+                    let old = observedLastMessageID
+                    observedLastMessageID = last
                     guard old != last else { return }
                     if !didInitialScroll || atBottom { scrollToLatest(proxy, animated: didInitialScroll); latestSeenID = last ?? latestSeenID }
                 }
@@ -552,7 +555,7 @@ struct ConversationView: View {
             }
             Divider()
             if selecting {
-                HStack { Button("取消多选") { selecting = false; selectedMessages = [] }; Spacer(); Button("逐条转发 (\(selectedMessages.count))", systemImage: "arrowshape.turn.up.right") { forwardingSelected = true }.disabled(selectedMessages.isEmpty) }.font(.subheadline).padding(16).background(.bar)
+                HStack { Button("取消多�?) { selecting = false; selectedMessages = [] }; Spacer(); Button("逐条转发 (\(selectedMessages.count))", systemImage: "arrowshape.turn.up.right") { forwardingSelected = true }.disabled(selectedMessages.isEmpty) }.font(.subheadline).padding(16).background(.bar)
             } else {
             HStack(alignment: .bottom, spacing: 10) {
                 Button { voiceMode.toggle(); plus = false; emoji = false; composerFocused = !voiceMode; if !voiceMode { stopRecording(cancel: true) } } label: { Image(systemName: voiceMode ? "keyboard" : "waveform.circle").font(.system(size: 25, weight: .regular)).frame(width: 32, height: 40) }.accessibilityLabel(voiceMode ? "切换文字输入" : "切换语音输入")
@@ -570,7 +573,7 @@ struct ConversationView: View {
                 if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Button { composerFocused = false; emoji = false; withAnimation(.easeInOut(duration: 0.18)) { plus.toggle() } } label: { Image(systemName: "plus.circle").font(.system(size: 25, weight: .regular)).frame(width: 32, height: 40) }.accessibilityLabel("更多功能")
                 } else {
-                    Button { sendText() } label: { Text("发送").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white).padding(.horizontal, 12).frame(height: 36).background(SPXColor.primary, in: RoundedRectangle(cornerRadius: 8)) }.accessibilityLabel("发送")
+                    Button { sendText() } label: { Text("发�?).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white).padding(.horizontal, 12).frame(height: 36).background(SPXColor.primary, in: RoundedRectangle(cornerRadius: 8)) }.accessibilityLabel("发�?)
                 }
             }.padding(.horizontal, 10).padding(.vertical, 8).background(SPXColor.surface)
             if plus { plusGrid.padding(.horizontal, 16).padding(.vertical, 18).background(.bar) }
@@ -599,6 +602,8 @@ struct ConversationView: View {
     private var realtimeContent: some View {
         navigationContent
             .onChange(of: text) { value in
+                let old = observedText
+                observedText = value
                 let userEdit = mentionSourceText != value
                 synchronizeMentions(to: value)
                 guard userEdit, isGroup, !insertingMention, !mentioning, value.count == old.count + 1 else { return }
@@ -632,7 +637,7 @@ struct ConversationView: View {
                             for (key, name) in saved?["mention_names"].object ?? [:] { if let id = Int(key), id > 0 || id == -1 { names[id] = name.string } }
                             mentionTokens = MentionRanges.restoringLegacy(names, in: value)
                         }
-                        mentionSourceText = value; text = value
+                        mentionSourceText = value; observedText = value; text = value
                     }
                     restoredDraft = true
                 }
@@ -652,7 +657,7 @@ struct ConversationView: View {
                 Button("保存") { if let editing { Task { do { try await model.edit(editing, content: editText) } catch { self.error = error.localizedDescription } } }; editing = nil }
                 Button("取消", role: .cancel) { editing = nil }
             }
-            .confirmationDialog("为所有人删除这条消息？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
+            .confirmationDialog("为所有人删除这条消息�?, isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
                 Button("确认删除", role: .destructive) { if let deleting { Task { do { try await model.delete(deleting) } catch { self.error = error.localizedDescription } } }; deleting = nil }
             }
     }
@@ -668,7 +673,7 @@ struct ConversationView: View {
             .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { notification in
                 guard let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
                       AVAudioSession.InterruptionType(rawValue: raw) == .began, recorder.recording || recordingGesture else { return }
-                stopRecording(cancel: true); error = "系统音频被打断，录音已取消"
+                stopRecording(cancel: true); error = "系统音频被打断，录音已取�?
             }
     }
     private var attachmentContent: some View {
@@ -693,7 +698,7 @@ struct ConversationView: View {
             .sheet(item: $forward) { ForwardMessageView(message: $0) }
             .sheet(item: $contextMessage) { message in SPXNavigationContainer { MessageContextView(targetID: item.id, group: isGroup, messageID: message.id) } }
             .sheet(isPresented: $forwardingSelected, onDismiss: { selecting = false; selectedMessages = [] }) { ForwardMessageView(messages: model.messages.filter { selectedMessages.contains($0.id) }) }
-            .sheet(isPresented: $announcement, onDismiss: { let version = announcementVersion; Task { await LocalStore.shared.write(version, key: "group-announcement-\(item.id)", userID: userID) } }) { SPXNavigationContainer { ScrollView { Text(groupInfo["announcement"].string).frame(maxWidth: .infinity, alignment: .leading).padding(24).textSelection(.enabled) }.navigationTitle("群公告").toolbar { ToolbarItem(placement: .confirmationAction) { Button("我知道了") { announcement = false } } } } }
+            .sheet(isPresented: $announcement, onDismiss: { let version = announcementVersion; Task { await LocalStore.shared.write(version, key: "group-announcement-\(item.id)", userID: userID) } }) { SPXNavigationContainer { ScrollView { Text(groupInfo["announcement"].string).frame(maxWidth: .infinity, alignment: .leading).padding(24).textSelection(.enabled) }.navigationTitle("群公�?).toolbar { ToolbarItem(placement: .confirmationAction) { Button("我知道了") { announcement = false } } } } }
             .spxNavigationDestination(item: $sharedProduct) { ProductDetailView(product: $0) }
             .sheet(isPresented: $sharedGroup) { SPXNavigationContainer { GroupJoinView(initialCode: sharedGroupCode).toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { sharedGroup = false } } } } }
     }
@@ -708,7 +713,7 @@ struct ConversationView: View {
     private var plusGrid: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 16) {
             SPXPhotosPicker(selection: $photos, maxSelectionCount: 9, matching: .any(of: [.images, .videos])) { PlusAction(title: sendOriginal ? "相册 · 原图" : "相册", icon: "photo.on.rectangle") }
-                .contextMenu { Toggle("发送原图", isOn: $sendOriginal) }
+                .contextMenu { Toggle("发送原�?, isOn: $sendOriginal) }
                 .disabled(processingPhotos)
             Button { if UIImagePickerController.isSourceTypeAvailable(.camera) { camera = true } else { error = "当前设备没有可用相机" } } label: { PlusAction(title: "拍摄", icon: "camera") }
             if !isGroup {
@@ -719,7 +724,7 @@ struct ConversationView: View {
             Button { documents = true } label: { PlusAction(title: "文件", icon: "doc") }
             Button { location = true } label: { PlusAction(title: "位置", icon: "location") }
             Menu {
-                Button { schedule = true } label: { Label("定时发送", systemImage: "clock") }
+                Button { schedule = true } label: { Label("定时发�?, systemImage: "clock") }
             } label: { PlusAction(title: "更多", icon: "ellipsis") }
             if isGroup { Button { mentioning = true } label: { PlusAction(title: "提醒成员", icon: "at") } }
         }.buttonStyle(.plain)
@@ -737,7 +742,7 @@ struct ConversationView: View {
     private func sendText() {
         let source = text, value = source.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
-        guard value.unicodeScalars.count <= 10_000 else { error = "消息最多 10000 字，请分段发送"; return }
+        guard value.unicodeScalars.count <= 10_000 else { error = "消息最�?10000 字，请分段发�?; return }
         synchronizeMentions(to: source)
         var body: [String: JSON] = ["content": .string(value), "message_type": "text"]
         if let replied { body["reply_to_message_id"] = .number(Decimal(replied.id)) }
@@ -786,13 +791,13 @@ struct ConversationView: View {
     }
     private func toggleSelection(_ id: Int) {
         guard let message = model.messages.first(where: { $0.id == id }), MessageContent.canForward(message) else { return }
-        if selectedMessages.contains(id) { selectedMessages.remove(id) } else if selectedMessages.count < 100 { selectedMessages.insert(id) } else { error = "一次最多选择 100 条消息" }
+        if selectedMessages.contains(id) { selectedMessages.remove(id) } else if selectedMessages.count < 100 { selectedMessages.insert(id) } else { error = "一次最多选择 100 条消�? }
     }
     private func queue(file: URL, kind: String, name: String) async throws {
         var content = name
         if kind == "voice", let duration = try? await AVURLAsset(url: file).load(.duration), duration.seconds.isFinite {
             let seconds = max(1, Int(ceil(duration.seconds)))
-            content = "语音 · \(seconds)秒"
+            content = "语音 · \(seconds)�?
         }
         try await outbox.enqueue(scope: isGroup ? "group" : "chat", id: item.id, body: ["content": .string(content), "message_type": .string(kind)], localURL: file, expectedUserID: userID)
         pendingScrollToBottom = true
@@ -928,10 +933,10 @@ struct PendingMessageBubble: View {
     private var isMedia: Bool { ["image", "video"].contains(kind) }
     private var status: String {
         switch entry.state {
-        case .queued: return "等待发送"
-        case .uploading: return "上传中 \(Int(entry.progress * 100))%"
-        case .sending: return "发送中…"
-        case .failed: return entry.error ?? "发送失败"
+        case .queued: return "等待发�?
+        case .uploading: return "上传�?\(Int(entry.progress * 100))%"
+        case .sending: return "发送中�?
+        case .failed: return entry.error ?? "发送失�?
         }
     }
     var body: some View {
