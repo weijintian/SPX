@@ -17,6 +17,11 @@ struct ChatListView: View {
     @State private var loadingList = false
     @State private var reloadRequested = false
     @State private var forceReloadRequested = false
+    @State private var destination: ChatListRoute?
+    private enum ChatListRoute: String, Identifiable {
+        case addContact, scanCode, joinGroup, createGroup
+        var id: String { rawValue }
+    }
     private var conversations: [Record] {
         let direct = chats.map { item -> Record in var value = item; value["kind"] = "chat"; return value }
         let joined = groups.map { item -> Record in var value = item; value["kind"] = "group"; return value }
@@ -40,13 +45,21 @@ struct ChatListView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
-                        NavigationLink { AddContactView() } label: { Label("添加朋友", systemImage: "person.badge.plus") }
-                        NavigationLink { ScanCodeView() } label: { Label("扫一扫", systemImage: "qrcode.viewfinder") }
-                        NavigationLink { GroupJoinView() } label: { Label("加入群组", systemImage: "person.2.badge.plus") }
-                        NavigationLink { GroupCreateView() } label: { Label("创建群聊", systemImage: "bubble.left.and.bubble.right") }
+                        Button { destination = .addContact } label: { Label("添加朋友", systemImage: "person.badge.plus") }
+                        Button { destination = .scanCode } label: { Label("扫一扫", systemImage: "qrcode.viewfinder") }
+                        Button { destination = .joinGroup } label: { Label("加入群组", systemImage: "person.2.badge.plus") }
+                        Button { destination = .createGroup } label: { Label("创建群聊", systemImage: "bubble.left.and.bubble.right") }
                     } label: { SPXIcon("plus").frame(width: 23, height: 23).frame(width: 44, height: 44) }
                 }
             }.spxRefreshable { await load() }.spxPage()
+            .spxNavigationDestination(item: $destination) { route in
+                switch route {
+                case .addContact: AddContactView()
+                case .scanCode: ScanCodeView()
+                case .joinGroup: GroupJoinView()
+                case .createGroup: GroupCreateView()
+                }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .spxRealtime)
                 .filter { notification in
                     guard let event = notification.object as? JSON else { return false }
@@ -425,7 +438,25 @@ struct ConversationView: View {
     @State private var cancelRecording = false
     @State private var recordingRequest = UUID()
     @State private var contextMessage: Record?
+    @State private var activeSheet: ConversationSheet?
     @State private var visible = false
+    private enum ConversationSheet: Identifiable {
+        case forward(Record), context(Record), forwardingSelected, announcement, sharedGroup, mention, packet, schedule, location, filePreview(Record)
+        var id: String {
+            switch self {
+            case .forward(let value): return "forward-\(value.id)"
+            case .context(let value): return "context-\(value.id)"
+            case .forwardingSelected: return "forwarding-selected"
+            case .announcement: return "announcement"
+            case .sharedGroup: return "shared-group"
+            case .mention: return "mention"
+            case .packet: return "packet"
+            case .schedule: return "schedule"
+            case .location: return "location"
+            case .filePreview(let value): return "file-\(value.id)"
+            }
+        }
+    }
     private var draftKey: String { "chat-draft-\(isGroup ? "g" : "c")-\(item.id)" }
     private var title: String {
         let current = groupInfo.id > 0 ? groupInfo : item
@@ -451,7 +482,7 @@ struct ConversationView: View {
     private var conversationContent: some View {
         VStack(spacing: 0) {
             if let value = model.error { ErrorBanner(message: value).padding(.horizontal).padding(.vertical, 5) }
-            if isGroup, !groupInfo["announcement"].string.isEmpty { Button { announcement = true } label: { HStack(spacing: 8) { Image(systemName: "megaphone"); Text(groupInfo["announcement"].string).lineLimit(1); Spacer(); Image(systemName: "chevron.right").font(.caption2) }.font(.caption).foregroundStyle(SPXColor.primary).padding(.horizontal, 16).padding(.vertical, 10).background(SPXColor.card) } }
+            if isGroup, !groupInfo["announcement"].string.isEmpty { Button { announcement = true; activeSheet = .announcement } label: { HStack(spacing: 8) { Image(systemName: "megaphone"); Text(groupInfo["announcement"].string).lineLimit(1); Spacer(); Image(systemName: "chevron.right").font(.caption2) }.font(.caption).foregroundStyle(SPXColor.primary).padding(.horizontal, 16).padding(.vertical, 10).background(SPXColor.card) } }
             if model.initialLoading, model.messages.isEmpty { HStack(spacing: 8) { ProgressView(); Text("正在同步消息…").font(.caption).foregroundStyle(.secondary) }.padding(10) }
             if processingPhotos { HStack(spacing: 8) { ProgressView(); Text("正在从相册准备附件…").font(.caption); Spacer() }.padding(.horizontal, 16).padding(.vertical, 8) }
             ScrollViewReader { proxy in
@@ -470,13 +501,13 @@ struct ConversationView: View {
                         } else {
                         HStack(spacing: 10) {
                             if selecting { Button { toggleSelection(message.id) } label: { Image(systemName: selectedMessages.contains(message.id) ? "checkmark.circle.fill" : "circle").font(.title3).foregroundStyle(SPXColor.primary) }.disabled(!MessageContent.canForward(message)) }
-                            MessageBubble(message: message, currentUserID: userID, isGroup: isGroup, open: { if selecting { toggleSelection(message.id) } else { open(message) } }, reply: { contextMessage = Record(["id": message["reply"]["id"]]) }, mention: isGroup ? { insertMention(id: message["sender_id"].int, name: message.name) } : nil)
+                            MessageBubble(message: message, currentUserID: userID, isGroup: isGroup, open: { if selecting { toggleSelection(message.id) } else { open(message) } }, reply: { let value = Record(["id": message["reply"]["id"]]); contextMessage = value; activeSheet = .context(value) }, mention: isGroup ? { insertMention(id: message["sender_id"].int, name: message.name) } : nil)
                         }
                             .id(entry.id)
                             .contextMenu {
                                 Button("复制", systemImage: "doc.on.doc") { UIPasteboard.general.string = message["content"].string }
                                 Button("引用", systemImage: "arrowshape.turn.up.left") { replied = message }
-                                if MessageContent.canForward(message) { Button("转发", systemImage: "arrowshape.turn.up.right") { forward = message } }
+                                if MessageContent.canForward(message) { Button("转发", systemImage: "arrowshape.turn.up.right") { forward = message; activeSheet = .forward(message) } }
                                 if MessageContent.canForward(message) { Button("多选", systemImage: "checkmark.circle") { selectedMessages = [message.id]; selecting = true } }
                                 if message["sender_id"].int == userID, message["message_origin"].string != "call", message["message_origin"].string != "system" {
                                     if message["message_type"].string == "text", MessageContent.groupCode(message) == nil { Button("编辑", systemImage: "pencil") { editing = message; editText = message["content"].string } }
@@ -555,7 +586,7 @@ struct ConversationView: View {
             }
             Divider()
             if selecting {
-                HStack { Button("取消多选") { selecting = false; selectedMessages = [] }; Spacer(); Button("逐条转发 (\(selectedMessages.count))", systemImage: "arrowshape.turn.up.right") { forwardingSelected = true }.disabled(selectedMessages.isEmpty) }.font(.subheadline).padding(16).background(.bar)
+                HStack { Button("取消多选") { selecting = false; selectedMessages = [] }; Spacer(); Button("逐条转发 (\(selectedMessages.count))", systemImage: "arrowshape.turn.up.right") { forwardingSelected = true; activeSheet = .forwardingSelected }.disabled(selectedMessages.isEmpty) }.font(.subheadline).padding(16).background(.bar)
             } else {
             HStack(alignment: .bottom, spacing: 10) {
                 Button { voiceMode.toggle(); plus = false; emoji = false; composerFocused = !voiceMode; if !voiceMode { stopRecording(cancel: true) } } label: { Image(systemName: voiceMode ? "keyboard" : "waveform.circle").font(.system(size: 25, weight: .regular)).frame(width: 32, height: 40) }.accessibilityLabel(voiceMode ? "切换文字输入" : "切换语音输入")
@@ -567,7 +598,14 @@ struct ConversationView: View {
                         .gesture(DragGesture(minimumDistance: 0).onChanged { value in beginRecording(); cancelRecording = value.translation.height < -70 }.onEnded { _ in stopRecording(cancel: cancelRecording) })
                         .accessibilityAction(named: "开始或结束录音") { if recorder.recording { stopRecording(cancel: false) } else { beginRecording() } }
                 } else {
-                    TextEditor(text: $text).font(.system(size: 16)).focused($composerFocused).frame(minHeight: 40, maxHeight: 120).padding(.horizontal, 8).padding(.vertical, 4).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 10))
+                    TextEditor(text: $text)
+                        .font(.system(size: 16))
+                        .focused($composerFocused)
+                        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 40, maxHeight: 120)
+                        .layoutPriority(1)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(SPXColor.card, in: RoundedRectangle(cornerRadius: 10))
                 }
                 Button { emoji.toggle(); plus = false; composerFocused = false } label: { Image(systemName: "face.smiling").font(.system(size: 25, weight: .regular)).frame(width: 32, height: 40) }.accessibilityLabel("表情")
                 if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -575,7 +613,11 @@ struct ConversationView: View {
                 } else {
                     Button { sendText() } label: { Text("发送").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white).padding(.horizontal, 12).frame(height: 36).background(SPXColor.primary, in: RoundedRectangle(cornerRadius: 8)) }.accessibilityLabel("发送")
                 }
-            }.padding(.horizontal, 10).padding(.vertical, 8).background(SPXColor.surface)
+            }
+            .frame(maxWidth: .infinity, alignment: .bottom)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(SPXColor.surface)
             if plus { plusGrid.padding(.horizontal, 16).padding(.vertical, 18).background(.bar) }
             if emoji { EmojiPanel { text += $0 } }
             }
@@ -695,20 +737,29 @@ struct ConversationView: View {
     }
     private var messageSheetsContent: some View {
         attachmentContent
-            .sheet(item: $forward) { ForwardMessageView(message: $0) }
-            .sheet(item: $contextMessage) { message in SPXNavigationContainer { MessageContextView(targetID: item.id, group: isGroup, messageID: message.id) } }
-            .sheet(isPresented: $forwardingSelected, onDismiss: { selecting = false; selectedMessages = [] }) { ForwardMessageView(messages: model.messages.filter { selectedMessages.contains($0.id) }) }
-            .sheet(isPresented: $announcement, onDismiss: { let version = announcementVersion; Task { await LocalStore.shared.write(version, key: "group-announcement-\(item.id)", userID: userID) } }) { SPXNavigationContainer { ScrollView { Text(groupInfo["announcement"].string).frame(maxWidth: .infinity, alignment: .leading).padding(24).textSelection(.enabled) }.navigationTitle("群公告").toolbar { ToolbarItem(placement: .confirmationAction) { Button("我知道了") { announcement = false } } } } }
+            .sheet(item: $activeSheet, onDismiss: {
+                if announcement { let version = announcementVersion; announcement = false; Task { await LocalStore.shared.write(version, key: "group-announcement-\(item.id)", userID: userID) } }
+                mentioning = false; mentionTrigger = nil; composerFocused = true; packet = false; schedule = false; location = false; sharedGroup = false
+                selecting = false; selectedMessages = []
+            }) { route in
+                switch route {
+                case .forward(let message): ForwardMessageView(message: message)
+                case .context(let message): SPXNavigationContainer { MessageContextView(targetID: item.id, group: isGroup, messageID: message.id) }
+                case .forwardingSelected: ForwardMessageView(messages: model.messages.filter { selectedMessages.contains($0.id) })
+                case .announcement:
+                    SPXNavigationContainer { ScrollView { Text(groupInfo["announcement"].string).frame(maxWidth: .infinity, alignment: .leading).padding(24).textSelection(.enabled) }.navigationTitle("群公告").toolbar { ToolbarItem(placement: .confirmationAction) { Button("我知道了") { activeSheet = nil } } } }
+                case .sharedGroup: SPXNavigationContainer { GroupJoinView(initialCode: sharedGroupCode).toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { sharedGroup = false; activeSheet = nil } } } }
+                case .mention: MemberMentionPicker(members: members, excluding: userID, groupID: item.id) { member in insertMention(id: member["user_id"].int > 0 ? member["user_id"].int : member.id, name: member.name); mentioning = false; activeSheet = nil }
+                case .packet: RedPacketSendView(scope: isGroup ? "group" : "chat", targetID: item.id)
+                case .schedule: ScheduledMessageView(scope: isGroup ? "group" : "chat", targetID: item.id)
+                case .location: SendLocationView(scope: isGroup ? "group" : "chat", targetID: item.id)
+                case .filePreview(let message): FileAttachmentView(message: message, userID: userID)
+                }
+            }
             .spxNavigationDestination(item: $sharedProduct) { ProductDetailView(product: $0) }
-            .sheet(isPresented: $sharedGroup) { SPXNavigationContainer { GroupJoinView(initialCode: sharedGroupCode).toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { sharedGroup = false } } } } }
     }
     var body: some View {
         messageSheetsContent
-            .sheet(isPresented: $mentioning, onDismiss: { mentionTrigger = nil; composerFocused = true }) { MemberMentionPicker(members: members, excluding: userID, groupID: item.id) { member in insertMention(id: member["user_id"].int > 0 ? member["user_id"].int : member.id, name: member.name); mentioning = false } }
-            .sheet(isPresented: $packet) { RedPacketSendView(scope: isGroup ? "group" : "chat", targetID: item.id) }
-            .sheet(isPresented: $schedule) { ScheduledMessageView(scope: isGroup ? "group" : "chat", targetID: item.id) }
-            .sheet(isPresented: $location) { SendLocationView(scope: isGroup ? "group" : "chat", targetID: item.id) }
-            .sheet(item: $filePreview) { message in FileAttachmentView(message: message, userID: userID) }
     }
     private var plusGrid: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 16) {
@@ -720,13 +771,13 @@ struct ConversationView: View {
                 Button { CallCoordinator.shared.dial(chat: item, video: false) } label: { PlusAction(title: "语音通话", icon: "phone") }
                 Button { CallCoordinator.shared.dial(chat: item, video: true) } label: { PlusAction(title: "视频通话", icon: "video") }
             }
-            Button { packet = true } label: { PlusAction(title: "红包", icon: "gift") }
+            Button { packet = true; activeSheet = .packet } label: { PlusAction(title: "红包", icon: "gift") }
             Button { documents = true } label: { PlusAction(title: "文件", icon: "doc") }
-            Button { location = true } label: { PlusAction(title: "位置", icon: "location") }
+            Button { location = true; activeSheet = .location } label: { PlusAction(title: "位置", icon: "location") }
             Menu {
-                Button { schedule = true } label: { Label("定时发送", systemImage: "clock") }
+                Button { schedule = true; activeSheet = .schedule } label: { Label("定时发送", systemImage: "clock") }
             } label: { PlusAction(title: "更多", icon: "ellipsis") }
-            if isGroup { Button { mentioning = true } label: { PlusAction(title: "提醒成员", icon: "at") } }
+            if isGroup { Button { mentioning = true; activeSheet = .mention } label: { PlusAction(title: "提醒成员", icon: "at") } }
         }.buttonStyle(.plain)
     }
     private func synchronizeMentions(to value: String) {
@@ -851,12 +902,12 @@ struct ConversationView: View {
     }
     private func open(_ message: Record) {
         if let card = MessageContent.product(message) { sharedProduct = Record(["id": card["product_id"], "name": card["name"], "image_url": card["image_url"], "cny_price": card["cny_price"]]); return }
-        if let code = MessageContent.groupCode(message) { sharedGroupCode = code; sharedGroup = true; return }
+        if let code = MessageContent.groupCode(message) { sharedGroupCode = code; sharedGroup = true; activeSheet = .sharedGroup; return }
         if message["message_origin"].string == "call", !isGroup { CallCoordinator.shared.dial(chat: item, video: message["content"].string.hasPrefix("[视频通话]")); return }
         switch MessageContent.messageType(message) {
         case "image", "video": selectedMedia = message
         case "voice": Task { do { try await VoicePlayback.shared.toggle(message["media_url"].string, userID: userID) } catch { self.error = error.localizedDescription } }
-        case "file": filePreview = message
+        case "file": filePreview = message; activeSheet = .filePreview(message)
         case "red_packet": NotificationCenter.default.post(name: .spxOpenPacket, object: message)
         case "call": CallCoordinator.shared.dial(chat: item, video: message["content"].string.contains("视频"))
         default: break
@@ -890,6 +941,7 @@ struct MessageBubble: View {
     private var isMedia: Bool { ["image", "video"].contains(message["message_type"].string) }
     private var type: String { MessageContent.messageType(message) }
     private var greeting: String { MessageContent.redPacketGreeting(message) }
+    private var packetMode: String { MessageContent.redPacketMode(message) }
     var body: some View {
         if MessageContent.isSystem(message) {
             SystemMessageNotice(message: message)
@@ -908,14 +960,26 @@ struct MessageBubble: View {
                     case "file": Label(message["content"].string, systemImage: "doc.fill")
                     case "red_packet":
                         VStack(alignment: .leading, spacing: 5) {
-                            Label("红包", systemImage: "gift.fill").font(.system(size: 16, weight: .semibold))
-                            Text(greeting).font(.caption).lineLimit(1)
-                        }.padding(.vertical, 10)
+                            HStack(spacing: 10) {
+                                Image(systemName: "gift.fill")
+                                    .font(.system(size: 22, weight: .semibold))
+                                    .foregroundStyle(Color(red: 1, green: 0.82, blue: 0.52))
+                                    .frame(width: 34, height: 34)
+                                Text(greeting).font(.system(size: 16, weight: .semibold)).lineLimit(2)
+                            }
+                            Text("轻触打开红包").font(.caption).foregroundStyle(.white.opacity(0.86))
+                            Rectangle().fill(.white.opacity(0.22)).frame(height: 1)
+                            Text((packetMode == "random" ? "拼手气红包" : "普通红包") + " · SPX001")
+                                .font(.system(size: 11)).foregroundStyle(.white.opacity(0.86))
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                        .frame(minWidth: 220, maxWidth: 250, alignment: .leading)
                     case "call": Label(message["content"].string, systemImage: "phone.fill")
                     default: MessageText(content: message["content"].string, mine: mine)
                     } }
                 }.font(.system(size: 16)).padding(isMedia ? 0 : 12).foregroundStyle(mine ? .white : SPXColor.ink)
-                    .background(isMedia ? Color.clear : (type == "red_packet" ? Color.orange : (mine ? SPXColor.primary : SPXColor.card)), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(isMedia ? Color.clear : (type == "red_packet" ? Color(red: 0.82, green: 0.19, blue: 0.14) : (mine ? SPXColor.primary : SPXColor.card)), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay { if !mine, !isMedia { RoundedRectangle(cornerRadius: 12).stroke(SPXColor.line, lineWidth: 0.5) } }
             }.buttonStyle(.plain)
             }
