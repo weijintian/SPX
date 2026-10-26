@@ -38,7 +38,7 @@ struct ChatListView: View {
                 }.padding(.horizontal, 18).padding(.vertical, 10).background(SPXColor.surface)
             }
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
                         NavigationLink { AddContactView() } label: { Label("添加朋友", systemImage: "person.badge.plus") }
                         NavigationLink { ScanCodeView() } label: { Label("扫一扫", systemImage: "qrcode.viewfinder") }
@@ -64,7 +64,7 @@ struct ChatListView: View {
                 let id = session.user?.id ?? 0
                 if let cache: [Record] = await LocalStore.shared.read("chats", userID: id) { chats = cache }
                 if let cache: [Record] = await LocalStore.shared.read("groups", userID: id) { groups = cache }
-                while !Task.isCancelled { await load(); do { try await Task.sleep(for: .seconds(20)) } catch { return } }
+                while !Task.isCancelled { await load(); do { try await SPXSleep.seconds(20) } catch { return } }
             }
     }
     private func filtered(_ items: [Record]) -> [Record] { items.filter { (search.isEmpty || $0.name.localizedCaseInsensitiveContains(search)) && (filter != 1 || $0["unread_count"].int > 0) && (filter != 2 || !$0.isGroup) && (filter != 3 || $0.isGroup) } }
@@ -238,7 +238,7 @@ struct ChatListView: View {
                 error = nil
             } catch is CancellationError { if Task.isCancelled { return }; if currentRevision != revision { continue }; return }
             catch { if runID == identity, currentRevision == revision, !Task.isCancelled { initialLoading = false; self.error = error.localizedDescription } }
-            do { try await Task.sleep(for: .seconds(3)) } catch { return }
+            do { try await SPXSleep.seconds(3) } catch { return }
         }
     }
     func setReadVisibility(_ visible: Bool) {
@@ -345,7 +345,7 @@ struct ChatDetailView: View {
     @EnvironmentObject private var session: SessionStore
     var body: some View {
         ConversationView(item: item, isGroup: isGroup, userID: session.user?.id ?? 0)
-            .toolbar(.hidden, for: .tabBar)
+            
     }
 }
 
@@ -374,7 +374,7 @@ struct ConversationView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
     @State private var plus = false
-    @State private var photos: [PhotosPickerItem] = []
+    @State private var photos: [SPXPhotosPickerItem] = []
     @State private var processingPhotos = false
     @State private var sendOriginal = false
     @State private var documents = false
@@ -390,6 +390,8 @@ struct ConversationView: View {
     @State private var didInitialScroll = false
     @State private var oldestDisplayedID: Int?
     @State private var atBottom = true
+    @State private var lastViewportHeight: CGFloat = 0
+    @State private var timelineCache = ChatTimelineCache()
     @State private var latestSeenID = 0
     @State private var replied: Record?
     @State private var editing: Record?
@@ -437,7 +439,7 @@ struct ConversationView: View {
         guard let oldestDisplayedID else { return Array(model.messages.suffix(100)) }
         return model.messages.filter { $0.id >= oldestDisplayedID }
     }
-    private var timeline: [ChatTimelineEntry] { ChatTimelineEntry.merge(messages: displayedMessages, pending: pending, userID: userID) }
+    private var timeline: [ChatTimelineEntry] { timelineCache.entries(messages: displayedMessages, pending: pending, userID: userID) }
     private var firstDisplayedID: Int? {
         guard let oldestDisplayedID else { return model.messages.dropFirst(max(0, model.messages.count - 100)).first?.id }
         return model.messages.first { $0.id >= oldestDisplayedID }?.id
@@ -497,12 +499,22 @@ struct ConversationView: View {
                 }
                 .onPreferenceChange(ConversationScrollMetricsKey.self) { metrics in
                     guard let height = metrics.viewportHeight, height > 0 else { return }
+                    let resized = lastViewportHeight > 0 && abs(height - lastViewportHeight) > 1
+                    lastViewportHeight = height
+                    // Follow the latest message across keyboard/panel size changes,
+                    // while leaving someone reading older messages in place.
+                    if resized, didInitialScroll, atBottom {
+                        scrollToLatest(proxy, animated: false)
+                        return
+                    }
                     let visible = metrics.bottomY.map { $0 >= 0 && $0 <= height + 24 } ?? false
                     if atBottom != visible { atBottom = visible }
                     if visible { latestSeenID = model.messages.last?.id ?? latestSeenID }
                 }
-                .scrollDismissesKeyboard(.interactively)
-                .defaultScrollAnchor(.bottom)
+                
+                .spxDismissKeyboardOnTap { dismissInputPanels() }
+                .accessibilityAction(named: "收起键盘和输入面板") { dismissInputPanels() }
+                
                 .overlay(alignment: .bottomTrailing) {
                     if !atBottom {
                         Button { scrollToLatest(proxy, animated: true) } label: {
@@ -512,14 +524,14 @@ struct ConversationView: View {
                         }.padding(12)
                     }
                 }
-                .onChange(of: model.messages.last?.id) { old, last in
+                .onChange(of: model.messages.last?.id) { last in
                     guard old != last else { return }
                     if !didInitialScroll || atBottom { scrollToLatest(proxy, animated: didInitialScroll); latestSeenID = last ?? latestSeenID }
                 }
-                .onChange(of: model.messages.count) { _, _ in
+                .onChange(of: model.messages.count) { _ in
                     if !didInitialScroll, !model.messages.isEmpty { scrollToLatest(proxy, animated: false) }
                 }
-                .onChange(of: pendingScrollToBottom) { _, requested in
+                .onChange(of: pendingScrollToBottom) { requested in
                     guard requested else { return }
                     scrollToLatest(proxy, animated: true)
                     pendingScrollToBottom = false
@@ -528,7 +540,7 @@ struct ConversationView: View {
                     guard !didInitialScroll, !model.messages.isEmpty else { return }
                     scrollToLatest(proxy, animated: false)
                 }
-                .onChange(of: outbox.acknowledgements) { _, map in model.merge(Array(map.values.filter { $0[isGroup ? "group_id" : "chat_id"].int == item.id })) }
+                .onChange(of: outbox.acknowledgements) { map in model.merge(Array(map.values.filter { $0[isGroup ? "group_id" : "chat_id"].int == item.id })) }
                 .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { _ in
                     if composerFocused, atBottom { scrollToLatest(proxy, animated: false) }
                 }
@@ -551,7 +563,7 @@ struct ConversationView: View {
                         .gesture(DragGesture(minimumDistance: 0).onChanged { value in beginRecording(); cancelRecording = value.translation.height < -70 }.onEnded { _ in stopRecording(cancel: cancelRecording) })
                         .accessibilityAction(named: "开始或结束录音") { if recorder.recording { stopRecording(cancel: false) } else { beginRecording() } }
                 } else {
-                    TextField("输入消息", text: $text, axis: .vertical).font(.system(size: 16)).focused($composerFocused).lineLimit(1...5).padding(.horizontal, 12).padding(.vertical, 10).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 10))
+                    TextEditor(text: $text).font(.system(size: 16)).focused($composerFocused).frame(minHeight: 40, maxHeight: 120).padding(.horizontal, 8).padding(.vertical, 4).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 10))
                 }
                 Button { emoji.toggle(); plus = false; composerFocused = false } label: { Image(systemName: "face.smiling").font(.system(size: 25, weight: .regular)).frame(width: 32, height: 40) }.accessibilityLabel("表情")
                 if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -565,19 +577,27 @@ struct ConversationView: View {
             }
         }
     }
+    private func dismissInputPanels() {
+        guard composerFocused || plus || emoji else { return }
+        if atBottom { pendingScrollToBottom = true }
+        composerFocused = false
+        if plus || emoji {
+            withAnimation(.easeInOut(duration: 0.18)) { plus = false; emoji = false }
+        }
+    }
     private var navigationContent: some View {
         conversationContent.navigationTitle(title).navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(SPXColor.surface, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { NavigationLink { ConversationSettingsView(item: item, isGroup: isGroup) } label: { Image(systemName: "ellipsis") } } }
-            .toolbar(.hidden, for: .tabBar)
+            
+            
+            .toolbar { ToolbarItem(placement: .navigationBarTrailing) { NavigationLink { ConversationSettingsView(item: item, isGroup: isGroup) } label: { Image(systemName: "ellipsis") } } }
+            
             .spxPage().errorAlert($error)
             .overlay(alignment: .top) { if let mentionNotice { Text(mentionNotice).font(.subheadline.weight(.medium)).padding(.horizontal, 18).padding(.vertical, 11).background(.regularMaterial, in: Capsule()).padding(.top, 10).allowsHitTesting(false) } }
-            .task(id: mentionNotice) { guard mentionNotice != nil else { return }; do { try await Task.sleep(for: .seconds(2)); mentionNotice = nil } catch { } }
+            .task(id: mentionNotice) { guard mentionNotice != nil else { return }; do { try await SPXSleep.seconds(2); mentionNotice = nil } catch { } }
     }
     private var realtimeContent: some View {
         navigationContent
-            .onChange(of: text) { old, value in
+            .onChange(of: text) { value in
                 let userEdit = mentionSourceText != value
                 synchronizeMentions(to: value)
                 guard userEdit, isGroup, !insertingMention, !mentioning, value.count == old.count + 1 else { return }
@@ -585,7 +605,7 @@ struct ConversationView: View {
                 let index = value.index(value.startIndex, offsetBy: prefix)
                 if value[index] == "@" { mentionTrigger = prefix; mentioning = true }
             }
-            .onChange(of: composerFocused) { _, focused in
+            .onChange(of: composerFocused) { focused in
                 guard focused else { return }
                 plus = false
                 emoji = false
@@ -621,7 +641,7 @@ struct ConversationView: View {
             }
             .task(id: draftSnapshot) {
                 guard restoredDraft else { return }
-                do { try await Task.sleep(for: .milliseconds(350)); await LocalStore.shared.write(draftSnapshot, key: draftKey, userID: userID) } catch { }
+                do { try await SPXSleep.milliseconds(350); await LocalStore.shared.write(draftSnapshot, key: draftKey, userID: userID) } catch { }
             }
     }
     private var messageEditorContent: some View {
@@ -638,12 +658,12 @@ struct ConversationView: View {
     private var recordingContent: some View {
         messageEditorContent
             .task(id: String(describing: phase) + String(visible)) { model.setReadVisibility(phase == .active && visible && atBottom); if phase == .active && visible { await model.run() } else { stopRecording(cancel: true) } }
-            .onChange(of: atBottom) { _, value in model.setReadVisibility(value && visible && phase == .active) }
+            .onChange(of: atBottom) { value in model.setReadVisibility(value && visible && phase == .active) }
             .onAppear { visible = true; if isGroup { ChatSoundEffects.shared.readGroup(item.id) } }
             .onDisappear { visible = false; model.setReadVisibility(false); stopRecording(cancel: true); let snapshot = draftSnapshot; Task { await LocalStore.shared.write(snapshot, key: draftKey, userID: userID) } }
             .onReceive(CallCoordinator.shared.$call) { call in if call != nil { stopRecording(cancel: true) } }
-            .onChange(of: recorder.completedURL) { _, url in if let url { ChatSoundEffects.recording = false; recordingGesture = false; recordingRequest = UUID(); recorder.completedURL = nil; Task { do { try await queue(file: url, kind: "voice", name: "语音") } catch { self.error = error.localizedDescription } } } }
-            .onChange(of: recorder.errorMessage) { _, message in if let message { ChatSoundEffects.recording = false; error = message; recorder.errorMessage = nil } }
+            .onChange(of: recorder.completedURL) { url in if let url { ChatSoundEffects.recording = false; recordingGesture = false; recordingRequest = UUID(); recorder.completedURL = nil; Task { do { try await queue(file: url, kind: "voice", name: "语音") } catch { self.error = error.localizedDescription } } } }
+            .onChange(of: recorder.errorMessage) { message in if let message { ChatSoundEffects.recording = false; error = message; recorder.errorMessage = nil } }
             .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { notification in
                 guard let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
                       AVAudioSession.InterruptionType(rawValue: raw) == .began, recorder.recording || recordingGesture else { return }
@@ -652,7 +672,7 @@ struct ConversationView: View {
     }
     private var attachmentContent: some View {
         recordingContent
-            .onChange(of: photos) { _, items in
+            .onChange(of: photos) { items in
                 guard !items.isEmpty, !processingPhotos else { return }
                 photos = []
                 processingPhotos = true
@@ -670,11 +690,11 @@ struct ConversationView: View {
     private var messageSheetsContent: some View {
         attachmentContent
             .sheet(item: $forward) { ForwardMessageView(message: $0) }
-            .sheet(item: $contextMessage) { message in NavigationStack { MessageContextView(targetID: item.id, group: isGroup, messageID: message.id) } }
+            .sheet(item: $contextMessage) { message in SPXNavigationContainer { MessageContextView(targetID: item.id, group: isGroup, messageID: message.id) } }
             .sheet(isPresented: $forwardingSelected, onDismiss: { selecting = false; selectedMessages = [] }) { ForwardMessageView(messages: model.messages.filter { selectedMessages.contains($0.id) }) }
-            .sheet(isPresented: $announcement, onDismiss: { let version = announcementVersion; Task { await LocalStore.shared.write(version, key: "group-announcement-\(item.id)", userID: userID) } }) { NavigationStack { ScrollView { Text(groupInfo["announcement"].string).frame(maxWidth: .infinity, alignment: .leading).padding(24).textSelection(.enabled) }.navigationTitle("群公告").toolbar { ToolbarItem(placement: .confirmationAction) { Button("我知道了") { announcement = false } } } } }
-            .navigationDestination(item: $sharedProduct) { ProductDetailView(product: $0) }
-            .sheet(isPresented: $sharedGroup) { NavigationStack { GroupJoinView(initialCode: sharedGroupCode).toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { sharedGroup = false } } } } }
+            .sheet(isPresented: $announcement, onDismiss: { let version = announcementVersion; Task { await LocalStore.shared.write(version, key: "group-announcement-\(item.id)", userID: userID) } }) { SPXNavigationContainer { ScrollView { Text(groupInfo["announcement"].string).frame(maxWidth: .infinity, alignment: .leading).padding(24).textSelection(.enabled) }.navigationTitle("群公告").toolbar { ToolbarItem(placement: .confirmationAction) { Button("我知道了") { announcement = false } } } } }
+            .spxNavigationDestination(item: $sharedProduct) { ProductDetailView(product: $0) }
+            .sheet(isPresented: $sharedGroup) { SPXNavigationContainer { GroupJoinView(initialCode: sharedGroupCode).toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { sharedGroup = false } } } } }
     }
     var body: some View {
         messageSheetsContent
@@ -686,7 +706,7 @@ struct ConversationView: View {
     }
     private var plusGrid: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 16) {
-            PhotosPicker(selection: $photos, maxSelectionCount: 9, matching: .any(of: [.images, .videos])) { PlusAction(title: sendOriginal ? "相册 · 原图" : "相册", icon: "photo.on.rectangle") }
+            SPXPhotosPicker(selection: $photos, maxSelectionCount: 9, matching: .any(of: [.images, .videos])) { PlusAction(title: sendOriginal ? "相册 · 原图" : "相册", icon: "photo.on.rectangle") }
                 .contextMenu { Toggle("发送原图", isOn: $sendOriginal) }
                 .disabled(processingPhotos)
             Button { if UIImagePickerController.isSourceTypeAvailable(.camera) { camera = true } else { error = "当前设备没有可用相机" } } label: { PlusAction(title: "拍摄", icon: "camera") }
@@ -776,7 +796,7 @@ struct ConversationView: View {
         try await outbox.enqueue(scope: isGroup ? "group" : "chat", id: item.id, body: ["content": .string(content), "message_type": .string(kind)], localURL: file, expectedUserID: userID)
         pendingScrollToBottom = true
     }
-    private func sendPhotos(_ items: [PhotosPickerItem]) async {
+    private func sendPhotos(_ items: [SPXPhotosPickerItem]) async {
         defer { processingPhotos = false; plus = false }
         for selected in items {
             do { let file = try await MediaFiles.select(selected, userID: userID, original: sendOriginal); let video = selected.supportedContentTypes.contains { $0.conforms(to: .movie) }; try await queue(file: file, kind: video ? "video" : "image", name: video ? "视频" : "图片") }

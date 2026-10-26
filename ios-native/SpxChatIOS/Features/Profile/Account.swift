@@ -50,21 +50,21 @@ struct ProfileEditView: View {
     @State private var nickname = ""
     @State private var remark = ""
     @State private var avatar = ""
-    @State private var selected: PhotosPickerItem?
+    @State private var selected: SPXPhotosPickerItem?
     @State private var busy = false
     @State private var error: String?
     var body: some View {
         SPXDetailPage {
-            SPXPanel("头像") { HStack { Avatar(url: avatar, name: nickname, size: 72); Spacer(); PhotosPicker(selection: $selected, matching: .images) { Label(busy ? "处理中…" : "更换头像", systemImage: "camera") }.buttonStyle(.bordered) } }
+            SPXPanel("头像") { HStack { Avatar(url: avatar, name: nickname, size: 72); Spacer(); SPXPhotosPicker(selection: $selected, matching: .images) { Label(busy ? "处理中…" : "更换头像", systemImage: "camera") }.buttonStyle(.bordered) } }
             SPXPanel("个人信息") {
                 SPXField("昵称") { TextField("请输入昵称", text: $nickname) }
                 InfoRow(title: "SPX ID", value: session.user?["spx_id"].string ?? "")
-                SPXField("个人简介") { TextField("介绍一下自己", text: $remark, axis: .vertical).lineLimit(3...8) }
+                SPXField("个人简介") { TextField("介绍一下自己", text: $remark).lineLimit(8) }
             }
             if let error { ErrorBanner(message: error) }
         }.safeAreaInset(edge: .bottom, spacing: 0) { SPXBottomAction { Button(busy ? "保存中…" : "保存资料") { save() }.disabled(busy || nickname.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) } }.navigationTitle("个人资料").disabled(busy)
             .onAppear { nickname = session.user?["nickname"].string ?? ""; remark = session.user?["remark"].string ?? ""; avatar = session.user?.avatar ?? "" }
-            .onChange(of: selected) { _, item in guard let item else { return }; busy = true; Task { defer { busy = false }; do { let file = try await MediaFiles.select(item, userID: session.user?.id ?? 0); defer { try? FileManager.default.removeItem(at: file) }; avatar = try await MediaUploader.shared.uploadForm(file: file, action: "upload.avatar"); try? FileManager.default.removeItem(at: file) } catch { self.error = error.localizedDescription } } }
+            .onChange(of: selected) { item in guard let item else { return }; busy = true; Task { defer { busy = false }; do { let file = try await MediaFiles.select(item, userID: session.user?.id ?? 0); defer { try? FileManager.default.removeItem(at: file) }; avatar = try await MediaUploader.shared.uploadForm(file: file, action: "upload.avatar"); try? FileManager.default.removeItem(at: file) } catch { self.error = error.localizedDescription } } }
     }
     private func save() { busy = true; Task { defer { busy = false }; do { try await APIClient.shared.post("profile.update", ["nickname": .string(nickname), "remark": .string(remark), "avatar_url": .string(avatar)]); try await session.refreshProfile(); dismiss() } catch { self.error = error.localizedDescription } } }
 }
@@ -114,7 +114,7 @@ struct ChangePasswordView: View {
             if let error { ErrorBanner(message: error) }
         }.safeAreaInset(edge: .bottom, spacing: 0) {
             SPXBottomAction { Button(busy ? "保存中…" : "保存新密码") { save() }.disabled(busy || password.count < 6 || password != confirmation || (emailVerification ? code.count != 6 : current.isEmpty)) }
-        }.navigationTitle("修改密码").task(id: cooldown) { guard cooldown > 0 else { return }; do { try await Task.sleep(for: .seconds(1)); cooldown -= 1 } catch { } }
+        }.navigationTitle("修改密码").task(id: cooldown) { guard cooldown > 0 else { return }; do { try await SPXSleep.seconds(1); cooldown -= 1 } catch { } }
     }
     private func sendCode() { busy = true; Task { defer { busy = false }; do { try await APIClient.shared.post("password.email.code"); cooldown = 60 } catch { self.error = error.localizedDescription } } }
     private func save() { busy = true; Task { defer { busy = false; current = ""; password = ""; confirmation = ""; code = "" }; do { let response = try await APIClient.shared.post(emailVerification ? "password.update.email" : "password.update", [emailVerification ? "code" : "current_password": .string(emailVerification ? code : current), "new_password": .string(password)]); if emailVerification { try await session.replaceToken(response["token"].string) }; dismiss() } catch { self.error = error.localizedDescription } } }

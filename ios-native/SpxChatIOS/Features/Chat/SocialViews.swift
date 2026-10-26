@@ -61,7 +61,7 @@ struct AddContactView: View {
         SPXDetailPage {
             SPXPageHeading(title: "添加朋友", subtitle: "输入朋友的 SPX ID 或邮箱，查看资料后添加", icon: "person.badge.plus")
             SPXCard { VStack(alignment: .leading, spacing: 14) {
-                SPXField("SPX ID / 邮箱") { TextField("输入 SPX ID 或邮箱", text: $lookup).textInputAutocapitalization(.never).autocorrectionDisabled().submitLabel(.search).onSubmit { if !busy && !lookup.isEmpty { search() } } }
+                SPXField("SPX ID / 邮箱") { TextField("输入 SPX ID 或邮箱", text: $lookup).textInputAutocapitalization(.never).submitLabel(.search).onSubmit { if !busy && !lookup.isEmpty { search() } } }
                 Button { search() } label: { Label(busy ? "正在查找…" : "查找朋友", systemImage: "magnifyingglass").frame(maxWidth: .infinity, minHeight: 44) }.disabled(busy || lookup.isEmpty)
             } }
             if !rows.isEmpty { SPXSectionTitle(title: "查找结果", detail: "\(rows.count) 位") }
@@ -107,7 +107,7 @@ struct UserProfileView: View {
                 if let error { ErrorBanner(message: error); if profile.id == 0 { Button("重新加载") { Task { await loadProfile() } } } }
             }.padding(18)
         }.navigationTitle("个人资料").spxPage().disabled(busy)
-            .navigationDestination(item: $chat) { ChatDetailView(item: $0, isGroup: false) }
+            .spxNavigationDestination(item: $chat) { ChatDetailView(item: $0, isGroup: false) }
             .task { await loadProfile() }.successToast($notice)
             .confirmationDialog("删除好友将清除双方聊天记录", isPresented: $delete, titleVisibility: .visible) {
                 Button("确认删除", role: .destructive) { guard !busy else { return }; busy = true; Task { defer { busy = false }; do { try await APIClient.shared.post("contacts.delete", ["contact_user_id": .number(Decimal(userID))]); profile["is_contact"] = false; notice = "好友已删除"; NotificationCenter.default.post(name: .spxConversationUpdated, object: nil) } catch { self.error = error.localizedDescription } } }
@@ -178,7 +178,7 @@ struct GroupCreateView: View {
         }.navigationTitle("创建群聊").safeAreaInset(edge: .bottom) {
             SPXBottomAction { Button(busy ? "正在创建…" : "创建群聊 · \(selected.count) 位朋友") { create() }.disabled(busy || loading || selected.isEmpty || name.trimmingCharacters(in: .whitespaces).isEmpty) }
         }.task { await loadContacts() }
-            .navigationDestination(item: $chat) { ChatDetailView(item: $0, isGroup: true) }
+            .spxNavigationDestination(item: $chat) { ChatDetailView(item: $0, isGroup: true) }
     }
     private func loadContacts() async {
         guard !busy else { return }; loading = true
@@ -205,7 +205,7 @@ struct GroupJoinView: View {
         SPXDetailPage {
             SPXPageHeading(title: "加入群组", subtitle: "输入六位群号，确认群资料后加入", icon: "person.3")
             SPXCard { VStack(alignment: .leading, spacing: 14) {
-                SPXField("六位群号") { TextField("输入六位群号", text: $code).textInputAutocapitalization(.characters).autocorrectionDisabled().disabled(joining).submitLabel(.search).onSubmit { if !searching && !joining && normalizedCode.count == 6 { search() } } }
+                SPXField("六位群号") { TextField("输入六位群号", text: $code).textInputAutocapitalization(.characters).disabled(joining).submitLabel(.search).onSubmit { if !searching && !joining && normalizedCode.count == 6 { search() } } }
                 Button(searching ? "查找中…" : "查找群组") { search() }.frame(maxWidth: .infinity, minHeight: 44).disabled(searching || joining || normalizedCode.count != 6)
             } }
             if let result, resultCode == normalizedCode {
@@ -215,10 +215,10 @@ struct GroupJoinView: View {
                     if !result["announcement"].string.isEmpty { Divider(); Text(result["announcement"].string).font(.system(size: 14)).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true) }
                 } }
             }
-        }.navigationTitle("加入群组").navigationDestination(item: $chat) { ChatDetailView(item: $0, isGroup: true) }
+        }.navigationTitle("加入群组").spxNavigationDestination(item: $chat) { ChatDetailView(item: $0, isGroup: true) }
             .safeAreaInset(edge: .bottom) { if let result, resultCode == normalizedCode { SPXBottomAction { Button(joining ? "正在加入…" : "加入群组") { join(result, code: resultCode) }.disabled(joining) } } }
             .onAppear { if code.isEmpty { code = initialCode } }
-            .onChange(of: code) { _, _ in
+            .onChange(of: code) { _ in
                 result = nil; resultCode = ""; requestID = UUID(); searching = false
                 if normalizedCode.count == 6, normalizedCode == initialCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() { search() }
             }
@@ -268,7 +268,7 @@ struct ForwardMessageView: View {
     @State private var loading = true
     private var available: [Record] { messages.filter(MessageContent.canForward) }
     var body: some View {
-        NavigationStack {
+        SPXNavigationContainer {
             SPXDetailPage {
                 SPXPageHeading(title: "选择接收人", subtitle: "已选 \(selection.count) 个会话 · 转发 \(available.count) 条消息", icon: "arrowshape.turn.up.right")
                 if !chats.filter(matches).isEmpty { SPXSectionTitle(title: "最近会话"); ForEach(chats.filter(matches)) { target($0, scope: "chat") } }
@@ -345,17 +345,17 @@ struct ScheduledMessageView: View {
     @State private var requestID = UUID().uuidString.lowercased()
     @State private var error: String?
     @State private var busy = false
-    @State private var photo: PhotosPickerItem?
+    @State private var photo: SPXPhotosPickerItem?
     @State private var mediaURL = ""
     @State private var pending: Record?
     private var recoveryKey: String { "scheduled-pending-\(scope)-\(targetID)" }
     var body: some View {
-        NavigationStack {
+        SPXNavigationContainer {
             SPXDetailPage {
                 SPXPageHeading(title: "定时发送", subtitle: "提前安排消息，按指定时间发送", icon: "clock")
                 SPXCard { VStack(alignment: .leading, spacing: 18) {
-                    SPXField("消息内容") { TextField("输入要发送的内容", text: $content, axis: .vertical).lineLimit(3...8) }
-                    PhotosPicker(selection: $photo, matching: .images) { SPXSettingsRow(title: mediaURL.isEmpty ? "添加图片" : "更换图片", icon: "photo") }
+                    SPXField("消息内容") { TextField("输入要发送的内容", text: $content).lineLimit(8) }
+                    SPXPhotosPicker(selection: $photo, matching: .images) { SPXSettingsRow(title: mediaURL.isEmpty ? "添加图片" : "更换图片", icon: "photo") }
                     if !mediaURL.isEmpty { CachedImage(source: mediaURL).frame(maxWidth: .infinity).frame(height: 160).clipShape(RoundedRectangle(cornerRadius: 12)); Button("移除图片", role: .destructive) { mediaURL = "" }.frame(minHeight: 44) }
                     Divider()
                     DatePicker("发送时间", selection: $date, in: Date().addingTimeInterval(30)...Date().addingTimeInterval(90 * 86400)).font(.system(size: 14))
@@ -376,7 +376,7 @@ struct ScheduledMessageView: View {
                 .safeAreaInset(edge: .bottom) { SPXBottomAction { Button(busy ? "正在处理…" : pending == nil ? "创建定时消息" : "确认上次提交结果") { save() }.disabled(busy || (pending == nil && content.isEmpty && mediaURL.isEmpty)) } }
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() }.disabled(busy) } }
                 .task { pending = await LocalStore.shared.read(recoveryKey, userID: session.user?.id ?? 0); await load() }.errorAlert($error)
-                .onChange(of: photo) { _, item in guard let item else { return }; upload(item) }
+                .onChange(of: photo) { item in guard let item else { return }; upload(item) }
         }.interactiveDismissDisabled(busy)
     }
     private func load() async {
@@ -418,7 +418,7 @@ struct ScheduledMessageView: View {
             }
         }
     }
-    private func upload(_ item: PhotosPickerItem) {
+    private func upload(_ item: SPXPhotosPickerItem) {
         guard !busy, pending == nil else { return }; busy = true
         Task { defer { busy = false; photo = nil }; do { let file = try await MediaFiles.select(item, userID: session.user?.id ?? 0); defer { try? FileManager.default.removeItem(at: file) }; mediaURL = try await MediaUploader.shared.uploadForm(file: file, action: "upload.message") } catch { self.error = error.localizedDescription } }
     }
@@ -445,7 +445,7 @@ struct SendLocationView: View {
     @State private var error: String?
     @State private var sending = false
     var body: some View {
-        NavigationStack {
+        SPXNavigationContainer {
             SPXDetailPage {
                 SPXPageHeading(title: "分享当前位置", subtitle: "确认位置名称后发送给当前会话", icon: "location")
                 SPXCard { VStack(alignment: .leading, spacing: 16) {

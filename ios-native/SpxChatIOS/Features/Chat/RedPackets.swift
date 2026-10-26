@@ -23,7 +23,7 @@ struct RedPacketSendView: View {
     private var count: Int { scope == "group" ? Int(countText) ?? 0 : 1 }
     private var validCount: Bool { (1...100).contains(count) }
     var body: some View {
-        NavigationStack {
+        SPXNavigationContainer {
             ScrollView {
                 VStack(spacing: 18) {
                     HStack { SPXIcon("gift").frame(width: 22,height: 22); Text("SPX001 红包").font(.system(size: 15,weight: .semibold)); Spacer() }.foregroundStyle(SPXColor.hex(0xC34438))
@@ -37,7 +37,7 @@ struct RedPacketSendView: View {
                                     .keyboardType(.numberPad).multilineTextAlignment(.trailing)
                                     .frame(minWidth: 70, maxWidth: 130).focused($inputFocus, equals: .count)
                                     .accessibilityLabel("红包个数，1 至 100 个")
-                                    .onChange(of: countText) { _, value in
+                                    .onChange(of: countText) { value in
                                         let digits = value.filter { $0.isASCII && $0.isNumber }
                                         if digits != value { countText = digits }
                                     }
@@ -49,13 +49,13 @@ struct RedPacketSendView: View {
                         HStack { Text("总金额").font(.system(size: 15)); Spacer(); TextField("0.00",text: $amount).keyboardType(.decimalPad).multilineTextAlignment(.trailing).focused($inputFocus, equals: .amount); Text("SPX001").font(.system(size: 12)).foregroundStyle(SPXColor.muted) }.frame(minHeight: 44)
                         Text(mode == "random" ? "每个人领取的金额随机分配" : "每个人领取相同金额").font(.system(size: 12)).foregroundStyle(SPXColor.muted)
                     }
-                    SPXPanel("祝福语") { TextField("恭喜发财，大吉大利",text: $greeting).focused($inputFocus, equals: .greeting).onChange(of: greeting) { _, value in if value.count > 50 { greeting = String(value.prefix(50)) } } }
+                    SPXPanel("祝福语") { TextField("恭喜发财，大吉大利",text: $greeting).focused($inputFocus, equals: .greeting).onChange(of: greeting) { value in if value.count > 50 { greeting = String(value.prefix(50)) } } }
                     Text("\(DisplayLabels.amount(amount.isEmpty ? "0" : amount)) SPX001").font(.system(size: 30,weight: .semibold)).monospacedDigit().minimumScaleFactor(0.5).lineLimit(1).padding(.vertical,16)
                     if uncertain { ErrorBanner(message: "上次发送结果待确认，请先核对，避免重复扣款。") }
                     Text("红包到账至 SPX001 资产，未领取部分由服务器按到期规则退回。普通红包按六位小数均分，实际金额以确认结果为准。")
                         .font(.system(size: 12)).foregroundStyle(SPXColor.muted).frame(maxWidth: .infinity,alignment: .leading)
                 }.padding(20).disabled(!restored || uncertain || busy)
-            }.scrollDismissesKeyboard(.interactively)
+        }.spxDismissKeyboardOnTap()
                 .safeAreaInset(edge: .bottom) {
                     Button { inputFocus = nil; if uncertain { resolve() } else { password = ""; confirm = true } } label: {
                         HStack { Spacer(); if busy { ProgressView().tint(.white) }; Text(uncertain ? "核对上次发送结果" : "塞钱进红包"); Spacer() }
@@ -133,7 +133,7 @@ struct RedPacketPopup: View {
                 else { Text(ineligibleMessage).foregroundStyle(.white.opacity(0.86)).multilineTextAlignment(.center); Button(loading ? "正在刷新…" : "刷新领取状态") { load() }.font(.footnote.weight(.semibold)).disabled(loading || busy) }
                 if let error { Text(error).font(.footnote).foregroundStyle(.yellow) }
                 if !packet["claims"].array.isEmpty {
-                    ScrollView { LazyVStack(spacing: 12) { ForEach(Array(packet["claims"].array.enumerated()), id: \.offset) { _, claim in HStack { Text(claim["nickname"].string); Spacer(); Text(DisplayLabels.amount(claim["amount"].string) + " SPX001") }.font(.caption) } } }.frame(maxHeight: 200)
+                    ScrollView { LazyVStack(spacing: 12) { ForEach(Array(packet["claims"].array.enumerated()), id: \.offset) { claim in HStack { Text(claim["nickname"].string); Spacer(); Text(DisplayLabels.amount(claim["amount"].string) + " SPX001") }.font(.caption) } } }.frame(maxHeight: 200)
                 }
                 Button("关闭") { close() }.foregroundStyle(.white.opacity(0.8)).disabled(busy)
             }.padding(30).frame(maxWidth: 320).foregroundStyle(.white).background(LinearGradient(colors: [Color(red: 0.86, green: 0.24, blue: 0.18), Color(red: 0.67, green: 0.1, blue: 0.1)], startPoint: .top, endPoint: .bottom), in: RoundedRectangle(cornerRadius: 24))

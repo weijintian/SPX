@@ -91,14 +91,14 @@ struct MessageContextView: View {
                     if loading { ProgressView() }
                     if let error { ErrorBanner(message: error); Button("重试") { Task { await load() } } }
                 }.padding(12)
-            }.onChange(of: rows.map(\.id)) { _, _ in proxy.scrollTo(messageID, anchor: .center) }
+            }.onChange(of: rows.map(\.id)) { _ in proxy.scrollTo(messageID, anchor: .center) }
         }.navigationTitle("消息上下文").navigationBarTitleDisplayMode(.inline).spxPage()
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
             .task { await load() }
             .fullScreenCover(item: $media) { selected in MediaPreview(messages: rows.filter { ["image", "video"].contains($0["message_type"].string) }, initialID: selected.id) }
             .sheet(item: $forward) { ForwardMessageView(message: $0) }
-            .navigationDestination(item: $product) { ProductDetailView(product: $0) }
-            .sheet(isPresented: Binding(get: { groupCode != nil }, set: { if !$0 { groupCode = nil } })) { NavigationStack { GroupJoinView(initialCode: groupCode ?? "").toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { groupCode = nil } } } } }
+            .spxNavigationDestination(item: $product) { ProductDetailView(product: $0) }
+            .sheet(isPresented: Binding(get: { groupCode != nil }, set: { if !$0 { groupCode = nil } })) { SPXNavigationContainer { GroupJoinView(initialCode: groupCode ?? "").toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { groupCode = nil } } } } }
             .sheet(isPresented: Binding(get: { document != nil }, set: { if !$0 { document = nil } })) { if let document { DocumentPreview(url: document) } }
     }
     private func load() async {

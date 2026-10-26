@@ -18,14 +18,11 @@ enum ChatMediaLayout {
 }
 
 /// Android uses a bounded, aspect-preserving bubble after the image is decoded.
-private struct ChatImageLayout: Layout {
+private struct ChatImageLayout<Content: View>: View {
     let imageSize: CGSize?
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        ChatMediaLayout.imageSize(imageSize ?? .zero, maximumWidth: proposal.width ?? 220)
-    }
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        for view in subviews { view.place(at: bounds.origin, anchor: .topLeading, proposal: ProposedViewSize(bounds.size)) }
-    }
+    let content: Content
+    init(imageSize: CGSize?, @ViewBuilder content: () -> Content) { self.imageSize = imageSize; self.content = content() }
+    var body: some View { content.frame(width: ChatMediaLayout.imageSize(imageSize ?? .zero).width, height: ChatMediaLayout.imageSize(imageSize ?? .zero).height) }
 }
 
 struct LocalAttachmentPreview: View {
@@ -110,17 +107,17 @@ struct MediaPreview: View {
         _selected = State(initialValue: messages.firstIndex(where: { $0.id == initialID }) ?? 0)
     }
     var body: some View {
-        NavigationStack {
+        SPXNavigationContainer {
             TabView(selection: $selected) {
                 ForEach(Array(messages.enumerated()), id: \.offset) { index, message in
                     MediaPage(message: message, active: selected == index).tag(index)
                 }
             }.tabViewStyle(.page(indexDisplayMode: .always)).background(.black)
-                .toolbarBackground(.black, for: .navigationBar).toolbarColorScheme(.dark, for: .navigationBar)
+                
                 .toolbar {
-                    ToolbarItem(placement: .topBarLeading) { Button { dismiss() } label: { Image(systemName: "xmark") } }
+                    ToolbarItem(placement: .navigationBarLeading) { Button { dismiss() } label: { Image(systemName: "xmark") } }
                     ToolbarItem(placement: .principal) { Text("\(selected + 1) / \(messages.count)").foregroundStyle(.white) }
-                    ToolbarItem(placement: .topBarTrailing) {
+                    ToolbarItem(placement: .navigationBarTrailing) {
                         Menu {
                             Button("保存到相册", systemImage: "square.and.arrow.down") { save() }.disabled(busy)
                             Button("转发", systemImage: "arrowshape.turn.up.right") { forwarding = true }
@@ -317,8 +314,8 @@ struct MediaPage: View {
         pageContent
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .task(id: loadKey) { await loadVideo() }
-            .onChange(of: active) { _, value in if !value { player?.pause() } }
-            .onChange(of: message.id) { _, _ in resetImageTransform() }
+            .onChange(of: active) { value in if !value { player?.pause() } }
+            .onChange(of: message.id) { _ in resetImageTransform() }
             .onDisappear {
                 videoLoadID = UUID()
                 player?.pause(); player = nil; videoObservation = nil; playbackObservation = nil

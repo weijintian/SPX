@@ -39,7 +39,7 @@ struct SupportEditor: View {
             SPXPageHeading(title: feedback ? "意见反馈" : "客服工单", subtitle: "请描述问题、发生时间与操作步骤，方便我们处理。", icon: "square.and.pencil")
             SPXPanel("问题内容") {
                 if !feedback { SPXField("问题标题") { TextField("简要描述问题", text: $subject) } }
-                SPXField("详细说明") { TextField("问题描述与出现步骤…", text: $content, axis: .vertical).lineLimit(6...16) }
+                SPXField("详细说明") { TextField("问题描述与出现步骤…", text: $content).lineLimit(16) }
                 if feedback { SPXField("联系方式（选填）") { TextField("便于联系你的方式", text: $contact) } }
             }.disabled(busy)
             if let error { ErrorBanner(message: error) }
@@ -55,7 +55,7 @@ struct QuestionsView: View {
     @State private var busy = false
     @State private var error: String?
     var body: some View {
-        SPXDetailPage { SPXPanel("提交问题") { TextField("你想了解什么？", text: $question, axis: .vertical).lineLimit(3...8); Button(busy ? "提交中…" : "提交提问") { busy = true; Task { defer { busy = false }; do { try await APIClient.shared.post("questions.create", ["question": .string(question)]); question = ""; await load() } catch { self.error = error.localizedDescription } } }.buttonStyle(SPXPrimaryButtonStyle()).disabled(busy || question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }; SPXPanel("历史提问") { ForEach(rows) { row in VStack(alignment: .leading, spacing: 8) { Text(row["question"].string); Text(row.text("answer", "admin_reply", "status")).font(.subheadline).foregroundStyle(.secondary) } } }; if let error { ErrorBanner(message: error) } }.navigationTitle("我的提问").task { await load() }
+        SPXDetailPage { SPXPanel("提交问题") { TextField("你想了解什么？", text: $question).lineLimit(8); Button(busy ? "提交中…" : "提交提问") { busy = true; Task { defer { busy = false }; do { try await APIClient.shared.post("questions.create", ["question": .string(question)]); question = ""; await load() } catch { self.error = error.localizedDescription } } }.buttonStyle(SPXPrimaryButtonStyle()).disabled(busy || question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }; SPXPanel("历史提问") { ForEach(rows) { row in VStack(alignment: .leading, spacing: 8) { Text(row["question"].string); Text(row.text("answer", "admin_reply", "status")).font(.subheadline).foregroundStyle(.secondary) } } }; if let error { ErrorBanner(message: error) } }.navigationTitle("我的提问").task { await load() }
     }
     private func load() async { do { rows = try await APIClient.shared.get("questions").list } catch { self.error = error.localizedDescription } }
 }
@@ -68,7 +68,7 @@ struct ReferralsView: View {
             SPXPageHeading(title: "邀请朋友", subtitle: "分享邀请链接，查看邀请与奖励记录", icon: "person.2")
             SPXPanel("我的邀请码") {
                 Text(data["invite_code"].string.isEmpty ? "—" : data["invite_code"].string).font(.system(size: 32, weight: .bold, design: .monospaced)).foregroundStyle(SPXColor.primary).textSelection(.enabled).frame(maxWidth: .infinity).padding(.vertical, 12)
-                if let url = URL(string: data["invite_url"].string), !data["invite_url"].string.isEmpty { ShareLink(item: url) { Label("分享邀请链接", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity) }.buttonStyle(.borderedProminent) }
+                if let url = URL(string: data["invite_url"].string), !data["invite_url"].string.isEmpty { SPXShareLink(item: url) { Label("分享邀请链接", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity) }.buttonStyle(.borderedProminent) }
             }
             SPXPanel("邀请数据") {
                 InfoRow(title: "已邀请", value: data["invited_count"].string)

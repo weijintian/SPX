@@ -31,7 +31,7 @@ extension Notification.Name { static let spxRealtime = Notification.Name("spx.re
                     guard generation == epoch, !Task.isCancelled else { connection.cancel(with: .goingAway, reason: nil); return }
                     heartbeat = Task {
                         while !Task.isCancelled {
-                            do { try await Task.sleep(for: .seconds(20)); try await ping(connection) } catch { connection.cancel(with: .goingAway, reason: nil); return }
+                            do { try await SPXSleep.seconds(20); try await ping(connection) } catch { connection.cancel(with: .goingAway, reason: nil); return }
                         }
                     }
                     while !Task.isCancelled, generation == epoch {
@@ -65,7 +65,7 @@ extension Notification.Name { static let spxRealtime = Notification.Name("spx.re
                 guard generation == epoch else { return }
                 heartbeat?.cancel(); heartbeat = nil; socket?.cancel(with: .goingAway, reason: nil)
                 attempt += 1
-                do { try await Task.sleep(for: .seconds(min(30, pow(2, Double(min(attempt, 5)))) + Double.random(in: 0...1))) } catch { return }
+                do { try await SPXSleep.seconds(min(30, pow(2, Double(min(attempt, 5)))) + Double.random(in: 0...1)) } catch { return }
             }
         }
     }

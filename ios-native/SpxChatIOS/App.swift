@@ -57,7 +57,7 @@ import UIKit
     var body: some Scene {
         WindowGroup {
             RootView().environmentObject(session)
-                .onChange(of: phase) { _, value in session.setActive(value == .active) }
+                .onChange(of: phase) { value in session.setActive(value == .active) }
         }
     }
 }

@@ -11,7 +11,7 @@ struct FileAttachmentView: View {
     @State private var failure: String?
     private var source: String { message["media_url"].string }
     var body: some View {
-        NavigationStack {
+        SPXNavigationContainer {
             Group {
                 if let file { DocumentPreview(url: file) }
                 else {

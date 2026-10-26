@@ -21,6 +21,28 @@ final class IOSUpgradeTests: XCTestCase {
         let other = Record(["id": 10, "sender_id": 2, "client_message_id": "local"])
         XCTAssertEqual(ChatTimelineEntry.merge(messages: [other], pending: [pending], userID: 1).count, 2)
     }
+    
+    func testSameSecondMessagesUseNumericServerOrder() {
+        let first = Record(["id": 9, "sender_id": 2, "created_at": "2026-10-26 12:00:00"])
+        let second = Record(["id": 10, "sender_id": 2, "created_at": "2026-10-26 12:00:00"])
+        let rows = ChatTimelineEntry.merge(messages: [second, first], pending: [], userID: 1)
+        XCTAssertEqual(rows.compactMap { $0.message?.id }, [9, 10])
+    }
+
+    func testConversationTimelineCacheReusesProjectionUntilInputsChange() {
+        var builds = 0
+        let cache = ChatTimelineCache { messages, pending, userID in
+            builds += 1
+            return ChatTimelineEntry.merge(messages: messages, pending: pending, userID: userID)
+        }
+        let message = Record(["id": 1, "sender_id": 2, "created_at": "2026-10-26 12:00:00"])
+        _ = cache.entries(messages: [message], pending: [], userID: 1)
+        _ = cache.entries(messages: [message], pending: [], userID: 1)
+        XCTAssertEqual(builds, 1)
+        _ = cache.entries(messages: [message, Record(["id": 2, "sender_id": 2])], pending: [], userID: 1)
+        XCTAssertEqual(builds, 2)
+    }
+
     func testVoiceDurationLabelsHandleOldMessagesAndMalformedValues() {
         XCTAssertEqual(VoiceMessageMetadata.seconds(in: "语音 · 12秒"), 12)
         XCTAssertEqual(VoiceMessageMetadata.seconds(in: "语音 1.2秒"), 2)

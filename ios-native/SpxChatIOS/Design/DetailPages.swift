@@ -11,7 +11,7 @@ struct SPXDetailPage<Content: View>: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) { content }
                 .padding(16).frame(maxWidth: 680).frame(maxWidth: .infinity)
-        }.scrollDismissesKeyboard(.interactively).spxPage()
+        }.spxDismissKeyboardOnTap().spxPage()
     }
 }
 
@@ -127,7 +127,7 @@ struct SPXTimelineRow: View {
 }
 
 struct SPXPhotoSelectionStrip: View {
-    let items: [PhotosPickerItem]
+    let items: [SPXPhotosPickerItem]
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: 10) {
@@ -142,7 +142,7 @@ struct SPXPhotoSelectionStrip: View {
 }
 
 private struct SPXSelectedPhoto: View {
-    let item: PhotosPickerItem
+    let item: SPXPhotosPickerItem
     @State private var image: UIImage?
     var body: some View {
         Group {

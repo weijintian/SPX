@@ -46,7 +46,7 @@ struct MallHomeView: View {
     }
     private var navigatedCatalog: some View {
         catalogContent.navigationTitle(merchantID > 0 ? "店铺商品" : "商城")
-            .toolbar { ToolbarItemGroup(placement: .topBarTrailing) { NavigationLink { FavoritesView() } label: { Image(systemName: "heart") }; NavigationLink { OrdersView() } label: { SPXIcon("order").frame(width: 22, height: 22) }; NavigationLink { ShopsView() } label: { SPXIcon("store").frame(width: 22, height: 22) } } }
+            .toolbar { ToolbarItemGroup(placement: .navigationBarTrailing) { NavigationLink { FavoritesView() } label: { Image(systemName: "heart") }; NavigationLink { OrdersView() } label: { SPXIcon("order").frame(width: 22, height: 22) }; NavigationLink { ShopsView() } label: { SPXIcon("store").frame(width: 22, height: 22) } } }
             .spxPage().spxRefreshable { await load(reset: true) }
 
     }
@@ -56,7 +56,7 @@ struct MallHomeView: View {
             .task(id: search + "|" + category + "|" + kind) {
                 let filter = search + "|" + category + "|" + kind
                 do {
-                    if loadedFilter != nil, loadedFilter != filter { try await Task.sleep(for: .milliseconds(350)) }
+                    if loadedFilter != nil, loadedFilter != filter { try await SPXSleep.milliseconds(350) }
                     await load(reset: true, preservePages: loadedFilter == filter)
                 } catch { }
             }
@@ -65,7 +65,7 @@ struct MallHomeView: View {
                 guard visible, phase == .active else { return }
                 while !Task.isCancelled {
                     if let valuation = try? await APIClient.shared.get("mall.valuation"), !Task.isCancelled { usd = valuation["spx_usdt"].string }
-                    do { try await Task.sleep(for: .seconds(30)) } catch { return }
+                    do { try await SPXSleep.seconds(30) } catch { return }
                 }
             }
     }
@@ -229,7 +229,7 @@ struct ProductDetailView: View {
     @ViewBuilder private var sectionContent: some View {
         if selectedSection == "details" {
             SPXCard { Text(current.text("detail_text", "description")).font(.system(size: 14)).foregroundStyle(SPXColor.ink).textSelection(.enabled).fixedSize(horizontal: false, vertical: true) }
-            ForEach(Array(current["detail_images"].array.enumerated()), id: \.offset) { _, image in
+            ForEach(Array(current["detail_images"].array.enumerated()), id: \.offset) { image in
                 CachedImage(source: image.string, fit: true, maximumPixelSize: 1200).frame(maxWidth: .infinity).background(.white).clipShape(RoundedRectangle(cornerRadius: 12))
             }
             if !current["video_url"].string.isEmpty { ProductVideo(source: current["video_url"].string).frame(height: 220) }
@@ -284,15 +284,15 @@ struct ProductDetailView: View {
             }.padding(16)
         }.spxPage().navigationTitle("商品详情").navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom, spacing: 0) { purchaseBar }
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Menu { Button("分享给朋友", systemImage: "bubble.left") { shareInChat = true }; if let url = URL(string: "https://spx001.top/spxchat/product-share.php?id=\(current.id)") { ShareLink(item: url) }; Button("举报商品") { report = true } } label: { Image(systemName: "ellipsis") } } }
+            .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Menu { Button("分享给朋友", systemImage: "bubble.left") { shareInChat = true }; if let url = URL(string: "https://spx001.top/spxchat/product-share.php?id=\(current.id)") { SPXShareLink(item: url) }; Button("举报商品") { report = true } } label: { Image(systemName: "ellipsis") } } }
             .sheet(isPresented: $shareInChat) { ForwardMessageView(message: Record(["message_type": "product", "content": .string(String(data: (try? JSONEncoder().encode(Record(["product_id": current["id"]]))) ?? Data(), encoding: .utf8) ?? "")])) }
             .alert("举报商品", isPresented: $report) { TextField("原因", text: $reason); Button("提交") { Task { do { try await APIClient.shared.post("product.report", ["product_id": .number(Decimal(current.id)), "reason": .string(reason)]) } catch { self.error = error.localizedDescription } } }; Button("取消", role: .cancel) { } }
             .task(id: product.id) { await loadProduct(); await loadFavorite() }
             .spxRefreshable { await loadProduct() }
-            .navigationDestination(item: $merchantChat) { ChatDetailView(item: $0, isGroup: false) }
+            .spxNavigationDestination(item: $merchantChat) { ChatDetailView(item: $0, isGroup: false) }
             .fullScreenCover(isPresented: $previewImages) { MediaPreview(messages: images.enumerated().map { index, url in Record(["id": .number(Decimal(index + 1)), "message_type": "image", "media_url": .string(url)]) }, initialID: selectedImage + 1) }
             .onAppear { visible = true }.onDisappear { visible = false }
-            .task(id: String(describing: phase) + String(visible)) { guard visible, phase == .active else { return }; while !Task.isCancelled { do { usd = try await APIClient.shared.get("mall.valuation")["spx_usdt"].string; try await Task.sleep(for: .seconds(30)) } catch is CancellationError { return } catch { self.error = error.localizedDescription; do { try await Task.sleep(for: .seconds(30)) } catch { return } } } }
+            .task(id: String(describing: phase) + String(visible)) { guard visible, phase == .active else { return }; while !Task.isCancelled { do { usd = try await APIClient.shared.get("mall.valuation")["spx_usdt"].string; try await SPXSleep.seconds(30) } catch is CancellationError { return } catch { self.error = error.localizedDescription; do { try await SPXSleep.seconds(30) } catch { return } } } }
     }
     private func loadProduct() async {
         guard !loading else { return }
@@ -355,7 +355,7 @@ struct ShopsView: View {
             if more && !rows.isEmpty { Button(busy ? "正在加载…" : "加载更多") { Task { await load(reset: false) } }.frame(maxWidth: .infinity, minHeight: 44).disabled(busy) }
             if let error { ErrorBanner(message: error); Button("重新加载") { Task { await load(reset: true) } }.frame(maxWidth: .infinity, minHeight: 44).disabled(busy) }
         }.navigationTitle("优选店铺").searchable(text: $query, prompt: "搜索店铺")
-            .task(id: query) { do { try await Task.sleep(for: .milliseconds(300)); await load(reset: true) } catch { } }
+            .task(id: query) { do { try await SPXSleep.milliseconds(300); await load(reset: true) } catch { } }
             .spxRefreshable { await load(reset: true) }
     }
     private func load(reset: Bool) async {

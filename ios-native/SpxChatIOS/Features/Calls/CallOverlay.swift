@@ -25,9 +25,9 @@ struct CallOverlay: View {
                             position.y = clamp(position.y + value.translation.height, 72, geometry.size.height - 140)
                         })
                         .onAppear { if position == .zero { position = CGPoint(x: geometry.size.width - 70, y: 110) } }
-                        .onChange(of: position, initial: true) { _, _ in updateFrame(geometry) }
-                        .onChange(of: drag) { _, _ in updateFrame(geometry) }
-                        .onChange(of: geometry.size) { _, _ in updateFrame(geometry) }
+                        .onChange(of: position) { _ in updateFrame(geometry) }
+                        .onChange(of: drag) { _ in updateFrame(geometry) }
+                        .onChange(of: geometry.size) { _ in updateFrame(geometry) }
                 } else {
                     ZStack {
                         LinearGradient(colors: [Color(red: 0.08, green: 0.14, blue: 0.24), Color(red: 0.04, green: 0.07, blue: 0.13)], startPoint: .topLeading, endPoint: .bottomTrailing).ignoresSafeArea()

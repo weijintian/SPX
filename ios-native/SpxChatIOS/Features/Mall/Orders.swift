@@ -41,7 +41,7 @@ struct CheckoutView: View {
                     NavigationLink { AddressView() } label: { SPXSettingsRow(title: "新增或编辑地址", icon: "mappin.and.ellipse") }.buttonStyle(.plain)
                 }.disabled(busy || pending != nil)
             }
-            SPXPanel("买家留言") { TextField("备注需求（选填）", text: $note, axis: .vertical).lineLimit(2...4) }.disabled(busy || pending != nil)
+            SPXPanel("买家留言") { TextField("备注需求（选填）", text: $note).lineLimit(4) }.disabled(busy || pending != nil)
             if !quote.object.isEmpty {
                 SPXPanel("锁定报价", footer: "最终支付金额以服务器核对为准。") {
                     InfoRow(title: "商品单价", value: DisplayLabels.amount(quote["unit_price"].string) + " SPX001")
@@ -60,9 +60,9 @@ struct CheckoutView: View {
                 else { Button(busy ? "请稍候…" : "核对报价并继续") { prepare() }.disabled(!restored || busy || availableStock < 1 || (physical && addressID == 0) || (!variants.isEmpty && variantID.isEmpty)) }
             }
         }.navigationTitle("确认订单").navigationBarTitleDisplayMode(.inline)
-            .onChange(of: variantID) { _, _ in quantity = min(quantity, max(1, min(99, availableStock))); quote = .null }
-            .onChange(of: quantity) { _, _ in quote = .null }
-            .onChange(of: addressID) { _, _ in quote = .null }
+            .onChange(of: variantID) { _ in quantity = min(quantity, max(1, min(99, availableStock))); quote = .null }
+            .onChange(of: quantity) { _ in quote = .null }
+            .onChange(of: addressID) { _ in quote = .null }
             .task {
                 guard let owner = session.user?.id else { return }
                 pending = await LocalStore.shared.read("checkout-pending", userID: owner)
@@ -72,7 +72,7 @@ struct CheckoutView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .spxAddressChanged)) { _ in Task { await loadAddresses() } }
             .confirmationDialog("确认支付 \(DisplayLabels.amount(quote["total_spx"].string)) SPX001？", isPresented: $confirm, titleVisibility: .visible) { Button("确认支付") { pay() }; Button("取消", role: .cancel) { } }
-            .navigationDestination(isPresented: Binding(get: { orderID > 0 }, set: { if !$0 { orderID = 0 } })) { OrderDetailView(id: orderID) }
+            .spxNavigationDestination(isPresented: Binding(get: { orderID > 0 }, set: { if !$0 { orderID = 0 } })) { OrderDetailView(id: orderID) }
     }
     private func loadAddresses() async { guard physical else { return }; do { addresses = try await APIClient.shared.get("wallet.address").list; if addressID == 0 { addressID = addresses.first(where: { $0["is_default"].flag })?.id ?? addresses.first?.id ?? 0 } } catch { self.error = error.localizedDescription } }
     private func prepare() {
@@ -193,7 +193,7 @@ struct OrderDetailView: View {
                     SPXPanel("物流信息") {
                         InfoRow(title: "承运商", value: order["carrier"].string)
                         InfoRow(title: "运单号", value: order["tracking_number"].string)
-                        ShareLink(item: order["tracking_number"].string) { Label("分享物流单号", systemImage: "square.and.arrow.up") }.font(.subheadline)
+                        SPXShareLink(item: order["tracking_number"].string) { Label("分享物流单号", systemImage: "square.and.arrow.up") }.font(.subheadline)
                     }
                 }
                 if !order["fulfillment_note"].string.isEmpty { SPXPanel("交付内容") { Text(order["fulfillment_note"].string).font(.system(size: 15)).textSelection(.enabled) } }
@@ -209,14 +209,14 @@ struct OrderDetailView: View {
                         Text(order["after_sale_reason"].string).font(.subheadline)
                         if !order["after_sale_reply"].string.isEmpty { InfoRow(title: "处理回复", value: order["after_sale_reply"].string) }
                         if !order["merchant_service_reply"].string.isEmpty { InfoRow(title: "商家回复", value: order["merchant_service_reply"].string) }
-                        if !order["after_sale_images"].array.isEmpty { ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 10) { ForEach(Array(order["after_sale_images"].array.enumerated()), id: \.offset) { _, image in CachedImage(source: image.string).frame(width: 88, height: 88).clipShape(RoundedRectangle(cornerRadius: 12)) } } } }
+                        if !order["after_sale_images"].array.isEmpty { ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 10) { ForEach(Array(order["after_sale_images"].array.enumerated()), id: \.offset) { image in CachedImage(source: image.string).frame(width: 88, height: 88).clipShape(RoundedRectangle(cornerRadius: 12)) } } } }
                         if !order["return_address"].string.isEmpty { InfoRow(title: "退货地址", value: order["return_address"].string) }
                         if !order["return_tracking"].string.isEmpty { InfoRow(title: "退货物流", value: order["return_carrier"].string + " " + order["return_tracking"].string) }
                         if order["after_sale_status"].string == "return_approved" { Button("填写退货物流") { returns = true }.buttonStyle(.bordered) }
                     }
                 }
                 SPXPanel("订单进度") {
-                    ForEach(Array(order["events"].array.enumerated()), id: \.offset) { _, event in SPXTimelineRow(title: event["message"].string, date: event["created_at"].string) }
+                    ForEach(Array(order["events"].array.enumerated()), id: \.offset) { event in SPXTimelineRow(title: event["message"].string, date: event["created_at"].string) }
                     if order["events"].array.isEmpty { Text("暂无进度记录").font(.subheadline).foregroundStyle(SPXColor.muted) }
                 }
                 if let error { ErrorBanner(message: error) }
@@ -226,7 +226,7 @@ struct OrderDetailView: View {
                 let held = ["requested", "return_approved", "return_shipped"].contains(order["after_sale_status"].string)
                 if order["status"].string == "pending" || (order["status"].string == "shipped" && !held) || (order["can_after_sale"].flag && !held) || ["delivered", "completed"].contains(order["status"].string) {
                     SPXBottomAction {
-                        ViewThatFits(in: .horizontal) {
+                        SPXViewThatFits(in: .horizontal) {
                             HStack(spacing: 12) { orderActions }
                             VStack(spacing: 10) { orderActions }
                         }.disabled(busy)
@@ -268,27 +268,27 @@ struct AfterSaleView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var type = "refund_only"
     @State private var reason = ""
-    @State private var photos: [PhotosPickerItem] = []
+    @State private var photos: [SPXPhotosPickerItem] = []
     @State private var urls: [String] = []
     @State private var busy = false
     @State private var error: String?
     var body: some View {
-        NavigationStack {
+        SPXNavigationContainer {
             SPXDetailPage {
                 SPXPageHeading(title: "申请售后", subtitle: "请说明遇到的问题，商家将根据订单信息处理。", icon: "arrow.uturn.backward", color: SPXColor.commerce)
                 SPXPanel("售后方式") {
                     Picker("售后方式", selection: $type) { Text("仅退款").tag("refund_only"); if canReturn { Text("退货退款").tag("return_refund") } }.pickerStyle(.segmented)
                 }
-                SPXPanel("问题说明") { TextField("描述商品问题与退款原因", text: $reason, axis: .vertical).lineLimit(5...12) }
+                SPXPanel("问题说明") { TextField("描述商品问题与退款原因", text: $reason).lineLimit(12) }
                 SPXPanel("上传凭证", footer: "最多选择 6 张图片，提交时自动上传。") {
-                    PhotosPicker(selection: $photos, maxSelectionCount: 6, matching: .images) { Label("选择图片 · \(photos.count) / 6", systemImage: "photo.badge.plus").frame(maxWidth: .infinity).padding(16).background(SPXColor.tint, in: RoundedRectangle(cornerRadius: 12)) }
+                    SPXPhotosPicker(selection: $photos, maxSelectionCount: 6, matching: .images) { Label("选择图片 · \(photos.count) / 6", systemImage: "photo.badge.plus").frame(maxWidth: .infinity).padding(16).background(SPXColor.tint, in: RoundedRectangle(cornerRadius: 12)) }
                     if !photos.isEmpty { SPXPhotoSelectionStrip(items: photos) }
                     if busy { ProgressView("正在上传凭证并提交申请…") }
                 }
                 if let error { ErrorBanner(message: error) }
             }.disabled(busy).safeAreaInset(edge: .bottom, spacing: 0) {
                 SPXBottomAction { Button(busy ? "正在提交…" : "提交售后申请") { submit() }.disabled(busy || reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
-            }.onChange(of: photos) { _, _ in urls = [] }
+            }.onChange(of: photos) { _ in urls = [] }
                 .navigationTitle("申请售后").toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.disabled(busy) } }
                 .interactiveDismissDisabled(busy)
         }
@@ -304,12 +304,12 @@ struct ReturnShipmentView: View {
     @State private var busy = false
     @State private var error: String?
     var body: some View {
-        NavigationStack {
+        SPXNavigationContainer {
             SPXDetailPage {
                 SPXPageHeading(title: "填写退货物流", subtitle: "请寄往商家确认的退货地址，并填写真实物流信息。", icon: "shippingbox", color: SPXColor.commerce)
                 SPXPanel("物流信息") {
                     SPXField("承运商") { TextField("例如：顺丰速运", text: $carrier) }
-                    SPXField("退货运单号") { TextField("请输入物流单号", text: $tracking).textInputAutocapitalization(.never).autocorrectionDisabled() }
+                    SPXField("退货运单号") { TextField("请输入物流单号", text: $tracking).textInputAutocapitalization(.never) }
                 }.disabled(busy)
                 if let error { ErrorBanner(message: error) }
             }.safeAreaInset(edge: .bottom, spacing: 0) {
@@ -327,7 +327,7 @@ struct ReviewEditor: View {
     @State private var busy = false
     @State private var error: String?
     var body: some View {
-        NavigationStack {
+        SPXNavigationContainer {
             SPXDetailPage {
                 SPXPageHeading(title: "评价商品", subtitle: "分享真实的商品质量与服务体验。", icon: "star", color: SPXColor.commerce)
                 SPXPanel("商品评分") {
@@ -335,7 +335,7 @@ struct ReviewEditor: View {
                     HStack(spacing: 14) { ForEach(1...5, id: \.self) { value in Button { rating = value } label: { Image(systemName: value <= rating ? "star.fill" : "star").font(.system(size: 30)).foregroundStyle(.orange).frame(minWidth: 40, minHeight: 44) }.buttonStyle(.plain).accessibilityLabel("\(value) 星") } }.frame(maxWidth: .infinity)
                     Text("\(rating) / 5 分").font(.caption).foregroundStyle(SPXColor.muted).frame(maxWidth: .infinity)
                 }
-                SPXPanel("购买体验") { TextField("商品质量、使用感受或商家服务…", text: $content, axis: .vertical).lineLimit(5...12) }
+                SPXPanel("购买体验") { TextField("商品质量、使用感受或商家服务…", text: $content).lineLimit(12) }
                 if let error { ErrorBanner(message: error) }
             }.disabled(busy).safeAreaInset(edge: .bottom, spacing: 0) {
                 SPXBottomAction { Button(busy ? "提交中…" : "提交评价") { busy = true; Task { defer { busy = false }; do { try await APIClient.shared.post("product.review", ["order_id": order["id"], "product_id": order["product_id"], "rating": .number(Decimal(rating)), "content": .string(content)]); dismiss() } catch { self.error = error.localizedDescription } } }.disabled(busy || content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }

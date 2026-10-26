@@ -8,8 +8,8 @@ struct MerchantProfileEditor: View {
     @EnvironmentObject private var session: SessionStore
     @Environment(\.dismiss) private var dismiss
     @State private var values: [String: String] = [:]
-    @State private var logo: PhotosPickerItem?
-    @State private var qualifications: [PhotosPickerItem] = []
+    @State private var logo: SPXPhotosPickerItem?
+    @State private var qualifications: [SPXPhotosPickerItem] = []
     @State private var qualificationURLs: [String] = []
     @State private var previewQualification: String?
     @State private var level = "basic"
@@ -27,9 +27,9 @@ struct MerchantProfileEditor: View {
             SPXPageHeading(title: application ? "商家入驻" : "店铺资料", subtitle: "完善经营资料与资质，展示真实可信的店铺信息", icon: "store", color: SPXColor.commerce)
             SPXPanel("店铺资料") {
                 if !(values["logo_url"] ?? "").isEmpty { Avatar(url: values["logo_url"] ?? "", name: values["name"] ?? "", size: 72) }
-                PhotosPicker(selection: $logo, matching: .images) { Label("设置店铺头像", systemImage: "camera") }
+                SPXPhotosPicker(selection: $logo, matching: .images) { Label("设置店铺头像", systemImage: "camera") }
                 ForEach(fields.filter { !["latitude", "longitude"].contains($0.0) }, id: \.0) { key, title in
-                    SPXField(title) { TextField(title, text: binding(key), axis: ["description", "qualification"].contains(key) ? .vertical : .horizontal) }
+                    SPXField(title) { TextField(title, text: binding(key)) }
                         .keyboardType(["latitude", "longitude"].contains(key) ? .numbersAndPunctuation : key == "contact_phone" ? .phonePad : .default)
                         .disabled(!application && ["category", "qualification"].contains(key))
                 }
@@ -38,7 +38,7 @@ struct MerchantProfileEditor: View {
                 if application { Picker("商家等级", selection: $level) { Text("普通商家").tag("basic"); Text("金牌商家").tag("gold") } }
             }
             SPXPanel("经营资质") {
-                if application { PhotosPicker(selection: $qualifications, maxSelectionCount: max(1, 6 - qualificationURLs.count), matching: .images) { Label("添加资质图片", systemImage: "doc.viewfinder") }.disabled(qualificationURLs.count >= 6) }
+                if application { SPXPhotosPicker(selection: $qualifications, maxSelectionCount: max(1, 6 - qualificationURLs.count), matching: .images) { Label("添加资质图片", systemImage: "doc.viewfinder") }.disabled(qualificationURLs.count >= 6) }
                 if !qualificationURLs.isEmpty {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
                         ForEach(qualificationURLs, id: \.self) { imageID in
@@ -76,19 +76,19 @@ struct MerchantProfileEditor: View {
             .onAppear {
                 if values.isEmpty { for (key, _) in fields { values[key] = merchant[key].string }; values["logo_url"] = merchant["logo_url"].string; values["coordinate_system"] = merchant["coordinate_system"].string.isEmpty ? "wgs84" : merchant["coordinate_system"].string; qualificationURLs = merchant["qualification_images"].array.map(\.string); level = merchant["level"].string.isEmpty ? "basic" : merchant["level"].string }
             }
-            .onChange(of: logo) { _, item in guard let item else { return }; Task { await uploadLogo(item) } }
-            .onChange(of: qualifications) { _, items in Task { await uploadQualifications(items) } }
+            .onChange(of: logo) { item in guard let item else { return }; Task { await uploadLogo(item) } }
+            .onChange(of: qualifications) { items in Task { await uploadQualifications(items) } }
             .sheet(isPresented: $locationPicker) { ShopLocationPicker(initialAddress: values["address"] ?? "", initialCoordinate: initialCoordinate) { address, coordinate in values["address"] = address; values["latitude"] = String(coordinate.latitude); values["longitude"] = String(coordinate.longitude); values["coordinate_system"] = "wgs84" } }
             .sheet(isPresented: Binding(get: { previewQualification != nil }, set: { if !$0 { previewQualification = nil } })) {
                 if let previewQualification {
-                    NavigationStack {
+                    SPXNavigationContainer {
                         QualificationImage(id: previewQualification)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .background(.black)
-                            .toolbarBackground(.black, for: .navigationBar)
-                            .toolbarColorScheme(.dark, for: .navigationBar)
+                            
+                            
                             .toolbar {
-                                ToolbarItem(placement: .topBarTrailing) {
+                                ToolbarItem(placement: .navigationBarTrailing) {
                                     Button("关闭") { self.previewQualification = nil }.foregroundStyle(.white)
                                 }
                             }
@@ -98,11 +98,11 @@ struct MerchantProfileEditor: View {
             .confirmationDialog("关闭店铺后将停止接单，保证金按服务器规则结算退回", isPresented: $closing, titleVisibility: .visible) { Button("确认申请关闭", role: .destructive) { busy = true; Task { defer { busy = false }; do { try await APIClient.shared.post("merchant.close"); NotificationCenter.default.post(name: .spxMerchantUpdated, object: nil); dismiss() } catch { self.error = error.localizedDescription } } } }
     }
     private func binding(_ key: String) -> Binding<String> { Binding(get: { values[key] ?? "" }, set: { values[key] = $0 }) }
-    private func uploadLogo(_ item: PhotosPickerItem) async {
+    private func uploadLogo(_ item: SPXPhotosPickerItem) async {
         busy = true; defer { busy = false }
         do { let file = try await MediaFiles.select(item, userID: session.user?.id ?? 0); values["logo_url"] = try await MediaUploader.shared.uploadForm(file: file, action: "merchant.logo.upload"); try? FileManager.default.removeItem(at: file) } catch { self.error = error.localizedDescription }
     }
-    private func uploadQualifications(_ items: [PhotosPickerItem]) async {
+    private func uploadQualifications(_ items: [SPXPhotosPickerItem]) async {
         guard application else { return }; busy = true; defer { busy = false; qualifications = [] }
         do { for item in items where qualificationURLs.count < 6 { let file = try await MediaFiles.select(item, userID: session.user?.id ?? 0); qualificationURLs.append(try await MediaUploader.shared.uploadForm(file: file, action: "merchant.qualification.upload", responseKey: "id")); try? FileManager.default.removeItem(at: file) } } catch { self.error = error.localizedDescription }
     }
@@ -244,7 +244,7 @@ struct MerchantFulfillmentView: View {
                         SPXField("承运商") { TextField("请输入承运商", text: $carrier) }; SPXField("物流单号") { TextField("请输入物流单号", text: $tracking) }
                         Button("确认发货") { confirmation = "merchant.order.ship" }.disabled(carrier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || tracking.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     } else if order["order_type"].string == "digital" {
-                        TextField("填写交付内容 / 使用说明", text: $delivery, axis: .vertical).lineLimit(4...12)
+                        TextField("填写交付内容 / 使用说明", text: $delivery).lineLimit(12)
                         Button("完成数字交付") { confirmation = "merchant.order.deliver" }.disabled(delivery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     } else {
                         SPXField("买家核销码") { TextField("输入买家出示的核销码", text: $code).textInputAutocapitalization(.characters) }
@@ -257,7 +257,7 @@ struct MerchantFulfillmentView: View {
                 SPXPanel("售后协商") {
                     InfoRow(title: "申请类型", value: DisplayLabels.afterSaleType(order["after_sale_type"].string))
                     Text(order["after_sale_reason"].string)
-                    TextField("给买家的回复", text: $reply, axis: .vertical).lineLimit(3...10)
+                    TextField("给买家的回复", text: $reply).lineLimit(10)
                     Button("回复售后") { confirmation = "merchant.order.reply" }.disabled(reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     Text("退款审核按平台流程处理。").font(.caption).foregroundStyle(.secondary)
                 }.disabled(!verified || loading)

@@ -1,6 +1,5 @@
 import Foundation
 import SwiftUI
-import CoreTransferable
 import CryptoKit
 import PhotosUI
 import UniformTypeIdentifiers
@@ -63,7 +62,7 @@ enum MediaFiles {
         try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         return url
     }
-    static func select(_ item: PhotosPickerItem, userID: Int, original: Bool = false) async throws -> URL {
+    static func select(_ item: SPXPhotosPickerItem, userID: Int, original: Bool = false) async throws -> URL {
         if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) }) {
             guard let picked = try await item.loadTransferable(type: PickedMovie.self) else { throw APIError.invalidResponse }
             defer { try? FileManager.default.removeItem(at: picked.url) }
@@ -97,16 +96,8 @@ enum MediaFiles {
     }
 }
 
-struct PickedMovie: Transferable {
+struct PickedMovie {
     let url: URL
-    static var transferRepresentation: some TransferRepresentation {
-        FileRepresentation(importedContentType: .movie) { received in
-            try MediaFiles.preflight(received.file)
-            let target = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension(received.file.pathExtension)
-            try FileManager.default.copyItem(at: received.file, to: target)
-            return PickedMovie(url: target)
-        }
-    }
 }
 
 enum UploadedMedia {
@@ -163,7 +154,7 @@ actor MediaUploader {
             } catch {
                 if UploadedMedia.supportsStatusFallback(error) { break }
                 guard (error as? APIError)?.retryable == true || error is URLError, attempt < 3 else { throw error }
-                try await Task.sleep(for: .seconds(attempt + 1))
+                try await SPXSleep.seconds(attempt + 1)
             }
         }
         let currentSessionID = await APIClient.shared.sessionIdentity()

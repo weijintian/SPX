@@ -80,7 +80,7 @@ import UIKit
             defer { if let self, self.recoveryID == id { self.recovery = nil } }
             var delay = !immediate
             while !Task.isCancelled {
-                if delay { do { try await Task.sleep(for: .seconds(15)) } catch { return } }
+                if delay { do { try await SPXSleep.seconds(15) } catch { return } }
                 guard let self, self.lifecycle == epoch, self.active, self.needsRecovery else { return }
                 await self.restore()
                 delay = true
@@ -188,9 +188,9 @@ import UIKit
         presence?.cancel()
         presence = Task {
             while !Task.isCancelled, presenceEpoch == self.presenceEpoch, self.active, self.token != nil {
-                do {try await APIClient.shared.post("presence.update",["device_id":.string(Keychain.deviceID), "online":true]);try await Task.sleep(for:.seconds(25))}
+                do {try await APIClient.shared.post("presence.update",["device_id":.string(Keychain.deviceID), "online":true]);try await SPXSleep.seconds(25)}
                 catch is CancellationError {return}
-                catch {try? await Task.sleep(for:.seconds(10))}
+                catch {try? await SPXSleep.seconds(10)}
             }
         }
     }

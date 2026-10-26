@@ -15,7 +15,7 @@ struct MerchantConsultationGroupPicker: View {
         return groups.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0["group_code"].string.localizedCaseInsensitiveContains(query) }
     }
     var body: some View {
-        NavigationStack {
+        SPXNavigationContainer {
             List {
                 Section {
                     ForEach(filtered) { group in

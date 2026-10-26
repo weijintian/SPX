@@ -174,8 +174,8 @@ struct MerchantProductsView: View {
             if !busy && products.isEmpty && error == nil { EmptyState(title: "暂无商品", description: "点击右上角加号发布第一件商品", icon: "square.grid.2x2") }
             if let error { ErrorBanner(message: error); Button("重新加载商品") { Task { await load(reset: true) } }.frame(maxWidth: .infinity, minHeight: 44).disabled(busy) }
         }.navigationTitle("商品管理").toolbar {
-            ToolbarItem(placement: .topBarTrailing) { Button(selecting ? "完成" : "批量管理") { selecting.toggle(); selected = [] }.disabled(submitting) }
-            ToolbarItem(placement: .topBarTrailing) { NavigationLink { PublishProductView() } label: { Image(systemName: "plus") }.accessibilityLabel("发布商品") }
+            ToolbarItem(placement: .navigationBarTrailing) { Button(selecting ? "完成" : "批量管理") { selecting.toggle(); selected = [] }.disabled(submitting) }
+            ToolbarItem(placement: .navigationBarTrailing) { NavigationLink { PublishProductView() } label: { Image(systemName: "plus") }.accessibilityLabel("发布商品") }
         }.safeAreaInset(edge: .bottom) {
             if selecting { SPXBottomAction { VStack(spacing: 10) { Text("已选 \(selected.count)/50 件商品").font(.system(size: 13)).foregroundStyle(SPXColor.muted); Button(submitting ? "正在下架…" : "批量下架", role: .destructive) { batchConfirm = true }.disabled(selected.isEmpty || submitting) } } }
         }.task { await load(reset: true); await loadCapacity() }.spxRefreshable { await load(reset: true); await loadCapacity() }

@@ -108,7 +108,7 @@ struct VoiceMessageLabel: View {
     var body: some View {
         HStack(spacing: 10) {
             if audio.source == url, audio.loading { ProgressView().tint(.primary) }
-            else { Image(systemName: audio.source == url && audio.playing ? "stop.circle.fill" : "waveform").font(.title3).symbolEffect(.variableColor, isActive: audio.source == url && audio.playing) }
+            else { Image(systemName: audio.source == url && audio.playing ? "stop.circle.fill" : "waveform").font(.title3) }
             if let duration { Text("\(duration)秒").font(.subheadline.monospacedDigit()) }
             else { Text(audio.source == url && audio.playing ? "播放中" : "点击播放").font(.subheadline) }
             if incoming, !audio.hasListened(url, userID: userID) { Circle().fill(.red).frame(width: 7, height: 7).accessibilityLabel("未听语音") }

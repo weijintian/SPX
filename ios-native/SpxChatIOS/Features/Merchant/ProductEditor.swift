@@ -30,11 +30,11 @@ struct PublishProductView: View {
     @State private var choosingGroup = false
     @State private var images: [String] = []
     @State private var detailImages: [String] = []
-    @State private var mainPicker: [PhotosPickerItem] = []
-    @State private var detailPicker: [PhotosPickerItem] = []
-    @State private var failedMainImages: [PhotosPickerItem] = []
-    @State private var failedDetailImages: [PhotosPickerItem] = []
-    @State private var videoPicker: PhotosPickerItem?
+    @State private var mainPicker: [SPXPhotosPickerItem] = []
+    @State private var detailPicker: [SPXPhotosPickerItem] = []
+    @State private var failedMainImages: [SPXPhotosPickerItem] = []
+    @State private var failedDetailImages: [SPXPhotosPickerItem] = []
+    @State private var videoPicker: SPXPhotosPickerItem?
     @State private var pendingVideo: ProductVideoPending?
     @State private var pendingPublication: Record?
     @State private var recoverySupported = false
@@ -67,15 +67,15 @@ struct PublishProductView: View {
     private var editing: Bool { product.id > 0 }
     var body: some View {
         editorWithDialogs
-            .onChange(of: mainPicker) { _, selected in
+            .onChange(of: mainPicker) { selected in
                 guard !selected.isEmpty else { return }
                 Task { await upload(selected, detail: false) }
             }
-            .onChange(of: detailPicker) { _, selected in
+            .onChange(of: detailPicker) { selected in
                 guard !selected.isEmpty else { return }
                 Task { await upload(selected, detail: true) }
             }
-            .onChange(of: videoPicker) { _, item in
+            .onChange(of: videoPicker) { item in
                 guard let item else { return }
                 Task { await uploadVideo(item) }
             }
@@ -89,7 +89,7 @@ struct PublishProductView: View {
             .interactiveDismissDisabled(busy)
             .navigationBarBackButtonHidden()
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: requestLeave) {
                         Label("返回", systemImage: "chevron.left")
                     }
@@ -161,7 +161,7 @@ struct PublishProductView: View {
         let current = snapshot
         let owner = session.user?.id ?? 0
         do {
-            try await Task.sleep(for: .milliseconds(500))
+            try await SPXSleep.milliseconds(500)
             if current != savedFingerprint {
                 try await LocalStore.shared.save(current, key: localKey, userID: owner)
             }
@@ -231,7 +231,7 @@ struct PublishProductView: View {
                 }
                 statusSections
             }.padding(16)
-        }.scrollDismissesKeyboard(.interactively).spxPage()
+        }.spxDismissKeyboardOnTap().spxPage()
             .safeAreaInset(edge: .bottom, spacing: 0) { saveSection }
     }
     private var basicSection: some View {
@@ -244,14 +244,14 @@ struct PublishProductView: View {
             if let estimate = Money.estimate(cny: values["cny_price"] ?? "", usd: usd) { Text("参考约 \(DisplayLabels.amount(estimate)) SPX001").font(.caption).foregroundStyle(.secondary) }
             field("stock", "总库存", keyboard: .numberPad).disabled(editing)
             field("consultation_group_code", "咨询群号（六位）")
-                .textInputAutocapitalization(.characters).autocorrectionDisabled()
+                .textInputAutocapitalization(.characters)
             Button { choosingGroup = true } label: { Label("从我管理的群选择", systemImage: "person.2") }
                 .sheet(isPresented: $choosingGroup) { MerchantConsultationGroupPicker(code: bind("consultation_group_code")) }
         }
     }
     private var mainImageSection: some View {
         SPXPanel("商品主图 \(images.count)/8", footer: "第一张为主图。点击缩略图可设为主图、调整顺序或移除，图片完整居中显示。") {
-            PhotosPicker(selection: $mainPicker, maxSelectionCount: max(1, 8 - images.count), matching: .images) { Label("批量选择主图", systemImage: "photo.on.rectangle.angled") }.disabled(images.count >= 8)
+            SPXPhotosPicker(selection: $mainPicker, maxSelectionCount: max(1, 8 - images.count), matching: .images) { Label("批量选择主图", systemImage: "photo.on.rectangle.angled") }.disabled(images.count >= 8)
             imageStrip($images)
             failedImageRows(failedMainImages, detail: false)
         }
@@ -273,11 +273,11 @@ struct PublishProductView: View {
     private var detailSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             field("detail_text", "详细介绍", multiline: true)
-            PhotosPicker(selection: $detailPicker, maxSelectionCount: max(1, 20 - detailImages.count), matching: .images) { Label("批量添加详情图", systemImage: "photo.stack") }.disabled(detailImages.count >= 20)
+            SPXPhotosPicker(selection: $detailPicker, maxSelectionCount: max(1, 20 - detailImages.count), matching: .images) { Label("批量添加详情图", systemImage: "photo.stack") }.disabled(detailImages.count >= 20)
             imageStrip($detailImages)
             failedImageRows(failedDetailImages, detail: true)
             field("video_url", "商品视频 URL（选填）")
-            PhotosPicker(selection: $videoPicker, matching: .videos) { Label("从相册选择商品视频", systemImage: "video.badge.plus") }.disabled(pendingVideo != nil)
+            SPXPhotosPicker(selection: $videoPicker, matching: .videos) { Label("从相册选择商品视频", systemImage: "video.badge.plus") }.disabled(pendingVideo != nil)
             if let pendingVideo {
                 Label("有未完成的商品视频上传", systemImage: "arrow.triangle.2.circlepath").font(.subheadline)
                 HStack {
@@ -309,7 +309,7 @@ struct PublishProductView: View {
     }
 
     private func bind(_ key: String) -> Binding<String> { Binding(get: { values[key] ?? "" }, set: { values[key] = $0 }) }
-    private func field(_ key: String, _ title: String, keyboard: UIKeyboardType = .default, multiline: Bool = false) -> some View { VStack(alignment: .leading, spacing: 8) { Text(title).font(.system(size: 13)).foregroundStyle(SPXColor.muted); TextField(title, text: bind(key), axis: multiline ? .vertical : .horizontal).lineLimit(multiline ? 3...10 : 1...1).keyboardType(keyboard) } }
+    private func field(_ key: String, _ title: String, keyboard: UIKeyboardType = .default, multiline: Bool = false) -> some View { VStack(alignment: .leading, spacing: 8) { Text(title).font(.system(size: 13)).foregroundStyle(SPXColor.muted); TextField(title, text: bind(key)).lineLimit(multiline ? 10 : 1).keyboardType(keyboard) } }
     private func imageStrip(_ urls: Binding<[String]>) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
@@ -345,7 +345,7 @@ struct PublishProductView: View {
         variantsExpanded = !variants.isEmpty
         detailsExpanded = !detailImages.isEmpty || !saved["detail_text"].string.isEmpty || !saved["video_url"].string.isEmpty || pendingVideo != nil
     }
-    @ViewBuilder private func failedImageRows(_ pending: [PhotosPickerItem], detail: Bool) -> some View {
+    @ViewBuilder private func failedImageRows(_ pending: [SPXPhotosPickerItem], detail: Bool) -> some View {
         if !pending.isEmpty {
             Button("重试全部待上传图片（\(pending.count)张）", systemImage: "arrow.clockwise") {
                 Task { await upload(pending, detail: detail) }
@@ -360,11 +360,11 @@ struct PublishProductView: View {
             }
         }
     }
-    private func removeFailedImage(_ item: PhotosPickerItem, detail: Bool) {
+    private func removeFailedImage(_ item: SPXPhotosPickerItem, detail: Bool) {
         if detail { failedDetailImages.removeAll { $0 == item } }
         else { failedMainImages.removeAll { $0 == item } }
     }
-    @MainActor private func upload(_ selected: [PhotosPickerItem], detail: Bool) async {
+    @MainActor private func upload(_ selected: [SPXPhotosPickerItem], detail: Bool) async {
         guard !selected.isEmpty, !busy, let owner = session.user?.id, owner > 0 else { return }
         busy = true; error = nil
         defer {
@@ -375,7 +375,7 @@ struct PublishProductView: View {
         var unfinished = detail ? failedDetailImages : failedMainImages
         for item in selected where !unfinished.contains(item) { unfinished.append(item) }
         if detail { failedDetailImages = unfinished } else { failedMainImages = unfinished }
-        var batch: [PhotosPickerItem] = []
+        var batch: [SPXPhotosPickerItem] = []
         for item in selected where !batch.contains(item) { batch.append(item) }
         for (index, item) in batch.enumerated() {
             guard session.user?.id == owner, !Task.isCancelled else { return }
@@ -401,7 +401,7 @@ struct PublishProductView: View {
             }
         }
     }
-    @MainActor private func uploadVideo(_ item: PhotosPickerItem) async {
+    @MainActor private func uploadVideo(_ item: SPXPhotosPickerItem) async {
         guard !busy, pendingVideo == nil, let owner = session.user?.id, owner > 0 else { return }
         busy = true; progress = "正在准备商品视频…"
         defer { busy = false; progress = ""; videoPicker = nil }

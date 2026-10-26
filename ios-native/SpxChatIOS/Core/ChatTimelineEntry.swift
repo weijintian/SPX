@@ -18,6 +18,37 @@ struct ChatTimelineEntry: Identifiable {
         result += pending.filter { !acknowledged.contains($0.id) }.map {
             ChatTimelineEntry(id: "c-\(userID)-\($0.id)", date: $0.createdAt, message: nil, pending: $0)
         }
-        return result.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date }
+        // Database timestamps have second precision. Lexical IDs put m-10 before m-9
+        // and UUIDs shuffle optimistic messages; neither represents send order.
+        return result.enumerated().sorted { first, second in
+            let a = first.element, b = second.element
+            if a.date != b.date { return a.date < b.date }
+            if let left = a.message, let right = b.message, left.id != right.id { return left.id < right.id }
+            if (a.message != nil) != (b.message != nil) { return a.message != nil }
+            return first.offset < second.offset
+        }.map(\.element)
+    }
+}
+
+/// Owned by a single conversation view. Typing and keyboard animations can reuse
+/// its projection; edits, delivery receipts and upload progress still invalidate it.
+final class ChatTimelineCache {
+    typealias Builder = ([Record], [PendingMessage], Int) -> [ChatTimelineEntry]
+    private let build: Builder
+    private var owner: Int?
+    private var messages: [Record] = []
+    private var pending: [PendingMessage] = []
+    private var projection: [ChatTimelineEntry] = []
+
+    init(build: @escaping Builder = ChatTimelineEntry.merge) { self.build = build }
+
+    func entries(messages: [Record], pending: [PendingMessage], userID: Int) -> [ChatTimelineEntry] {
+        if owner != userID || self.messages != messages || self.pending != pending {
+            owner = userID
+            self.messages = messages
+            self.pending = pending
+            projection = build(messages, pending, userID)
+        }
+        return projection
     }
 }

@@ -121,7 +121,7 @@ struct ActiveCall: Identifiable {
                         await self.maintain(generation)
                     }
                 }
-                do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
+                do { try await SPXSleep.milliseconds(500) } catch { return }
             }
         }
     }
@@ -328,7 +328,14 @@ struct ActiveCall: Identifiable {
         Task { if call?.id == current.id { await finish(event: current.connected ? "ended" : current.outgoing ? "canceled" : "rejected", message: nil) } }
     }
     private func permissions(video: Bool) async throws {
-        guard await AVAudioApplication.requestRecordPermission() else { throw APIError.server(403, "请在系统设置允许麦克风权限") }
+        let microphoneAllowed = await withCheckedContinuation { continuation in
+            if #available(iOS 17.0, *) {
+                Task { continuation.resume(returning: await AVAudioApplication.requestRecordPermission()) }
+            } else {
+                AVAudioSession.sharedInstance().requestRecordPermission { continuation.resume(returning: $0) }
+            }
+        }
+        guard microphoneAllowed else { throw APIError.server(403, "请在系统设置允许麦克风权限") }
         if video, !(await AVCaptureDevice.requestAccess(for: .video)) { throw APIError.server(403, "请在系统设置允许相机权限") }
     }
     private func sdkEvent(_ event: [String: Any]) async {
@@ -399,7 +406,7 @@ struct ActiveCall: Identifiable {
             catch { if epoch == generation { oldEngine.invalidate(); engine = nil; ready = false; credentialExpiry = .distantPast } }
         }
         guard epoch == generation else { return }
-        try? await Task.sleep(for: .milliseconds(250))
+        try? await SPXSleep.milliseconds(250)
         guard epoch == generation else { return }
         finishing = false; micOpened = false; micOpening = false; cameraOpening = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -412,7 +419,7 @@ struct ActiveCall: Identifiable {
             do { _ = try await update(id, event: event); return }
             catch {
                 if (error as? APIError)?.definitiveRejection == true { return }
-                if retry < 2 { try? await Task.sleep(for: .seconds(1)) }
+                if retry < 2 { try? await SPXSleep.seconds(1) }
             }
         }
     }
@@ -500,7 +507,7 @@ struct ActiveCall: Identifiable {
     }
     func toast(_ text: String) {
         noticeTask?.cancel(); notice = text
-        noticeTask = Task { [weak self] in do { try await Task.sleep(for: .seconds(2)); self?.notice = nil } catch {} }
+        noticeTask = Task { [weak self] in do { try await SPXSleep.seconds(2); self?.notice = nil } catch {} }
     }
     private static func operation(seconds: Double = 20,
         _ start: (@escaping () -> Void, @escaping (Int32, String) -> Void) -> Void) async throws {
@@ -519,7 +526,7 @@ struct ActiveCall: Identifiable {
     init(_ continuation: CheckedContinuation<Void, Error>, seconds: Double) {
         self.continuation = continuation
         timeout = Task {
-            do { try await Task.sleep(for: .seconds(seconds)); resolve(.failure(APIError.server(408, "通话服务响应超时，请重试"))) } catch {}
+            do { try await SPXSleep.seconds(seconds); resolve(.failure(APIError.server(408, "通话服务响应超时，请重试"))) } catch {}
         }
     }
     func resolve(_ result: Result<Void, Error>) {
