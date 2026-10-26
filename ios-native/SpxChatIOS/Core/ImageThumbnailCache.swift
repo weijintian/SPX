@@ -48,8 +48,8 @@ actor ImageThumbnailCache {
                 let generator = AVAssetImageGenerator(asset: resource.asset)
                 generator.appliesPreferredTrackTransform = true
                 generator.maximumSize = CGSize(width: pixels, height: pixels)
-                let frame = try await withTaskCancellationHandler(operation: { try await generator.image(at: .zero) }, onCancel: { generator.cancelAllCGImageGeneration() })
-                image = UIImage(cgImage: frame.image)
+                let frame = try await Self.generateFrame(generator, at: .zero)
+                image = UIImage(cgImage: frame)
             } else {
                 let original: URL
                 if let localURL { original = localURL }
@@ -72,6 +72,18 @@ actor ImageThumbnailCache {
         tasks[key] = (id, task)
         defer { if tasks[key]?.id == id { tasks[key] = nil; waiters[key] = nil } }
         return try await wait(for: (id, task), key: key)
+    }
+    private static func generateFrame(_ generator: AVAssetImageGenerator, at time: CMTime) async throws -> CGImage {
+        try await withTaskCancellationHandler(operation: {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<CGImage, Error>) in
+                generator.generateCGImagesAsynchronously(forTimes: [NSValue(time: time)]) { _, image, _, result, error in
+                    if let image { continuation.resume(returning: image) }
+                    else if let error { continuation.resume(throwing: error) }
+                    else if result == .cancelled { continuation.resume(throwing: CancellationError()) }
+                    else { continuation.resume(throwing: APIError.invalidResponse) }
+                }
+            }
+        }, onCancel: { generator.cancelAllCGImageGeneration() })
     }
     private func wait(for entry: (id: UUID, task: Task<UIImage, Error>), key: String) async throws -> UIImage {
         let observer = UUID(); waiters[key, default: []].insert(observer)

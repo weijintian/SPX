@@ -29,7 +29,8 @@ struct ShopLocationPicker: View {
                 if searching { ProgressView("正在搜索地址…").frame(maxWidth: .infinity).padding(16) }
                 if !results.isEmpty {
                     SPXSectionTitle(title: "搜索结果", detail: "\(results.count) 个地点")
-                    ForEach(Array(results.enumerated()), id: \.offset) { item in
+                    ForEach(results.indices, id: \.self) { index in
+                        let item = results[index]
                         Button { choose(item) } label: {
                             SPXCard {
                                 HStack(spacing: 12) {
@@ -80,7 +81,11 @@ struct ShopLocationPicker: View {
             let response = try await MKLocalSearch(request: request).start()
             guard id == searchID, !Task.isCancelled else { return }
             results = response.mapItems; error = results.isEmpty ? "没有找到该地址，请补充城市或街道" : nil
-        } catch { if id == searchID { error = error.localizedDescription } }
+        } catch let caught {
+            if id == searchID {
+                self.error = caught.localizedDescription
+            }
+        }
     }
 }
 

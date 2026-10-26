@@ -154,7 +154,7 @@ actor MediaUploader {
             } catch {
                 if UploadedMedia.supportsStatusFallback(error) { break }
                 guard (error as? APIError)?.retryable == true || error is URLError, attempt < 3 else { throw error }
-                try await SPXSleep.seconds(attempt + 1)
+                try await SPXSleep.seconds(Double(attempt + 1))
             }
         }
         let currentSessionID = await APIClient.shared.sessionIdentity()

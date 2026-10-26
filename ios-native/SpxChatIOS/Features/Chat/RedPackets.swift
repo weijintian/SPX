@@ -22,20 +22,49 @@ struct RedPacketSendView: View {
     private enum PacketInput: Hashable { case count, amount, greeting }
     private var count: Int { scope == "group" ? Int(countText) ?? 0 : 1 }
     private var validCount: Bool { (1...100).contains(count) }
+    private var allocationText: String {
+        if mode == "random" { return "每人随机金额，试试谁的手气最好" }
+        guard let total = Decimal(string: amount), count > 0 else { return "总金额按红包个数平均分配" }
+        let each = total / Decimal(count)
+        return "每人 \(NSDecimalNumber(decimal: each).stringValue) SPX001"
+    }
     var body: some View {
         SPXNavigationContainer {
             ScrollView {
-                VStack(spacing: 18) {
-                    HStack { SPXIcon("gift").frame(width: 22,height: 22); Text("SPX001 红包").font(.system(size: 15,weight: .semibold)); Spacer() }.foregroundStyle(SPXColor.hex(0xC34438))
-                    SPXPanel("红包信息") {
-                        Picker("红包类型",selection: $mode) { Text("普通红包").tag("ordinary"); if scope == "group" { Text("拼手气红包").tag("random") } }.pickerStyle(.segmented)
+                VStack(spacing: 16) {
+                    VStack(spacing: 10) {
+                        Image(systemName: "gift.fill")
+                            .font(.system(size: 25, weight: .semibold))
+                            .foregroundStyle(SPXColor.hex(0xD34B3F))
+                            .frame(width: 58, height: 58)
+                            .background(SPXColor.hex(0xFBE5DC), in: RoundedRectangle(cornerRadius: 18))
+                        Text("把心意装进红包").font(.system(size: 23, weight: .bold))
+                        Text("SPX001 · 领取后自动存入钱包").font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+                    }
+                    HStack(spacing: 4) {
+                        Button { mode = "ordinary" } label: { Text("普通红包").frame(maxWidth: .infinity).frame(height: 42).foregroundStyle(mode == "ordinary" ? SPXColor.hex(0xC34438) : SPXColor.muted).background(mode == "ordinary" ? Color.white : Color.clear, in: RoundedRectangle(cornerRadius: 9)) }
+                        Button { if scope == "group" { mode = "random" } } label: { Text("拼手气红包").frame(maxWidth: .infinity).frame(height: 42).foregroundStyle(mode == "random" ? SPXColor.hex(0xC34438) : SPXColor.muted).background(mode == "random" ? Color.white : Color.clear, in: RoundedRectangle(cornerRadius: 9)) }.disabled(scope != "group")
+                    }
+                    .padding(4)
+                    .background(SPXColor.hex(0xEBE7E1), in: RoundedRectangle(cornerRadius: 12))
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("总金额 · SPX001").font(.system(size: 13)).foregroundStyle(SPXColor.muted)
+                        TextField("0.00", text: $amount)
+                            .font(.system(size: 34, weight: .semibold))
+                            .keyboardType(.decimalPad)
+                            .focused($inputFocus, equals: .amount)
+                            .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .background(Color.white, in: RoundedRectangle(cornerRadius: 14))
                         if scope == "group" {
                             HStack {
                                 Text("红包个数").font(.system(size: 15))
                                 Spacer()
-                                TextField("填写个数", text: $countText)
-                                    .keyboardType(.numberPad).multilineTextAlignment(.trailing)
-                                    .frame(minWidth: 70, maxWidth: 130).focused($inputFocus, equals: .count)
+                                TextField("1–100 个", text: $countText)
+                                    .keyboardType(.numberPad)
+                                    .multilineTextAlignment(.trailing)
+                                    .frame(width: 110)
+                                    .focused($inputFocus, equals: .count)
                                     .accessibilityLabel("红包个数，1 至 100 个")
                                     .onChange(of: countText) { value in
                                         let digits = value.filter { $0.isASCII && $0.isNumber }
@@ -43,18 +72,27 @@ struct RedPacketSendView: View {
                                     }
                                 Text("个").font(.system(size: 13)).foregroundStyle(SPXColor.muted)
                             }.frame(minHeight: 44)
-                            Text(validCount ? "每次可发送 1–100 个红包" : "请输入 1–100 之间的整数")
-                                .font(.system(size: 12)).foregroundStyle(validCount ? SPXColor.muted : Color.red)
+                            Text(validCount ? "每次可发送 1–100 个红包" : "请输入 1–100 之间的整数").font(.system(size: 12)).foregroundStyle(validCount ? SPXColor.muted : Color.red)
                         }
-                        HStack { Text("总金额").font(.system(size: 15)); Spacer(); TextField("0.00",text: $amount).keyboardType(.decimalPad).multilineTextAlignment(.trailing).focused($inputFocus, equals: .amount); Text("SPX001").font(.system(size: 12)).foregroundStyle(SPXColor.muted) }.frame(minHeight: 44)
-                        Text(mode == "random" ? "每个人领取的金额随机分配" : "每个人领取相同金额").font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+                        Text(allocationText).font(.system(size: 12)).foregroundStyle(SPXColor.muted)
                     }
-                    SPXPanel("祝福语") { TextField("恭喜发财，大吉大利",text: $greeting).focused($inputFocus, equals: .greeting).onChange(of: greeting) { value in if value.count > 50 { greeting = String(value.prefix(50)) } } }
-                    Text("\(DisplayLabels.amount(amount.isEmpty ? "0" : amount)) SPX001").font(.system(size: 30,weight: .semibold)).monospacedDigit().minimumScaleFactor(0.5).lineLimit(1).padding(.vertical,16)
+                    .padding(16)
+                    .background(SPXColor.card, in: RoundedRectangle(cornerRadius: 14))
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("祝福语").font(.system(size: 13)).foregroundStyle(SPXColor.muted)
+                        TextField("恭喜发财，大吉大利", text: $greeting)
+                            .focused($inputFocus, equals: .greeting)
+                            .onChange(of: greeting) { value in if value.count > 50 { greeting = String(value.prefix(50)) } }
+                            .padding(.horizontal, 14)
+                            .frame(minHeight: 48)
+                            .background(Color.white, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .padding(16)
+                    .background(SPXColor.card, in: RoundedRectangle(cornerRadius: 14))
+                    Text("可用余额与红包到账至 SPX001 资产，未领取部分由服务器按到期规则退回。\(scope == "group" ? "仅发送时的群成员可以领取。" : "")")
+                        .font(.system(size: 12)).foregroundStyle(SPXColor.muted).frame(maxWidth: .infinity, alignment: .leading)
                     if uncertain { ErrorBanner(message: "上次发送结果待确认，请先核对，避免重复扣款。") }
-                    Text("红包到账至 SPX001 资产，未领取部分由服务器按到期规则退回。普通红包按六位小数均分，实际金额以确认结果为准。")
-                        .font(.system(size: 12)).foregroundStyle(SPXColor.muted).frame(maxWidth: .infinity,alignment: .leading)
-                }.padding(20).disabled(!restored || uncertain || busy)
+                }.padding(24).disabled(!restored || uncertain || busy)
         }.spxDismissKeyboardOnTap()
                 .safeAreaInset(edge: .bottom) {
                     Button { inputFocus = nil; if uncertain { resolve() } else { password = ""; confirm = true } } label: {
@@ -133,7 +171,18 @@ struct RedPacketPopup: View {
                 else { Text(ineligibleMessage).foregroundStyle(.white.opacity(0.86)).multilineTextAlignment(.center); Button(loading ? "正在刷新…" : "刷新领取状态") { load() }.font(.footnote.weight(.semibold)).disabled(loading || busy) }
                 if let error { Text(error).font(.footnote).foregroundStyle(.yellow) }
                 if !packet["claims"].array.isEmpty {
-                    ScrollView { LazyVStack(spacing: 12) { ForEach(Array(packet["claims"].array.enumerated()), id: \.offset) { claim in HStack { Text(claim["nickname"].string); Spacer(); Text(DisplayLabels.amount(claim["amount"].string) + " SPX001") }.font(.caption) } } }.frame(maxHeight: 200)
+                    ScrollView {
+                        LazyVStack(spacing: 12) {
+                            ForEach(packet["claims"].array.indices, id: \.self) { index in
+                                let claim = packet["claims"].array[index]
+                                HStack {
+                                    Text(claim["nickname"].string)
+                                    Spacer()
+                                    Text(DisplayLabels.amount(claim["amount"].string) + " SPX001")
+                                }.font(.caption)
+                            }
+                        }
+                    }.frame(maxHeight: 200)
                 }
                 Button("关闭") { close() }.foregroundStyle(.white.opacity(0.8)).disabled(busy)
             }.padding(30).frame(maxWidth: 320).foregroundStyle(.white).background(LinearGradient(colors: [Color(red: 0.86, green: 0.24, blue: 0.18), Color(red: 0.67, green: 0.1, blue: 0.1)], startPoint: .top, endPoint: .bottom), in: RoundedRectangle(cornerRadius: 24))

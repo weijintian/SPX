@@ -18,7 +18,7 @@ enum Keychain {
         let update = SecItemUpdate(q as CFDictionary, attributes as CFDictionary)
         if update == errSecSuccess { return }
         guard update == errSecItemNotFound else { throw APIError.server(Int(update), "无法安全保存登录信息") }
-        let status = SecItemAdd(q.merging(attributes) { value in value } as CFDictionary, nil)
+        let status = SecItemAdd(q.merging(attributes) { _, value in value } as CFDictionary, nil)
         guard status == errSecSuccess else { throw APIError.server(Int(status), "无法安全保存登录信息") }
     }
     static func saveSession(token: String, userID: Int) throws {

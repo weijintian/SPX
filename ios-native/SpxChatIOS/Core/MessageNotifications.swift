@@ -136,7 +136,7 @@ struct NotificationUnreadLedger {
     func applySnapshot(chats: [Record], groups: [Record]) {
         guard owner > 0 else { return }
         ledger.replace(chats: chats, groups: groups)
-        names = Dictionary((chats.map { (NotificationUnreadLedger.key($0.id, group: false), $0.name) } + groups.map { (NotificationUnreadLedger.key($0.id, group: true), $0.name) }), uniquingKeysWith: { last in last })
+        names = Dictionary((chats.map { (NotificationUnreadLedger.key($0.id, group: false), $0.name) } + groups.map { (NotificationUnreadLedger.key($0.id, group: true), $0.name) }), uniquingKeysWith: { _, last in last })
         synchronizeBadge(); pruneDelivered()
     }
     func setVisible(target: Int, group: Bool, readingLatest: Bool, userID: Int) {
@@ -203,7 +203,8 @@ struct NotificationUnreadLedger {
         badgeTask = Task {
             repeat {
                 let version = badgeRevision, value = desiredBadge
-                try? await center.setBadgeCount(value)
+                if #available(iOS 16.0, *) { try? await center.setBadgeCount(value) }
+                else { UIApplication.shared.applicationIconBadgeNumber = value }
                 if version == badgeRevision { break }
             } while !Task.isCancelled
             badgeTask = nil

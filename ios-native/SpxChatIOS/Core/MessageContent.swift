@@ -36,6 +36,15 @@ enum MessageContent {
         return json["greeting"].string
     }
 
+    static func redPacketMode(_ message: Record) -> String {
+        let content = message.text("content", "last_message")
+        guard let data = content.data(using: .utf8),
+              let json = try? JSONDecoder().decode(JSON.self, from: data) else {
+            return message["mode"].string == "random" ? "random" : "ordinary"
+        }
+        return json["mode"].string == "random" ? "random" : "ordinary"
+    }
+
     static func product(_ message: Record) -> Record? {
         guard message["message_type"].string == "product",
               let data = message["content"].string.data(using: .utf8),

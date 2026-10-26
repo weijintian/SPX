@@ -339,8 +339,8 @@ struct MediaPage: View {
         CachedImage(source: message["media_url"].string, maximumPixelSize: 4096)
             .scaleEffect(scale)
             .offset(imageOffset)
-            .gesture(MagnifyGesture()
-                .onChanged { scale = min(4, max(1, $0.magnification)) }
+            .gesture(MagnificationGesture()
+                .onChanged { scale = min(4, max(1, $0)) }
                 .onEnded { _ in if scale <= 1 { resetImageTransform() } })
             .simultaneousGesture(DragGesture()
                 .onChanged { value in
