@@ -74,7 +74,7 @@ final class APIReadCacheTests: XCTestCase {
                 group.addTask {
                     try await cache.value(scope: "s", key: "k", action: "contacts", lifetime: 300) {
                         let value = await counter.next()
-                        try await Task.sleep(for: .milliseconds(50))
+                        try await SPXSleep.milliseconds(50)
                         return value
                     }
                 }

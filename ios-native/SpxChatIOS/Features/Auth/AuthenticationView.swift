@@ -15,7 +15,7 @@ struct AuthView: View {
     @State private var acceptedTerms = false
 
     var body: some View {
-        NavigationStack {
+        SPXNavigationContainer {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     Image(systemName: "bubble.left.and.bubble.right.fill")
@@ -47,7 +47,7 @@ struct AuthView: View {
                                 Divider()
                                 TextField("邀请码（选填）", text: $invite).textInputAutocapitalization(.never)
                             }
-                        }.autocorrectionDisabled()
+                        }
                     }
                     if let error = session.error { ErrorBanner(message: error) }
                     if let notice { Text(notice).font(.footnote).foregroundStyle(.secondary) }
@@ -78,7 +78,7 @@ struct AuthView: View {
             }.spxPage().sheet(isPresented: $reset) { PasswordResetView() }
                 .task(id: cooldown) {
                     guard cooldown > 0 else { return }
-                    do { try await Task.sleep(for: .seconds(1)); cooldown -= 1 } catch { }
+                    do { try await SPXSleep.seconds(1); cooldown -= 1 } catch { }
                 }
         }
     }
@@ -105,11 +105,11 @@ struct PasswordResetView: View {
     @State private var error: String?
     @State private var cooldown = 0
     var body: some View {
-        NavigationStack {
+        SPXNavigationContainer {
             SPXDetailPage {
                 SPXPageHeading(title: "找回密码", subtitle: "通过注册邮箱验证身份，设置新的登录密码", icon: "lock.shield")
                 SPXCard { VStack(alignment: .leading, spacing: 18) {
-                    SPXField("注册邮箱") { TextField("请输入邮箱", text: $email).keyboardType(.emailAddress).textContentType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled() }
+                    SPXField("注册邮箱") { TextField("请输入邮箱", text: $email).keyboardType(.emailAddress).textContentType(.emailAddress).textInputAutocapitalization(.never) }
                     SPXField("邮箱验证码") { HStack(spacing: 12) {
                         TextField("六位验证码", text: $code).keyboardType(.numberPad).textContentType(.oneTimeCode)
                         Button(cooldown > 0 ? "\(cooldown)s" : "获取验证码") { send() }.font(.system(size: 13, weight: .semibold)).frame(minHeight: 44).disabled(busy || cooldown > 0 || !email.contains("@"))
@@ -120,7 +120,7 @@ struct PasswordResetView: View {
             }.navigationTitle("重置密码").navigationBarTitleDisplayMode(.inline)
                 .safeAreaInset(edge: .bottom) { SPXBottomAction { Button(busy ? "提交中…" : "重置密码") { save() }.disabled(busy || !email.contains("@") || code.count != 6 || password.count < 6) } }
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
-                .task(id: cooldown) { guard cooldown > 0 else { return }; do { try await Task.sleep(for: .seconds(1)); cooldown -= 1 } catch { } }
+                .task(id: cooldown) { guard cooldown > 0 else { return }; do { try await SPXSleep.seconds(1); cooldown -= 1 } catch { } }
         }
     }
     private func send() {

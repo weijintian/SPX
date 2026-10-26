@@ -87,7 +87,7 @@ struct NotificationUnreadLedger {
             await self.registerTokenIfNeeded()
             while !Task.isCancelled, self.epoch == generation {
                 if self.active { await self.refresh() }
-                do { try await Task.sleep(for: .seconds(20)) } catch { return }
+                do { try await SPXSleep.seconds(20) } catch { return }
             }
         }
     }
@@ -136,7 +136,7 @@ struct NotificationUnreadLedger {
     func applySnapshot(chats: [Record], groups: [Record]) {
         guard owner > 0 else { return }
         ledger.replace(chats: chats, groups: groups)
-        names = Dictionary((chats.map { (NotificationUnreadLedger.key($0.id, group: false), $0.name) } + groups.map { (NotificationUnreadLedger.key($0.id, group: true), $0.name) }), uniquingKeysWith: { _, last in last })
+        names = Dictionary((chats.map { (NotificationUnreadLedger.key($0.id, group: false), $0.name) } + groups.map { (NotificationUnreadLedger.key($0.id, group: true), $0.name) }), uniquingKeysWith: { last in last })
         synchronizeBadge(); pruneDelivered()
     }
     func setVisible(target: Int, group: Bool, readingLatest: Bool, userID: Int) {

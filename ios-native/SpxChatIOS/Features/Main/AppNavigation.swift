@@ -42,15 +42,15 @@ struct RootView: View {
             guard packetID.range(of: "^[a-fA-F0-9]{32}$", options: .regularExpression) != nil else { return }
             presentation.packetID = packetID.lowercased()
         }
-        .onChange(of: session.isAuthenticated) { _, authenticated in
+        .onChange(of: session.isAuthenticated) { authenticated in
             if authenticated { link = pendingLink; pendingLink = nil; openPendingNotification() }
             else { presentation.packetID = nil; link = nil }
         }
         .onReceive(MessageNotifications.shared.$pendingRoute) { route in if route != nil { openPendingNotification() } }
-        .onChange(of: session.user?.id) { _, _ in openPendingNotification() }
+        .onChange(of: session.user?.id) { _ in openPendingNotification() }
         .onOpenURL { url in if let value = AppLink.parse(url) { if session.isAuthenticated { link = value } else { pendingLink = value } } }
         .sheet(item: $link) { value in
-            NavigationStack {
+            SPXNavigationContainer {
                 Group {
                     switch value {
                     case .user(let id): LinkedUserView(lookup: id)
@@ -117,9 +117,9 @@ private struct LinkedUserView: View {
 
 struct MainTabView: View {
     @State private var selected = 0
-    @State private var path = NavigationPath()
+    @State private var path = SPXNavigationPath()
     var body: some View {
-        NavigationStack(path: $path) {
+        SPXNavigationContainer(path: $path) {
             Group {
                 switch selected {
                 case 1: ContactsView()
@@ -131,7 +131,7 @@ struct MainTabView: View {
             // The bar belongs to the root content, so pushed pages never inherit it.
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 SPXBottomBar(selected: selected) { value in
-                    path = NavigationPath()
+                    path = SPXNavigationPath()
                     if selected != value { selected = value }
                 }
             }

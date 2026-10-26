@@ -1,10 +1,10 @@
 # SPX Chat iOS
 
-Native SwiftUI client for iOS 17 and later. It uses the SPX Chat HTTP/WebSocket API and Tencent TRTC calling SDK. The media resume flow also requires the companion server upload-status action; Android clients remain compatible with the chunk-upload contract.
+Native SwiftUI client compatible with iOS 15 and later. It uses the SPX Chat HTTP/WebSocket API and Tencent TRTC calling SDK. The media resume flow also requires the companion server upload-status action; Android clients remain compatible with the chunk-upload contract.
 
 ## Build on macOS
 
-Required: a Mac with Xcode and iOS 17 SDK, XcodeGen, CocoaPods, and network access to resolve the pinned Tencent pods.
+Required: a Mac with Xcode, an iOS 15-compatible SDK toolchain, XcodeGen, CocoaPods, and network access to resolve the pinned Tencent pods. The project can be built with a newer Xcode SDK while keeping the app deployment target at iOS 15.
 
 ```sh
 cd ios-native

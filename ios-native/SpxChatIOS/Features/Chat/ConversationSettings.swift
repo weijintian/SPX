@@ -14,8 +14,8 @@ struct ConversationSettingsView: View {
     @State private var busy = false
     @State private var destructive: String?
     @State private var sharing = false
-    @State private var avatarPicker: PhotosPickerItem?
-    @State private var backgroundPicker: PhotosPickerItem?
+    @State private var avatarPicker: SPXPhotosPickerItem?
+    @State private var backgroundPicker: SPXPhotosPickerItem?
     @State private var backgroundURL = ""
     @State private var loading = true
     var body: some View {
@@ -44,9 +44,9 @@ struct ConversationSettingsView: View {
                 SPXCard { VStack(alignment: .leading, spacing: 18) {
                     SPXSectionTitle(title: "群资料")
                     if info["permissions"]["update_group"].flag {
-                        PhotosPicker(selection: $avatarPicker, matching: .images) { SPXSettingsRow(title: "更换群头像", icon: "camera") }
+                        SPXPhotosPicker(selection: $avatarPicker, matching: .images) { SPXSettingsRow(title: "更换群头像", icon: "camera") }
                         SPXField("群名称") { TextField("请输入群名称", text: $name) }
-                        SPXField("群公告") { TextField("填写群公告", text: $announcement, axis: .vertical).lineLimit(3...10) }
+                        SPXField("群公告") { TextField("填写群公告", text: $announcement).lineLimit(10) }
                         SPXButton(title: busy ? "保存中…" : "保存群资料") { updateInfo() }
                     } else {
                         Text(info["announcement"].string.isEmpty ? "暂无群公告" : info["announcement"].string).font(.system(size: 14)).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
@@ -76,7 +76,7 @@ struct ConversationSettingsView: View {
                 Divider()
                 NavigationLink { AutoReplyRulesView(scope: isGroup ? "group" : "chat", targetID: item.id) } label: { SPXSettingsRow(title: "自动回复规则", icon: "bubble.left.and.text.bubble.right") }
                 Divider()
-                PhotosPicker(selection: $backgroundPicker, matching: .images) { SPXSettingsRow(title: "设置聊天背景", icon: "photo") }
+                SPXPhotosPicker(selection: $backgroundPicker, matching: .images) { SPXSettingsRow(title: "设置聊天背景", icon: "photo") }
                 if !backgroundURL.isEmpty {
                     CachedImage(source: backgroundURL).frame(height: 140).clipShape(RoundedRectangle(cornerRadius: 12))
                     Button("恢复默认背景") { saveBackground("") }.frame(minHeight: 44)
@@ -100,8 +100,8 @@ struct ConversationSettingsView: View {
             } }
         }.buttonStyle(.plain).navigationTitle(isGroup ? "群聊详情" : "聊天详情").disabled(busy || loading).task { await load() }.errorAlert($error)
             .sheet(isPresented: $sharing) { ForwardMessageView(message: Record(["message_type": "text", "share_group_id": info["id"], "content": .string("SPXGROUP:\(info["group_code"].string)")])) }
-            .onChange(of: avatarPicker) { _, item in if let item { upload(item, avatar: true) } }
-            .onChange(of: backgroundPicker) { _, item in if let item { upload(item, avatar: false) } }
+            .onChange(of: avatarPicker) { item in if let item { upload(item, avatar: true) } }
+            .onChange(of: backgroundPicker) { item in if let item { upload(item, avatar: false) } }
             .confirmationDialog("确认执行？此操作可能无法撤销", isPresented: Binding(get: { destructive != nil }, set: { if !$0 { destructive = nil } }), titleVisibility: .visible) {
                 Button("确认", role: .destructive) { if let action = destructive { mutate(action); destructive = nil } }
             }
@@ -129,7 +129,7 @@ struct ConversationSettingsView: View {
         } catch { self.error = error.localizedDescription }
     }
     private func updateInfo() { busy = true; Task { defer { busy = false }; do { try await APIClient.shared.post("groups.update", ["group_id": .number(Decimal(item.id)), "name": .string(name), "announcement": .string(announcement)]); await load(); NotificationCenter.default.post(name: .spxConversationUpdated, object: nil) } catch { self.error = error.localizedDescription } } }
-    private func upload(_ selected: PhotosPickerItem, avatar: Bool) {
+    private func upload(_ selected: SPXPhotosPickerItem, avatar: Bool) {
         guard !busy else { return }; busy = true; let owner = session.user?.id ?? 0
         Task {
             defer { busy = false; avatarPicker = nil; backgroundPicker = nil }
@@ -234,7 +234,7 @@ struct GroupMembersView: View {
             }.padding(16)
         }.navigationTitle("群成员").spxPage().searchable(text: $query, prompt: "搜索备注、昵称或 SPX ID").task { await load() }.spxRefreshable { await load() }.disabled(busy).errorAlert($error)
             .sheet(isPresented: $adding) {
-                NavigationStack { SPXDetailPage {
+                SPXNavigationContainer { SPXDetailPage {
                     SPXPageHeading(title: "邀请好友", subtitle: "选择朋友加入当前群聊", icon: "person.badge.plus")
                     if contacts.isEmpty { EmptyState(title: "暂无可邀请的好友") }
                     ForEach(contacts, id: \.fields) { contact in
@@ -312,7 +312,7 @@ struct MessageSearchView: View {
                 loading = true
                 defer { if query == requestedQuery { loading = false } }
                 do {
-                    try await Task.sleep(for: .milliseconds(350))
+                    try await SPXSleep.milliseconds(350)
                     let results = try await APIClient.shared.get("messages.search", [group ? "group_id" : "chat_id": String(targetID), "q": requestedQuery]).list
                     try Task.checkCancellation()
                     guard query == requestedQuery else { return }
@@ -345,7 +345,7 @@ struct AutoReplyRulesView: View {
                     SPXField("匹配关键词") { TextField("最多 100 字", text: $keyword) }
                     SPXField("匹配方式") { Picker("匹配方式", selection: $mode) { Text("包含关键词").tag("contains"); Text("完全一致").tag("exact") }.pickerStyle(.segmented) }
                 } else { Text("朋友发来消息后，按设置的间隔自动回复。个人规则对所有私聊生效。").font(.footnote).foregroundStyle(.secondary) }
-                SPXField("回复内容") { TextField("填写自动回复消息", text: $reply, axis: .vertical).lineLimit(3...8) }
+                SPXField("回复内容") { TextField("填写自动回复消息", text: $reply).lineLimit(8) }
                 SPXField("回复间隔") { Picker("回复间隔", selection: $cooldown) { ForEach([30, 60, 300, 600, 1800, 3600, 86400], id: \.self) { value in Text(value < 60 ? "30 秒" : value < 3600 ? String(value / 60)+" 分钟" : String(value / 3600)+" 小时").tag(value) }; if ![30, 60, 300, 600, 1800, 3600, 86400].contains(cooldown) { Text(String(cooldown)+" 秒").tag(cooldown) } }.frame(maxWidth: .infinity, alignment: .leading) }
                 Toggle("启用规则", isOn: $enabled)
                 if editingID > 0 { Button("取消编辑") { reset() }.frame(minHeight: 44) }

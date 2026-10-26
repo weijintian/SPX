@@ -37,10 +37,10 @@ struct AddressEditor: View {
     @State private var error: String?
     private let fields = [("name", "收件人"), ("phone", "电话"), ("province", "省 / 州"), ("city", "城市"), ("district", "区 / 县"), ("detail", "详细地址")]
     var body: some View {
-        NavigationStack {
+        SPXNavigationContainer {
             SPXDetailPage {
                 SPXPanel("收货人") { ForEach(fields.prefix(2), id: \.0) { key, title in SPXField(title) { TextField(title, text: Binding(get: { values[key] ?? "" }, set: { values[key] = $0 })).keyboardType(key == "phone" ? .phonePad : .default) } } }
-                SPXPanel("收货地址") { ForEach(fields.suffix(4), id: \.0) { key, title in SPXField(title) { TextField(key == "detail" ? "街道、楼栋、门牌号" : title, text: Binding(get: { values[key] ?? "" }, set: { values[key] = $0 }), axis: key == "detail" ? .vertical : .horizontal) } }; Toggle("设为默认地址", isOn: $isDefault).tint(SPXColor.commerce) }
+                SPXPanel("收货地址") { ForEach(fields.suffix(4), id: \.0) { key, title in SPXField(title) { TextField(key == "detail" ? "街道、楼栋、门牌号" : title, text: Binding(get: { values[key] ?? "" }, set: { values[key] = $0 })) } }; Toggle("设为默认地址", isOn: $isDefault).tint(SPXColor.commerce) }
                 if let error { ErrorBanner(message: error) }
             }.disabled(busy).safeAreaInset(edge: .bottom, spacing: 0) { SPXBottomAction { Button(busy ? "保存中…" : "保存地址") { save() }.disabled(busy || fields.contains { values[$0.0]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false }) } }
                 .navigationTitle(address.id > 0 ? "编辑地址" : "新增地址").toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() }.disabled(busy) } }

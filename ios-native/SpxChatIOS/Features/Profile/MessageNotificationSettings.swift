@@ -29,9 +29,9 @@ struct MessageNotificationSettingsView: View {
             }
         }.navigationTitle("消息通知").spxPage()
             .task { await notifications.updatePermission() }
-            .onChange(of: phase) { _, value in if value == .active { Task { await notifications.updatePermission() } } }
-            .onChange(of: enabled) { _, _ in notifications.preferencesChanged() }
-            .onChange(of: preview) { _, _ in notifications.preferencesChanged() }
-            .onChange(of: badge) { _, _ in notifications.preferencesChanged() }
+            .onChange(of: phase) { value in if value == .active { Task { await notifications.updatePermission() } } }
+            .onChange(of: enabled) { _ in notifications.preferencesChanged() }
+            .onChange(of: preview) { _ in notifications.preferencesChanged() }
+            .onChange(of: badge) { _ in notifications.preferencesChanged() }
     }
 }

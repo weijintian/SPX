@@ -10,12 +10,13 @@ struct SPXList<Content: View>: View {
             content.listRowBackground(SPXColor.card)
                 .listRowSeparatorTint(SPXColor.line)
                 .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
-        }.listSectionSpacing(14)
+        }
     }
     var body: some View {
         Group { if plain { list.listStyle(.plain) } else { list.listStyle(.insetGrouped) } }
             .environment(\.defaultMinListRowHeight, 52).font(.system(size: 15))
-            .scrollDismissesKeyboard(.interactively).spxDismissKeyboardOnTap().spxPage()
+            .spxDismissKeyboardOnTap().spxPage()
+
     }
 }
 

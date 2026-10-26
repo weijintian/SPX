@@ -97,7 +97,7 @@ struct WalletBindingView: View {
         SPXDetailPage {
             SPXPageHeading(title: "钱包绑定", subtitle: "BSC 网络 · 管理资产出入金地址", icon: "wallet", color: SPXColor.success)
             if binding["bound"].flag { SPXPanel("已绑定钱包") { Text(binding["bound_address"].string).font(.system(.body, design: .monospaced)).textSelection(.enabled); Text("绑定地址固定。如需帮助，请提交客服工单。").font(.footnote).foregroundStyle(.secondary) } }
-            else { SPXPanel("绑定 BSC 钱包") { SPXField("钱包地址") { TextField("0x 开头的 BSC 地址", text: $address).textInputAutocapitalization(.never).autocorrectionDisabled() }; SPXField("验证账号密码") { SecureField("请输入账号密码", text: $password).textContentType(.password) }; Text("确认绑定后不可直接更改。提现将仅允许发送至该地址。").font(.footnote).foregroundStyle(.secondary); Button(busy ? "绑定中…" : "确认绑定") { confirmation = true }.buttonStyle(SPXPrimaryButtonStyle()).disabled(busy || address.count != 42 || password.isEmpty) } }
+            else { SPXPanel("绑定 BSC 钱包") { SPXField("钱包地址") { TextField("0x 开头的 BSC 地址", text: $address).textInputAutocapitalization(.never) }; SPXField("验证账号密码") { SecureField("请输入账号密码", text: $password).textContentType(.password) }; Text("确认绑定后不可直接更改。提现将仅允许发送至该地址。").font(.footnote).foregroundStyle(.secondary); Button(busy ? "绑定中…" : "确认绑定") { confirmation = true }.buttonStyle(SPXPrimaryButtonStyle()).disabled(busy || address.count != 42 || password.isEmpty) } }
             if let error { ErrorBanner(message: error) }
         }.navigationTitle("钱包绑定").task { await load() }
             .confirmationDialog("请确认这是你本人控制的 BSC 钱包地址", isPresented: $confirmation, titleVisibility: .visible) { Button("确认并绑定") { bind() } }
@@ -131,7 +131,7 @@ struct WalletTransferView: View {
                     Text("平台充值地址").foregroundStyle(.secondary)
                     Text(destination).font(.system(.subheadline, design: .monospaced)).textSelection(.enabled)
                     Button("复制充值地址", systemImage: "doc.on.doc") { UIPasteboard.general.string = destination }
-                    SPXField("链上交易哈希") { TextField("请输入交易哈希", text: $hash).textInputAutocapitalization(.never).autocorrectionDisabled() }
+                    SPXField("链上交易哈希") { TextField("请输入交易哈希", text: $hash).textInputAutocapitalization(.never) }
                 }
                 SPXField(withdrawal ? "提现数量" : "转账数量") { TextField("请输入数量", text: $amount).keyboardType(.decimalPad).font(.system(size: 28, weight: .semibold, design: .rounded)) }
                 if withdrawal, let total = Decimal(string: amount), Money.positive(amount, scale: 18) {
@@ -422,7 +422,7 @@ struct StakingView: View {
     private var phaseOverview: some View {
         SPXCard {
             VStack(alignment: .leading, spacing: 16) {
-                ViewThatFits(in: .horizontal) {
+                SPXViewThatFits(in: .horizontal) {
                     HStack { Text("质押期数").foregroundStyle(SPXColor.muted); Spacer(); phaseBadge }
                     VStack(alignment: .leading, spacing: 8) { Text("质押期数").foregroundStyle(SPXColor.muted); phaseBadge }
                 }
@@ -537,7 +537,7 @@ struct StakingView: View {
     }
     private func detail(_ title: String, value: String, unit: String = "") -> some View {
         let displayedValue = unit.isEmpty ? value : value + " " + unit
-        return ViewThatFits(in: .horizontal) {
+        return SPXViewThatFits(in: .horizontal) {
             HStack(alignment: .firstTextBaseline, spacing: 12) { Text(title).foregroundStyle(SPXColor.muted).fixedSize(); Spacer(minLength: 0); Text(displayedValue).fixedSize().multilineTextAlignment(.trailing) }
             VStack(alignment: .leading, spacing: 5) { Text(title).foregroundStyle(SPXColor.muted); Text(displayedValue).fixedSize(horizontal: false, vertical: true) }.frame(maxWidth: .infinity, alignment: .leading)
         }.font(.subheadline).accessibilityElement(children: .combine)

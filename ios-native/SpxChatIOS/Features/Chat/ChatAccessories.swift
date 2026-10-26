@@ -21,7 +21,7 @@ struct MemberMentionPicker: View {
     @State private var loading = true
     @State private var error: String?
     var body: some View {
-        NavigationStack {
+        SPXNavigationContainer {
             SPXDetailPage {
                 SPXCard { Button { selected(Record(["id": -1, "nickname": "全体成员"])) } label: {
                     SPXSettingsRow(title: "全体成员", icon: "person.3.fill", detail: "提醒群内成员")
@@ -44,7 +44,7 @@ struct MemberMentionPicker: View {
                     let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
                     loading = true; error = nil
                     do {
-                        try await Task.sleep(for: .milliseconds(220))
+                        try await SPXSleep.milliseconds(220)
                         let rows = try await APIClient.shared.get("groups.mentions", ["group_id": String(groupID), "q": term]).list
                         try Task.checkCancellation(); results = rows.filter { ($0["user_id"].int > 0 ? $0["user_id"].int : $0.id) != excluding }; loading = false
                     } catch is CancellationError { }

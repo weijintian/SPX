@@ -174,7 +174,7 @@ final class ReliabilityTests: XCTestCase {
         withExtendedLifetime(subscription) { }
     }
     @MainActor func testCanceledHistoryLoadDoesNotShowAnError() async {
-        let model = ConversationStore(target: 77890, group: true, userID: 2_147_479_990, fetch: { _, _ in
+        let model = ConversationStore(target: 77890, group: true, userID: 2_147_479_990, fetch: { _ in
             throw CancellationError()
         })
         model.merge([Record(["id": 7])])
@@ -186,7 +186,7 @@ final class ReliabilityTests: XCTestCase {
     @MainActor func testLateHistoryFailureAfterClearDoesNotRestoreAnError() async {
         let started = expectation(description: "History request started")
         var pending: CheckedContinuation<JSON, Error>?
-        let model = ConversationStore(target: 77891, group: true, userID: 2_147_479_991, fetch: { _, _ in
+        let model = ConversationStore(target: 77891, group: true, userID: 2_147_479_991, fetch: { _ in
             try await withCheckedThrowingContinuation { continuation in pending = continuation; started.fulfill() }
         })
         model.merge([Record(["id": 7])])
@@ -201,7 +201,7 @@ final class ReliabilityTests: XCTestCase {
         await LocalStore.shared.remove(model.cacheKey + "-sync-v2", userID: model.userID)
     }
     @MainActor func testCurrentHistoryFailureStillShowsAnError() async {
-        let model = ConversationStore(target: 77892, group: true, userID: 2_147_479_992, fetch: { _, _ in
+        let model = ConversationStore(target: 77892, group: true, userID: 2_147_479_992, fetch: { _ in
             throw URLError(.networkConnectionLost)
         })
         model.merge([Record(["id": 7])])
@@ -223,7 +223,7 @@ final class ReliabilityTests: XCTestCase {
             let cursor = query["after_id"] ?? "initial"; cursors.append(cursor)
             let ids = cursor == "200" ? Array(201...300) : cursor == "300" ? Array(301...350) : []
             return .array(ids.map { .object(["id": .number(Decimal($0))]) })
-        }, post: { _, body in
+        }, post: { body in
             let boundary = body["through_id"]?.int ?? 0
             XCTAssertTrue([200, 300, 350].contains(boundary), "Receipts must follow a contiguous REST boundary")
             if boundary == 350, !acknowledgedCatchup {
@@ -257,7 +257,7 @@ final class ReliabilityTests: XCTestCase {
             requests += 1
             if requests == 1 { return await withCheckedContinuation { continuation in release = continuation; fetching.fulfill() } }
             return .array([.object(["id": 11])])
-        }, post: { _, body in
+        }, post: { body in
             let boundary = body["through_id"]?.int ?? 0
             XCTAssertTrue([10, 11].contains(boundary))
             if boundary == 11 { recovered.fulfill() }
@@ -288,7 +288,7 @@ final class ReliabilityTests: XCTestCase {
                 return .object(["messages": .array([]), "removed_ids": .array([])])
             }
             return .array([.object(["id": 11])])
-        }, post: { _, body in
+        }, post: { body in
             receipts += 1
             XCTAssertEqual(body["through_id"]?.int, 11)
             read.fulfill()
@@ -317,7 +317,7 @@ final class ReliabilityTests: XCTestCase {
             cursors.append(query["after_id"] ?? "initial")
             if cursors.count == 2 { reopened.fulfill() }
             return .array([.object(["id": 11])])
-        }, post: { _, _ in .null })
+        }, post: { _ in .null })
         let first = Task { await model.run() }
         await fulfillment(of: [firstSynced], timeout: 3)
         first.cancel(); await first.value
@@ -347,7 +347,7 @@ final class ReliabilityTests: XCTestCase {
                 return await withCheckedContinuation { continuation in pending = continuation; oldStarted.fulfill() }
             }
             return .array([.object(["id": 11])])
-        }, post: { _, _ in .null })
+        }, post: { _ in .null })
         let old = Task { await model.run() }
         await fulfillment(of: [oldStarted], timeout: 3)
         old.cancel()

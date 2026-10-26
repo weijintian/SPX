@@ -20,7 +20,7 @@ struct QRCodeView: View {
         VStack(spacing: 26) {
             Image(systemName: "qrcode").font(.system(size: 35)).foregroundStyle(SPXColor.primary)
             Text(title).font(.title2.bold())
-            if let image { Image(uiImage: image).interpolation(.none).resizable().scaledToFit().frame(width: 250, height: 250).padding(22).background(.white, in: RoundedRectangle(cornerRadius: 22)); ShareLink(item: Image(uiImage: image), preview: SharePreview(title, image: Image(uiImage: image))) { Label("分享二维码", systemImage: "square.and.arrow.up") } }
+            if let image { Image(uiImage: image).interpolation(.none).resizable().scaledToFit().frame(width: 250, height: 250).padding(22).background(.white, in: RoundedRectangle(cornerRadius: 22)); SPXImageSPXShareLink(image: image, title: title) }
             Text("使用 SPX Chat 扫一扫").font(.subheadline).foregroundStyle(.secondary)
             Button("保存到相册", systemImage: "square.and.arrow.down") { save() }.disabled(saving || image == nil)
         }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity).background(SPXColor.surface).navigationTitle("二维码").errorAlert($notice)
@@ -36,7 +36,7 @@ struct ScanCodeView: View {
     @State private var userID = 0
     @State private var groupCode = ""
     @State private var error: String?
-    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var selectedPhoto: SPXPhotosPickerItem?
     @State private var cameraAllowed = false
     @State private var busy = false
     var body: some View {
@@ -45,10 +45,10 @@ struct ScanCodeView: View {
                 QRScanner { value in process(value) }.clipShape(RoundedRectangle(cornerRadius: 24)).padding(.horizontal, 20)
             } else { EmptyState(title: "当前设备无法扫码", description: "可输入 SPX ID 或六位群号", icon: "qrcode.viewfinder") }
             HStack { TextField("SPXUSER:用户ID 或 SPXGROUP:群号", text: $value).textInputAutocapitalization(.never).textFieldStyle(.roundedBorder); Button("识别") { process(value) } }.padding()
-            PhotosPicker(selection: $selectedPhoto, matching: .images) { Label("从相册识别二维码", systemImage: "photo") }.disabled(busy).padding(.bottom)
+            SPXPhotosPicker(selection: $selectedPhoto, matching: .images) { Label("从相册识别二维码", systemImage: "photo") }.disabled(busy).padding(.bottom)
         }.navigationTitle("扫一扫").errorAlert($error)
             .task { cameraAllowed = await AVCaptureDevice.requestAccess(for: .video) }
-            .onChange(of: selectedPhoto) { _, item in
+            .onChange(of: selectedPhoto) { item in
                 guard let item else { return }
                 Task {
                     defer { selectedPhoto = nil }
@@ -61,8 +61,8 @@ struct ScanCodeView: View {
                     } catch { self.error = error.localizedDescription }
                 }
             }
-            .navigationDestination(isPresented: Binding(get: { userID > 0 }, set: { if !$0 { userID = 0 } })) { UserProfileView(userID: userID) }
-            .navigationDestination(isPresented: Binding(get: { !groupCode.isEmpty }, set: { if !$0 { groupCode = "" } })) { GroupJoinView(initialCode: groupCode) }
+            .spxNavigationDestination(isPresented: Binding(get: { userID > 0 }, set: { if !$0 { userID = 0 } })) { UserProfileView(userID: userID) }
+            .spxNavigationDestination(isPresented: Binding(get: { !groupCode.isEmpty }, set: { if !$0 { groupCode = "" } })) { GroupJoinView(initialCode: groupCode) }
     }
     private func process(_ value: String) {
         guard !busy, userID == 0, groupCode.isEmpty else { return }
