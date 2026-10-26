@@ -2,7 +2,7 @@ import Foundation
 import Combine
 import Network
 
-struct PendingMessage: Codable, Identifiable {
+struct PendingMessage: Codable, Identifiable, Equatable {
     enum State: String, Codable { case queued, uploading, sending, failed }
     let id: String
     let userID: Int

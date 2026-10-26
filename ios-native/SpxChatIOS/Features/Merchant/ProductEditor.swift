@@ -231,7 +231,7 @@ struct PublishProductView: View {
                 }
                 statusSections
             }.padding(16)
-        }.scrollDismissesKeyboard(.interactively).spxPage()
+        }.scrollDismissesKeyboard(.interactively).spxDismissKeyboardOnTap().spxPage()
             .safeAreaInset(edge: .bottom, spacing: 0) { saveSection }
     }
     private var basicSection: some View {

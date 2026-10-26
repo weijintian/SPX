@@ -95,6 +95,10 @@ struct InfoRow: View {
 
 extension View {
     func successToast(_ message: Binding<String?>) -> some View { modifier(SPXToastModifier(message: message)) }
+    /// Observes taps without taking touches away from inputs, buttons or scrolling.
+    func spxDismissKeyboardOnTap(onDismiss: (() -> Void)? = nil) -> some View {
+        modifier(SPXKeyboardDismissModifier(onDismiss: onDismiss))
+    }
     func spxPage() -> some View {
         scrollContentBackground(.hidden).background(SPXColor.surface.ignoresSafeArea())
             .tint(SPXColor.primary).navigationBarTitleDisplayMode(.inline)

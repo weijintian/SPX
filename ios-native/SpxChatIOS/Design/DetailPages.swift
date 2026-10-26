@@ -11,7 +11,7 @@ struct SPXDetailPage<Content: View>: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) { content }
                 .padding(16).frame(maxWidth: 680).frame(maxWidth: .infinity)
-        }.scrollDismissesKeyboard(.interactively).spxPage()
+        }.scrollDismissesKeyboard(.interactively).spxDismissKeyboardOnTap().spxPage()
     }
 }
 

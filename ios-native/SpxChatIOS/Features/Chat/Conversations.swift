@@ -390,6 +390,8 @@ struct ConversationView: View {
     @State private var didInitialScroll = false
     @State private var oldestDisplayedID: Int?
     @State private var atBottom = true
+    @State private var lastViewportHeight: CGFloat = 0
+    @State private var timelineCache = ChatTimelineCache()
     @State private var latestSeenID = 0
     @State private var replied: Record?
     @State private var editing: Record?
@@ -437,7 +439,7 @@ struct ConversationView: View {
         guard let oldestDisplayedID else { return Array(model.messages.suffix(100)) }
         return model.messages.filter { $0.id >= oldestDisplayedID }
     }
-    private var timeline: [ChatTimelineEntry] { ChatTimelineEntry.merge(messages: displayedMessages, pending: pending, userID: userID) }
+    private var timeline: [ChatTimelineEntry] { timelineCache.entries(messages: displayedMessages, pending: pending, userID: userID) }
     private var firstDisplayedID: Int? {
         guard let oldestDisplayedID else { return model.messages.dropFirst(max(0, model.messages.count - 100)).first?.id }
         return model.messages.first { $0.id >= oldestDisplayedID }?.id
@@ -497,11 +499,21 @@ struct ConversationView: View {
                 }
                 .onPreferenceChange(ConversationScrollMetricsKey.self) { metrics in
                     guard let height = metrics.viewportHeight, height > 0 else { return }
+                    let resized = lastViewportHeight > 0 && abs(height - lastViewportHeight) > 1
+                    lastViewportHeight = height
+                    // Follow the latest message across keyboard/panel size changes,
+                    // while leaving someone reading older messages in place.
+                    if resized, didInitialScroll, atBottom {
+                        scrollToLatest(proxy, animated: false)
+                        return
+                    }
                     let visible = metrics.bottomY.map { $0 >= 0 && $0 <= height + 24 } ?? false
                     if atBottom != visible { atBottom = visible }
                     if visible { latestSeenID = model.messages.last?.id ?? latestSeenID }
                 }
                 .scrollDismissesKeyboard(.interactively)
+                .spxDismissKeyboardOnTap { dismissInputPanels() }
+                .accessibilityAction(named: "收起键盘和输入面板") { dismissInputPanels() }
                 .defaultScrollAnchor(.bottom)
                 .overlay(alignment: .bottomTrailing) {
                     if !atBottom {
@@ -563,6 +575,14 @@ struct ConversationView: View {
             if plus { plusGrid.padding(.horizontal, 16).padding(.vertical, 18).background(.bar) }
             if emoji { EmojiPanel { text += $0 } }
             }
+        }
+    }
+    private func dismissInputPanels() {
+        guard composerFocused || plus || emoji else { return }
+        if atBottom { pendingScrollToBottom = true }
+        composerFocused = false
+        if plus || emoji {
+            withAnimation(.easeInOut(duration: 0.18)) { plus = false; emoji = false }
         }
     }
     private var navigationContent: some View {

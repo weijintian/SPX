@@ -55,7 +55,7 @@ struct RedPacketSendView: View {
                     Text("红包到账至 SPX001 资产，未领取部分由服务器按到期规则退回。普通红包按六位小数均分，实际金额以确认结果为准。")
                         .font(.system(size: 12)).foregroundStyle(SPXColor.muted).frame(maxWidth: .infinity,alignment: .leading)
                 }.padding(20).disabled(!restored || uncertain || busy)
-            }.scrollDismissesKeyboard(.interactively)
+        }.scrollDismissesKeyboard(.interactively).spxDismissKeyboardOnTap()
                 .safeAreaInset(edge: .bottom) {
                     Button { inputFocus = nil; if uncertain { resolve() } else { password = ""; confirm = true } } label: {
                         HStack { Spacer(); if busy { ProgressView().tint(.white) }; Text(uncertain ? "核对上次发送结果" : "塞钱进红包"); Spacer() }
