@@ -113,7 +113,7 @@ struct NotificationUnreadLedger {
         do {
             try await APIClient.shared.post("push.device.register", ["provider": "apns", "platform": "ios", "device_id": .string(Keychain.deviceID), "device_token": .string(token), "bundle_id": .string(Bundle.main.bundleIdentifier ?? ""), "environment": .string(Bundle.main.object(forInfoDictionaryKey: "SPXPushEnvironment") as? String ?? "production"), "enabled": .bool(UserDefaults.standard.object(forKey: "spx.notifications.enabled") as? Bool != false), "preview": .bool(UserDefaults.standard.object(forKey: "spx.notifications.preview") as? Bool != false), "badge": .bool(UserDefaults.standard.object(forKey: "spx.notifications.badge") as? Bool != false)])
             guard generation == epoch else { return }; registeredToken = token; registrationError = nil
-        } catch { if generation == epoch { registrationError = "远程推送等待服务器配置，当前实时消息和未读统计仍可使用�? } }
+        } catch { if generation == epoch { registrationError = "远程推送等待服务器配置，当前实时消息和未读统计仍可使用。" } }
     }
     func refresh() async {
         guard owner > 0 else { return }
@@ -164,12 +164,12 @@ struct NotificationUnreadLedger {
         let mentioned = ChatSoundEffects.mentioned(message, userID: userID)
         guard !visible, mentioned || !ledger.muted.contains(key), UserDefaults.standard.object(forKey: "spx.notifications.enabled") as? Bool != false else { return }
         let content = UNMutableNotificationContent()
-        let sender = message.name.isEmpty ? "新消�? : message.name
+        let sender = message.name.isEmpty ? "新消息" : message.name
         let groupName = names[key] ?? message["group_name"].string
-        content.title = group ? (groupName.isEmpty ? "群聊新消�? : groupName) : (names[key] ?? sender)
+        content.title = group ? (groupName.isEmpty ? "群聊新消息" : groupName) : (names[key] ?? sender)
         let preview = UserDefaults.standard.object(forKey: "spx.notifications.preview") as? Bool != false
-        content.body = preview ? String(((group ? sender + "�? : "") + MessageContent.preview(message)).prefix(140)) : "你收到了一条新消息"
-        if mentioned { content.subtitle = "有人@�? }
+        content.body = preview ? String(((group ? sender + "：" : "") + MessageContent.preview(message)).prefix(140)) : "你收到了一条新消息"
+        if mentioned { content.subtitle = "有人@你" }
         content.badge = NSNumber(value: desiredBadge); content.threadIdentifier = identifier(target, group: group)
         content.userInfo = ["recipient_user_id": owner, "chat_id": group ? 0 : target, "group_id": group ? target : 0, "message_id": message.id]
         // Foreground sounds are owned by ChatSoundEffects, avoiding double playback.
