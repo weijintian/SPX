@@ -18,7 +18,7 @@ enum MediaFiles {
     static let maximumBytes = 1_073_741_824
     static func preflight(_ source: URL, copies: Int = 1) throws {
         let size = try source.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        guard size > 0, size <= maximumBytes else { throw APIError.server(413, "附件不能为空且不能超过 1 GB") }
+        guard size > 0, size <= maximumBytes else { throw APIError.server(413, "附件不能为空且不能超�?1 GB") }
         let volume = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         if let free = try? volume.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage,
            free < Int64(size) * Int64(copies) + 67_108_864 {
@@ -128,7 +128,7 @@ actor MediaUploader {
         try Task.checkCancellation()
         let sessionID = await APIClient.shared.sessionIdentity()
         let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        guard size > 0, size <= 1_073_741_824 else { throw APIError.server(413, "附件不能为空且不能超过 1 GB") }
+        guard size > 0, size <= 1_073_741_824 else { throw APIError.server(413, "附件不能为空且不能超�?1 GB") }
         let total = (size + chunkSize - 1) / chunkSize
         guard userID > 0 else { throw APIError.unauthorized }
         // Match Android: small attachments use the established single-file endpoint.
@@ -154,7 +154,7 @@ actor MediaUploader {
             } catch {
                 if UploadedMedia.supportsStatusFallback(error) { break }
                 guard (error as? APIError)?.retryable == true || error is URLError, attempt < 3 else { throw error }
-                try await SPXSleep.seconds(attempt + 1)
+                try await SPXSleep.seconds(Double(attempt + 1))
             }
         }
         let currentSessionID = await APIClient.shared.sessionIdentity()
@@ -171,7 +171,7 @@ actor MediaUploader {
     func uploadForm(file: URL, action: String, maximumBytes: Int = 5_242_880, responseKey: String = "url") async throws -> String {
         let sessionID = await APIClient.shared.sessionIdentity()
         let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        guard size > 0, size <= maximumBytes else { throw APIError.server(413, "文件超过本次上传允许的大小") }
+        guard size > 0, size <= maximumBytes else { throw APIError.server(413, "文件超过本次上传允许的大�?) }
         let boundary = "SPX-" + UUID().uuidString
         let mime = UTType(filenameExtension: file.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
         let body = Multipart.body(boundary: boundary, fields: [:], data: try Data(contentsOf: file), name: "file", filename: "media." + file.pathExtension, mime: mime)
