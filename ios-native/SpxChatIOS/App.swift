@@ -15,6 +15,9 @@ import UIKit
         UINavigationBar.appearance().scrollEdgeAppearance = navigation
         UINavigationBar.appearance().compactAppearance = navigation
         UINavigationBar.appearance().tintColor = UIColor(SPXColor.primary)
+        // TextEditor is backed by UITextView on iOS 15. Clear its opaque
+        // default background so the compact composer keeps its rounded card.
+        UITextView.appearance().backgroundColor = .clear
         MessageNotifications.shared.configure()
         _ = BackgroundMediaTransfer.shared
         return true

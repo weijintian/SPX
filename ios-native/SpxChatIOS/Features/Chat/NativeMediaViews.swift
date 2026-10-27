@@ -112,7 +112,11 @@ struct MediaPreview: View {
                 ForEach(Array(messages.enumerated()), id: \.offset) { index, message in
                     MediaPage(message: message, active: selected == index).tag(index)
                 }
-            }.tabViewStyle(.page(indexDisplayMode: .always)).background(.black)
+            }
+            .tabViewStyle(.page(indexDisplayMode: .always))
+            .background(Color.black)
+            .ignoresSafeArea()
+            .preferredColorScheme(.dark)
                 
                 .toolbar {
                     ToolbarItem(placement: .navigationBarLeading) { Button { dismiss() } label: { Image(systemName: "xmark") } }
@@ -152,6 +156,8 @@ struct VideoMessagePreview: View {
     let source: String
     @EnvironmentObject private var session: SessionStore
     @State private var thumbnail: UIImage?
+    @State private var duration: Double?
+    @State private var durationLoader: RemoteVideoResourceLoader?
 
     var body: some View {
         ZStack {
@@ -171,6 +177,17 @@ struct VideoMessagePreview: View {
                 .font(.system(size: 42))
                 .symbolRenderingMode(.palette)
                 .foregroundStyle(.white, .black.opacity(0.35))
+            VStack {
+                Spacer()
+                HStack(spacing: 7) {
+                    Rectangle().fill(.white.opacity(0.78)).frame(height: 2)
+                    Text(duration.map(Self.formatDuration) ?? "视频")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white)
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 8)
+            }
         }
         .frame(width: ChatMediaLayout.width, height: ChatMediaLayout.height)
         .contentShape(RoundedRectangle(cornerRadius: 10))
@@ -179,14 +196,26 @@ struct VideoMessagePreview: View {
         .accessibilityLabel("视频，轻点播放")
         .task(id: "\(session.user?.id ?? 0):\(source)") {
             thumbnail = nil
+            duration = nil
+            durationLoader?.cancelAllRequests(); durationLoader = nil
             guard !source.isEmpty, let userID = session.user?.id, userID > 0 else { return }
             do {
-                let image = try await ImageThumbnailCache.shared.video(source, userID: userID)
+                async let poster = ImageThumbnailCache.shared.video(source, userID: userID)
+                let resource = try await VideoAssetSource.make(source: source, userID: userID)
+                durationLoader = resource.loader
+                let loadedDuration = try await resource.asset.load(.duration).seconds
+                if loadedDuration.isFinite, loadedDuration > 0 { duration = loadedDuration }
+                let image = try await poster
                 try Task.checkCancellation()
                 guard session.user?.id == userID else { return }
                 thumbnail = image
             } catch { /* The video remains playable if its optional poster cannot be generated. */ }
         }
+        .onDisappear { durationLoader?.cancelAllRequests(); durationLoader = nil }
+    }
+    private static func formatDuration(_ value: Double) -> String {
+        let total = max(0, Int(value.rounded()))
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 }
 
@@ -307,17 +336,24 @@ struct MediaPage: View {
     @State private var videoLoadID = UUID()
     @State private var buffering = false
     @State private var playbackObservation: NSKeyValueObservation?
+    @State private var playbackTimeObserver: Any?
+    @State private var videoDuration = 0.0
+    @State private var videoPosition = 0.0
+    @State private var seeking = false
     private var loadKey: String {
         [String(message.id), message["media_url"].string, String(session.user?.id ?? 0), String(retry), String(active), String(describing: scenePhase)].joined(separator: ":")
     }
     var body: some View {
         pageContent
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.black)
             .task(id: loadKey) { await loadVideo() }
             .onChange(of: active) { value in if !value { player?.pause() } }
             .onChange(of: message.id) { _ in resetImageTransform() }
             .onDisappear {
                 videoLoadID = UUID()
+                if let observer = playbackTimeObserver, let player { player.removeTimeObserver(observer) }
+                playbackTimeObserver = nil
                 player?.pause(); player = nil; videoObservation = nil; playbackObservation = nil
                 videoLoader?.cancelAllRequests(); videoLoader = nil
             }
@@ -327,7 +363,33 @@ struct MediaPage: View {
         else { imageContent }
     }
     @ViewBuilder private var videoContent: some View {
-        if let player { VideoPlayer(player: player).overlay { if buffering { ProgressView("正在缓冲…").tint(.white).foregroundStyle(.white).padding(14).background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 12)).allowsHitTesting(false) } } }
+        if let player {
+            VideoPlayer(player: player)
+                .overlay {
+                    if buffering {
+                        ProgressView("正在缓冲…").tint(.white).foregroundStyle(.white).padding(14)
+                            .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
+                            .allowsHitTesting(false)
+                    }
+                }
+                .overlay(alignment: .bottom) {
+                    if videoDuration > 0 {
+                        VStack(spacing: 3) {
+                            Slider(value: Binding(get: { videoPosition }, set: { videoPosition = min(videoDuration, max(0, $0)) }), in: 0...videoDuration, onEditingChanged: { editing in
+                                seeking = editing
+                                if !editing { player.seek(to: CMTime(seconds: videoPosition, preferredTimescale: 600)) }
+                            }).tint(.white)
+                            HStack {
+                                Text(Self.formatDuration(videoPosition))
+                                Spacer()
+                                Text(Self.formatDuration(videoDuration))
+                            }.font(.system(size: 11, design: .monospaced)).foregroundStyle(.white)
+                        }
+                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        .background(.black.opacity(0.42))
+                    }
+                }
+        }
         else if let error {
             VStack(spacing: 14) {
                 Text(error).font(.footnote).multilineTextAlignment(.center)
@@ -337,6 +399,7 @@ struct MediaPage: View {
     }
     private var imageContent: some View {
         CachedImage(source: message["media_url"].string, maximumPixelSize: 4096)
+            .background(Color.black)
             .scaleEffect(scale)
             .offset(imageOffset)
             .gesture(MagnificationGesture()
@@ -360,6 +423,8 @@ struct MediaPage: View {
         guard active, scenePhase == .active else {
             videoLoadID = UUID(); player?.pause(); player = nil
             videoObservation = nil; playbackObservation = nil; buffering = false
+            if let observer = playbackTimeObserver, let player { player.removeTimeObserver(observer) }
+            playbackTimeObserver = nil; videoDuration = 0; videoPosition = 0; seeking = false
             videoLoader?.cancelAllRequests(); videoLoader = nil
             return
         }
@@ -367,12 +432,16 @@ struct MediaPage: View {
         videoLoadID = loadID
         player?.pause(); player = nil
         videoObservation = nil; playbackObservation = nil; buffering = false
+        if let observer = playbackTimeObserver, let player { player.removeTimeObserver(observer) }
+        playbackTimeObserver = nil; videoDuration = 0; videoPosition = 0; seeking = false
         videoLoader?.cancelAllRequests(); videoLoader = nil
         error = nil
         do {
             let resource = try await VideoAssetSource.make(source: message["media_url"].string, userID: session.user?.id ?? 0)
             guard !Task.isCancelled, videoLoadID == loadID else { resource.loader?.cancelAllRequests(); return }
             let item = AVPlayerItem(asset: resource.asset)
+            let loadedDuration = try? await resource.asset.load(.duration).seconds
+            if let loadedDuration, loadedDuration.isFinite, loadedDuration > 0 { videoDuration = loadedDuration }
             VoicePlayback.shared.stop()
             let audio = AVAudioSession.sharedInstance()
             try audio.setCategory(.playback, mode: .moviePlayback)
@@ -390,6 +459,11 @@ struct MediaPage: View {
                 }
             }
             let playback = AVPlayer(playerItem: item)
+            playbackTimeObserver = playback.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.25, preferredTimescale: 600), queue: .main) { time in
+                guard !seeking else { return }
+                let seconds = time.seconds
+                if seconds.isFinite { videoPosition = max(0, min(videoDuration, seconds)) }
+            }
             playbackObservation = playback.observe(\.timeControlStatus, options: [.initial, .new]) { observed, _ in
                 let waiting = observed.timeControlStatus == .waitingToPlayAtSpecifiedRate
                 Task { @MainActor in guard videoLoadID == loadID else { return }; buffering = waiting }
@@ -404,6 +478,10 @@ struct MediaPage: View {
         scale = 1
         imageOffset = .zero
         dragOrigin = .zero
+    }
+    private static func formatDuration(_ value: Double) -> String {
+        let total = max(0, Int(value.rounded()))
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 }
 

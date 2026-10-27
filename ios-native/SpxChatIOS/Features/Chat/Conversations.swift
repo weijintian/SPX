@@ -601,8 +601,9 @@ struct ConversationView: View {
                     TextEditor(text: $text)
                         .font(.system(size: 16))
                         .focused($composerFocused)
-                        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 40, maxHeight: 120)
-                        .layoutPriority(1)
+                        // Keep the composer close to the Android width and prevent an
+                        // empty TextEditor from expanding into a large white panel.
+                        .frame(width: min(240, max(180, UIScreen.main.bounds.width - 150)), height: 42)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(SPXColor.card, in: RoundedRectangle(cornerRadius: 10))

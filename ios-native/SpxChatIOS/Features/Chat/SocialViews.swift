@@ -238,12 +238,19 @@ struct GroupJoinView: View {
     }
     private func join(_ result: Record, code query: String) {
         guard !joining, query == normalizedCode, query == resultCode else { return }
-        joining = true
+        // Invalidate a duplicate search that may still be completing. Its late
+        // error must not appear after the join request already succeeded.
+        requestID = UUID()
+        searching = false; joining = true; error = nil
         Task {
             defer { joining = false }
             do {
                 let response = try await APIClient.shared.post("groups.join", ["group_code": .string(query)])
-                var item = result; item["id"] = response["group_id"].int > 0 ? response["group_id"] : result["id"]
+                guard response["group_id"].int > 0 || result.id > 0 else { throw APIError.invalidResponse }
+                var item = result
+                item["id"] = response["group_id"].int > 0 ? response["group_id"] : result["id"]
+                item["member_count"] = response["member_count"].int > 0 ? response["member_count"] : result["member_count"]
+                error = nil
                 chat = item
             } catch { self.error = error.localizedDescription }
         }
