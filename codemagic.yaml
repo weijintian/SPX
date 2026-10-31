@@ -7,7 +7,10 @@ workflows:
       groups:
         - spx-ios-signing
       vars:
-        SPX_BUNDLE_IDENTIFIER: ce4c475e-98c7-45a1-a039-f25e31da8cbb
+        # Manual signing consumes the P12, password, and provisioning profile
+        # from the spx-ios-signing environment variable group.
+        SPX_SIGNING_MODE: "manual"
+        SPX_BUNDLE_IDENTIFIER: com.spx.chat.ios
     scripts:
       - name: Validate iOS sources
         script: |

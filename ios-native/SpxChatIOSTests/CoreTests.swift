@@ -2,6 +2,13 @@ import XCTest
 @testable import SpxChatIOS
 
 final class CoreTests: XCTestCase {
+    func testAvatarFallbackUsesFirstVisibleNameCharacter() {
+        XCTAssertEqual(Avatar.initial(for: " 张三 "), "张")
+        XCTAssertEqual(Avatar.initial(for: "Alice"), "A")
+        XCTAssertEqual(Avatar.initial(for: "😀User"), "😀")
+        XCTAssertNil(Avatar.initial(for: "  \n"))
+    }
+
     /// Integration probe: no credentials or user data; exercises iOS TLS against the actual login host.
     func testSystemTrustedServerReachesAPIWithoutCredentials() async throws {
         guard ProcessInfo.processInfo.environment["SPX_RUN_LIVE_TLS_PROBE"] == "1" else {

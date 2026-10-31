@@ -48,6 +48,11 @@ struct Avatar: View {
     var size: CGFloat = 48
     @EnvironmentObject private var session: SessionStore
     @State private var image: UIImage?
+    static func initial(for name: String) -> String? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let first = trimmed.first else { return nil }
+        return String(first)
+    }
     var body: some View {
         Group {
             if let image { Image(uiImage: image).resizable().scaledToFill() }
@@ -63,8 +68,15 @@ struct Avatar: View {
             }
     }
     private var fallback: some View {
-        Image(systemName: "person.fill").font(.system(size: size * 0.45)).foregroundStyle(SPXColor.primary)
-            .frame(maxWidth: .infinity, maxHeight: .infinity).background(SPXColor.primary.opacity(0.1))
+        Group {
+            if let initial = Self.initial(for: name) {
+                Text(initial).font(.system(size: size * 0.42, weight: .semibold)).foregroundStyle(SPXColor.primary)
+            } else {
+                Image(systemName: "person.fill").font(.system(size: size * 0.45)).foregroundStyle(SPXColor.primary)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(SPXColor.primary.opacity(0.1))
     }
 }
 

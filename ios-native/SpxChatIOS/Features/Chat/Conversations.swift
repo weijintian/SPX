@@ -595,7 +595,11 @@ struct ConversationView: View {
                         .font(.subheadline.weight(.medium)).frame(maxWidth: .infinity).padding(.vertical, 12)
                         .background(cancelRecording ? Color.red.opacity(0.12) : SPXColor.card, in: RoundedRectangle(cornerRadius: 14))
                         .foregroundStyle(cancelRecording ? .red : SPXColor.ink)
-                        .gesture(DragGesture(minimumDistance: 0).onChanged { value in beginRecording(); cancelRecording = value.translation.height < -70 }.onEnded { _ in stopRecording(cancel: cancelRecording) })
+                        .gesture(DragGesture(minimumDistance: 0).onChanged { value in
+                            beginRecording()
+                            let shouldCancel = value.translation.height < -70
+                            if shouldCancel != cancelRecording { cancelRecording = shouldCancel }
+                        }.onEnded { _ in stopRecording(cancel: cancelRecording) })
                         .accessibilityAction(named: "开始或结束录音") { if recorder.recording { stopRecording(cancel: false) } else { beginRecording() } }
                 } else {
                     TextEditor(text: $text)
@@ -980,6 +984,7 @@ struct MessageBubble: View {
                     default: MessageText(content: message["content"].string, mine: mine)
                     } }
                 }.font(.system(size: 16)).padding(isMedia ? 0 : 12).foregroundStyle(mine ? .white : SPXColor.ink)
+                    .contentShape(Rectangle())
                     .background(isMedia ? Color.clear : (type == "red_packet" ? Color(red: 0.82, green: 0.19, blue: 0.14) : (mine ? SPXColor.primary : SPXColor.card)), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay { if !mine, !isMedia { RoundedRectangle(cornerRadius: 12).stroke(SPXColor.line, lineWidth: 0.5) } }
             }.buttonStyle(.plain)
