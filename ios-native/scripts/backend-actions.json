@@ -1,5 +1,5 @@
 {
-  "source": "Literal API actions verified against local backend on 2026-10-26; isolated API tests are separate",
+  "source": "Literal API actions verified against local backend on 2026-11-01; isolated API tests are separate",
   "actions": [
     "app.update.history",
     "auth.email.code",
@@ -71,6 +71,7 @@
     "orders.redeem",
     "orders.return",
     "password.email.code",
+    "payment.password.status",
     "presence.update",
     "product",
     "product.favorite",
