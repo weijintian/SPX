@@ -18,7 +18,11 @@ struct RedPacketSendView: View {
     @State private var uncertain = false
     @State private var error: String?
     @State private var confirm = false
+    @State private var paymentSettings = false
+    @State private var needsPaymentPassword = false
     @State private var restored = false
+    @State private var balanceText = "可用余额读取中…"
+    @State private var balanceLoading = false
     private enum PacketInput: Hashable { case count, amount, greeting }
     private var count: Int { scope == "group" ? Int(countText) ?? 0 : 1 }
     private var validCount: Bool { (1...100).contains(count) }
@@ -51,6 +55,8 @@ struct RedPacketSendView: View {
                         Text("总金额 · SPX001").font(.system(size: 13)).foregroundStyle(SPXColor.muted)
                         TextField("0.00", text: $amount)
                             .font(.system(size: 34, weight: .semibold))
+                            .foregroundStyle(Color.black)
+                            .tint(SPXColor.hex(0xC34438))
                             .keyboardType(.decimalPad)
                             .focused($inputFocus, equals: .amount)
                             .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
@@ -61,6 +67,8 @@ struct RedPacketSendView: View {
                                 Text("红包个数").font(.system(size: 15))
                                 Spacer()
                                 TextField("1–100 个", text: $countText)
+                                    .foregroundStyle(SPXColor.ink)
+                                    .tint(SPXColor.primary)
                                     .keyboardType(.numberPad)
                                     .multilineTextAlignment(.trailing)
                                     .frame(width: 110)
@@ -81,6 +89,8 @@ struct RedPacketSendView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("祝福语").font(.system(size: 13)).foregroundStyle(SPXColor.muted)
                         TextField("恭喜发财，大吉大利", text: $greeting)
+                            .foregroundStyle(Color.black)
+                            .tint(SPXColor.hex(0xC34438))
                             .focused($inputFocus, equals: .greeting)
                             .onChange(of: greeting) { value in if value.count > 50 { greeting = String(value.prefix(50)) } }
                             .padding(.horizontal, 14)
@@ -89,13 +99,23 @@ struct RedPacketSendView: View {
                     }
                     .padding(16)
                     .background(SPXColor.card, in: RoundedRectangle(cornerRadius: 14))
-                    Text("可用余额与红包到账至 SPX001 资产，未领取部分由服务器按到期规则退回。\(scope == "group" ? "仅发送时的群成员可以领取。" : "")")
+                    Button { if !balanceLoading { loadBalance() } } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: balanceLoading ? "arrow.triangle.2.circlepath" : "wallet.pass")
+                            Text(balanceText)
+                            Spacer()
+                        }
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(SPXColor.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }.buttonStyle(.plain).disabled(balanceLoading)
+                    Text("24 小时未领完自动退回。\(scope == "group" ? "仅发送时的群成员可以领取。" : "")")
                         .font(.system(size: 12)).foregroundStyle(SPXColor.muted).frame(maxWidth: .infinity, alignment: .leading)
                     if uncertain { ErrorBanner(message: "上次发送结果待确认，请先核对，避免重复扣款。") }
                 }.padding(24).disabled(!restored || uncertain || busy)
         }.spxDismissKeyboardOnTap()
                 .safeAreaInset(edge: .bottom) {
-                    Button { inputFocus = nil; if uncertain { resolve() } else { password = ""; confirm = true } } label: {
+                    Button { inputFocus = nil; if uncertain { resolve() } else { checkPaymentPassword() } } label: {
                         HStack { Spacer(); if busy { ProgressView().tint(.white) }; Text(uncertain ? "核对上次发送结果" : "塞钱进红包"); Spacer() }
                             .font(.system(size: 16,weight: .semibold)).foregroundStyle(.white).frame(minHeight: 50).background(SPXColor.hex(0xD34B3F).opacity(busy ? 0.5 : 1),in: RoundedRectangle(cornerRadius: 14))
                     }.disabled(!restored || busy || (!uncertain && (!validCount || !Money.positive(amount,scale: 6)))).padding(16).background(SPXColor.card)
@@ -106,22 +126,64 @@ struct RedPacketSendView: View {
                     ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("完成") { inputFocus = nil } }
                 }
                 .tint(SPXColor.hex(0xC34438)).errorAlert($error)
-                .alert("确认发送红包",isPresented: $confirm) {
-                    SecureField("请输入账号密码",text: $password).textContentType(.password)
-                    Button("取消",role: .cancel) { password = "" }
-                    Button("确认发送") { send() }.disabled(password.isEmpty)
-                } message: { Text("总额 \(DisplayLabels.amount(amount)) SPX001，共 \(count) 个。确认后从资产扣除。") }
-                .task { if let saved: String = await LocalStore.shared.read("redpacket-pending-\(scope)-\(targetID)",userID: session.user?.id ?? 0) { requestID = saved; uncertain = true }; restored = true }
+                .sheet(isPresented: $confirm) { paymentConfirmation }
+                .alert("请先设置支付密码", isPresented: $needsPaymentPassword) {
+                    Button("去设置") { paymentSettings = true }
+                    Button("稍后", role: .cancel) { }
+                } message: { Text("发红包需要独立的六位数字支付密码，首次可直接设置。") }
+                .sheet(isPresented: $paymentSettings) { SPXNavigationContainer { PaymentPasswordView().toolbar { ToolbarItem(placement: .cancellationAction) { Button("完成") { paymentSettings = false } } } } }
+                .task { if let saved: String = await LocalStore.shared.read("redpacket-pending-\(scope)-\(targetID)",userID: session.user?.id ?? 0) { requestID = saved; uncertain = true }; restored = true; loadBalance() }
+        }
+    }
+    private var paymentConfirmation: some View {
+        SPXNavigationContainer {
+            SPXDetailPage {
+                SPXPageHeading(title: "确认发送红包", subtitle: "总额 \(DisplayLabels.amount(amount)) SPX001，共 \(count) 个", icon: "gift")
+                SPXPanel("支付验证", footer: "确认后从资产扣除，请输入独立支付密码。") {
+                    SPXField("支付密码") { SecureField("六位数字支付密码", text: $password).foregroundStyle(SPXColor.ink).tint(SPXColor.primary).keyboardType(.numberPad).textContentType(.password) }
+                }
+                if let error { ErrorBanner(message: error) }
+            }.safeAreaInset(edge: .bottom, spacing: 0) {
+                SPXBottomAction { Button("确认发送") { send() }.disabled(busy || password.count != 6) }
+            }.navigationTitle("确认支付").toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { password = ""; confirm = false } }
+            }.onDisappear { password = "" }
+        }
+    }
+    private func checkPaymentPassword() {
+        guard !busy else { return }; busy = true
+        let owner = session.user?.id
+        Task { defer { busy = false }; do { let result = try await APIClient.shared.get("payment.password.status"); guard session.user?.id == owner else { return }; password = ""; if result["configured"].flag { confirm = true } else { needsPaymentPassword = true } } catch { self.error = error.localizedDescription } }
+    }
+    private func loadBalance() {
+        guard !balanceLoading else { return }
+        balanceLoading = true
+        let owner = session.user?.id
+        Task {
+            defer { balanceLoading = false }
+            do {
+                let assets = try await APIClient.shared.get("wallet").list
+                guard session.user?.id == owner else { return }
+                if let asset = assets.first(where: { $0["symbol"].string == "SPX001" && ($0["chain"].string.isEmpty || $0["chain"].string == "BSC") }) {
+                    balanceText = "可用余额 \(DisplayLabels.amount(asset["balance"].string)) SPX001"
+                } else {
+                    balanceText = "可用余额暂未读取 · 点击重试"
+                }
+            } catch {
+                if session.user?.id == owner { balanceText = "余额暂未获取 · 点击重试" }
+            }
         }
     }
     private func send() {
         guard restored, !busy, !uncertain, let owner = session.user?.id, owner > 0 else { return }
         guard validCount else { error = "红包个数请输入 1–100 之间的整数"; return }
+        guard password.count == 6, password.allSatisfy({ $0.isASCII && $0.isNumber }) else { error = "请输入六位数字支付密码"; return }
         guard greeting.count <= 50 else { error = "祝福语最多 50 字"; return }
         guard let total = Decimal(string: amount), total >= Decimal(count) * Decimal(string: "0.000001")! else { error = "每个红包至少 0.000001 SPX001"; return }
         if mode == "ordinary" { let each = total / Decimal(count); var raw = each; var rounded = Decimal(); NSDecimalRound(&rounded, &raw, 6, .down); guard rounded * Decimal(count) == total else { error = "普通红包需可按六位小数平均分配，请调整总额或个数"; return } }
         busy = true
-        let payload: [String: JSON] = ["request_id": .string(requestID), "scope": .string(scope), "target_id": .number(Decimal(targetID)), "mode": .string(mode), "count": .number(Decimal(count)), "amount": .string(amount), "greeting": .string(greeting), "password": .string(password)]
+        let payload: [String: JSON] = ["request_id": .string(requestID), "scope": .string(scope), "target_id": .number(Decimal(targetID)), "mode": .string(mode), "count": .number(Decimal(count)), "amount": .string(amount), "greeting": .string(greeting), "payment_password": .string(password)]
+        confirm = false
         Task {
             defer { busy = false; password = "" }
             do { try await LocalStore.shared.reservePending(requestID, key: "redpacket-pending-\(scope)-\(targetID)", userID: owner) }
@@ -148,78 +210,165 @@ struct RedPacketPopup: View {
     @State private var busy = false
     @State private var loading = false
     @State private var claimCompleted = false
+    @State private var claimRequestConfirmed = false
+    @State private var showingClaims = false
+    @State private var coinRotation = 0.0
     @State private var error: String?
     var body: some View {
         ZStack {
             Color.black.opacity(0.55).ignoresSafeArea().onTapGesture { if !busy { close() } }
-            VStack(spacing: 22) {
-                Image(systemName: "gift.fill").font(.system(size: 38)).foregroundStyle(.yellow)
-                Text(packet["sender_name"].string.isEmpty ? "红包" : packet["sender_name"].string).font(.headline)
-                Text(packet["greeting"].string.isEmpty ? "恭喜发财，大吉大利" : packet["greeting"].string).font(.title3.weight(.medium)).multilineTextAlignment(.center)
-                if !packet["my_amount"].string.isEmpty {
-                    Text("\(DisplayLabels.amount(packet["my_amount"].string)) SPX001").font(.title2.bold()).foregroundStyle(.yellow); Text("已存入资产").font(.footnote)
-                } else if claimCompleted {
-                    Label("领取成功，正在更新状态", systemImage: "checkmark.circle.fill").foregroundStyle(.yellow)
-                    Button(loading ? "正在刷新…" : "刷新领取状态") { load() }.font(.footnote.weight(.semibold)).disabled(loading || busy)
-                } else if packet["can_claim"].flag {
-                    Button { claim() } label: { ZStack { Circle().fill(LinearGradient(colors: [.yellow, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)).frame(width: 94, height: 94); Circle().stroke(.brown.opacity(0.4), lineWidth: 2).frame(width: 80, height: 80); if busy { ProgressView().tint(.brown) } else { Text("拆").font(.system(size: 38, weight: .medium, design: .serif)).foregroundStyle(.brown) } } }.disabled(busy)
-                } else if !packet["my_amount"].string.isEmpty { Text("\(DisplayLabels.amount(packet["my_amount"].string)) SPX001").font(.title2.bold()).foregroundStyle(.yellow); Text("已存入资产").font(.footnote) }
-                else if packet["id"].string.isEmpty {
-                    if loading { ProgressView().tint(.white) }
-                    else { Button("重新加载红包") { load() }.font(.footnote.weight(.semibold)).disabled(loading || busy) }
+            ScrollView {
+                VStack(spacing: 0) {
+                    envelopeHeader
+                    VStack(spacing: 14) {
+                        claimAction
+                        if let error { Text(error).font(.footnote).foregroundStyle(Color(red: 0.72, green: 0.22, blue: 0.17)).multilineTextAlignment(.center) }
+                        if !packet["id"].string.isEmpty { claimsSection }
+                        Button("关闭") { close() }.font(.subheadline).foregroundStyle(SPXColor.muted).disabled(busy).padding(.top, 2)
+                    }.padding(.horizontal, 22).padding(.vertical, 20).frame(maxWidth: .infinity).background(Color.white)
                 }
-                else { Text(ineligibleMessage).foregroundStyle(.white.opacity(0.86)).multilineTextAlignment(.center); Button(loading ? "正在刷新…" : "刷新领取状态") { load() }.font(.footnote.weight(.semibold)).disabled(loading || busy) }
-                if let error { Text(error).font(.footnote).foregroundStyle(.yellow) }
-                if !packet["claims"].array.isEmpty {
-                    ScrollView {
-                        LazyVStack(spacing: 12) {
-                            ForEach(packet["claims"].array.indices, id: \.self) { index in
-                                let claim = packet["claims"].array[index]
-                                HStack {
-                                    Text(claim["nickname"].string)
-                                    Spacer()
-                                    Text(DisplayLabels.amount(claim["amount"].string) + " SPX001")
-                                }.font(.caption)
-                            }
-                        }
-                    }.frame(maxHeight: 200)
-                }
-                Button("关闭") { close() }.foregroundStyle(.white.opacity(0.8)).disabled(busy)
-            }.padding(30).frame(maxWidth: 320).foregroundStyle(.white).background(LinearGradient(colors: [Color(red: 0.86, green: 0.24, blue: 0.18), Color(red: 0.67, green: 0.1, blue: 0.1)], startPoint: .top, endPoint: .bottom), in: RoundedRectangle(cornerRadius: 24))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .frame(maxWidth: 340)
+                .padding(.horizontal, 24)
+                .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+            }
         }.task { load() }
     }
+    private var envelopeHeader: some View {
+        VStack(spacing: 10) {
+            Text(packet["sender_name"].string.isEmpty ? "SPX 红包" : packet["sender_name"].string + "的红包")
+                .font(.system(size: 16, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
+            Text(packet["greeting"].string.isEmpty ? "恭喜发财，大吉大利" : packet["greeting"].string)
+                .font(.system(size: 14)).multilineTextAlignment(.center).lineLimit(2)
+            Text("SPX001 · 领取后自动存入钱包")
+                .font(.system(size: 11)).foregroundStyle(.white.opacity(0.76))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 22).padding(.top, 26).padding(.bottom, 24)
+        .frame(maxWidth: .infinity)
+        .background(LinearGradient(colors: [Color(red: 0.86, green: 0.25, blue: 0.19), Color(red: 0.70, green: 0.12, blue: 0.12)], startPoint: .topLeading, endPoint: .bottomTrailing))
+    }
+    @ViewBuilder private var claimAction: some View {
+        if let amount = confirmedAmount {
+            VStack(spacing: 5) {
+                Text(DisplayLabels.amount(amount)).font(.system(size: 30, weight: .bold, design: .rounded)).monospacedDigit().foregroundStyle(Color(red: 0.78, green: 0.19, blue: 0.13))
+                Text("SPX001 · 已存入钱包可用余额").font(.footnote).foregroundStyle(SPXColor.muted)
+            }.padding(.vertical, 5)
+        } else if claimCompleted {
+            Label("领取成功，正在更新状态", systemImage: "checkmark.circle.fill").font(.subheadline.weight(.semibold)).foregroundStyle(Color(red: 0.72, green: 0.22, blue: 0.17))
+            Button(loading ? "正在刷新…" : "刷新领取状态") { load() }.font(.footnote.weight(.semibold)).disabled(loading || busy)
+        } else if packet["can_claim"].flag {
+            Button { claim() } label: {
+                ZStack {
+                    Circle().fill(LinearGradient(colors: [Color(red: 1, green: 0.89, blue: 0.60), Color(red: 0.88, green: 0.62, blue: 0.27)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    Circle().stroke(Color(red: 0.66, green: 0.40, blue: 0.17).opacity(0.75), lineWidth: 1).padding(5)
+                    Circle().stroke(Color.white.opacity(0.65), lineWidth: 1).padding(9)
+                    if busy { ProgressView().tint(Color(red: 0.48, green: 0.29, blue: 0.12)) }
+                    else { Text("拆").font(.system(size: 34, weight: .medium, design: .serif)).foregroundStyle(Color(red: 0.48, green: 0.29, blue: 0.12)) }
+                }
+                .frame(width: 100, height: 100)
+                .rotation3DEffect(.degrees(coinRotation), axis: (x: 0, y: 1, z: 0), perspective: 0.45)
+                .accessibilityLabel("拆红包")
+            }
+            .buttonStyle(.plain).disabled(busy)
+            Text(busy ? "正在拆红包…" : "轻触铜钱 · 拆开红包").font(.footnote).foregroundStyle(SPXColor.muted)
+        } else if packet["id"].string.isEmpty {
+            if loading { ProgressView().tint(Color(red: 0.72, green: 0.22, blue: 0.17)) }
+            else { Button("重新加载红包") { load() }.font(.footnote.weight(.semibold)).disabled(loading || busy) }
+        } else {
+            Text(ineligibleMessage).font(.subheadline).foregroundStyle(SPXColor.ink).multilineTextAlignment(.center)
+            Button(loading ? "正在刷新…" : "刷新领取状态") { load() }.font(.footnote.weight(.semibold)).disabled(loading || busy)
+        }
+    }
+    @ViewBuilder private var claimsSection: some View {
+        VStack(spacing: 10) {
+            HStack {
+                Text("已领取 \(packet["claimed_count"].int) / \(packet["total_count"].int) 个")
+                Spacer(minLength: 8)
+                if !packet["total_amount"].string.isEmpty { Text("共 \(DisplayLabels.amount(packet["total_amount"].string)) SPX001") }
+            }.font(.caption).foregroundStyle(SPXColor.muted)
+            if packet["status"].string == "expired", !packet["refund_amount"].string.isEmpty {
+                Text("未领取金额 \(DisplayLabels.amount(packet["refund_amount"].string)) SPX001 已退回")
+                    .font(.caption).foregroundStyle(Color(red: 0.72, green: 0.22, blue: 0.17)).frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if !packet["claims"].array.isEmpty {
+                Button { withAnimation(.easeInOut(duration: 0.2)) { showingClaims.toggle() } } label: {
+                    HStack { Text(showingClaims ? "收起领取详情" : "查看领取详情"); Spacer(); Image(systemName: showingClaims ? "chevron.up" : "chevron.down") }
+                        .font(.caption.weight(.semibold)).foregroundStyle(Color(red: 0.72, green: 0.22, blue: 0.17))
+                }.buttonStyle(.plain)
+                if showingClaims {
+                    VStack(spacing: 9) {
+                        ForEach(packet["claims"].array.indices, id: \.self) { index in
+                            let claim = packet["claims"].array[index]
+                            HStack { Text(claim["nickname"].string.isEmpty ? "好友" : claim["nickname"].string).lineLimit(1); Spacer(minLength: 8); Text(DisplayLabels.amount(claim["amount"].string) + " SPX001").monospacedDigit() }
+                                .font(.caption).foregroundStyle(SPXColor.ink)
+                        }
+                    }.padding(.top, 2)
+                }
+            }
+        }
+        .padding(13)
+        .background(Color(red: 0.98, green: 0.97, blue: 0.95), in: RoundedRectangle(cornerRadius: 8))
+    }
+    private var confirmedAmount: String? {
+        guard !packet["my_amount"].string.isEmpty, (packet["my_amount"].decimal ?? 0) > 0 else { return nil }
+        return packet["my_amount"].string
+    }
     private var ineligibleMessage: String {
-        if packet["status"].string != "active" { return "红包已领完或已过期" }
+        if packet["status"].string == "completed" { return "手慢了，红包已领完" }
+        if packet["status"].string == "expired" { return "红包已过期" }
         if packet["sender_id"].int == session.user?.id { return "这是你发出的红包，查看领取进度" }
-        return "当前账号暂不可领取，请确认红包接收范围和群成员身份。"
+        return packet["claim_disabled_reason"].string.isEmpty ? "当前账号不在红包领取范围内" : packet["claim_disabled_reason"].string
     }
     private func load() {
         guard !loading else { return }
         loading = true
-        Task { defer { loading = false }; do { packet = try await APIClient.shared.get("redpackets.detail", ["id": packetID]); claimCompleted = false; error = nil } catch { self.error = error.localizedDescription } }
+        Task { defer { loading = false }; do { let result = try await APIClient.shared.get("redpackets.detail", ["id": packetID]); guard result["id"].string == packetID else { throw APIError.staleSession }; packet = result; claimCompleted = claimRequestConfirmed && confirmedAmount == nil; error = nil } catch { discardInaccessiblePacket(error); self.error = error.localizedDescription } }
+    }
+    private func discardInaccessiblePacket(_ error: Error) {
+        if let apiError = error as? APIError, case .server(let code, _) = apiError, [403,404,422].contains(code) { packet = .null }
     }
     private func claim() {
         guard !busy, packet["can_claim"].flag else { return }
         busy = true
+        withAnimation(.easeOut(duration: 0.48)) { coinRotation += 360 }
         Task {
             defer { busy = false }
             do {
-                packet = try await APIClient.shared.post("redpackets.claim", ["id": .string(packetID)])
+                let receipt = try await APIClient.shared.post("redpackets.claim", ["id": .string(packetID)])
+                guard receipt["id"].string == packetID else { throw APIError.staleSession }
+                packet = receipt
+                claimRequestConfirmed = true
                 claimCompleted = true
                 error = nil
+                playClaimSoundIfConfirmed(receipt)
                 do {
-                    packet = try await APIClient.shared.get("redpackets.detail", ["id": packetID])
-                    claimCompleted = false
+                    let latest = try await APIClient.shared.get("redpackets.detail", ["id": packetID])
+                    guard latest["id"].string == packetID else { throw APIError.staleSession }
+                    packet = latest
+                    playClaimSoundIfConfirmed(latest)
+                    claimCompleted = confirmedAmount == nil
                 } catch {
                     self.error = "领取已提交，状态暂时无法刷新，请稍后重试。"
                 }
             } catch {
+                discardInaccessiblePacket(error)
                 self.error = error.localizedDescription
-                if let result = try? await APIClient.shared.get("redpackets.detail", ["id": packetID]) {
+                if let result = try? await APIClient.shared.get("redpackets.detail", ["id": packetID]), result["id"].string == packetID {
                     packet = result
-                    claimCompleted = false
+                    playClaimSoundIfConfirmed(result)
+                    if confirmedAmount != nil { claimRequestConfirmed = true }
+                    claimCompleted = claimRequestConfirmed && confirmedAmount == nil
+                } else {
+                    claimCompleted = true
+                    self.error = "领取结果待确认，请刷新领取状态后再操作。"
                 }
             }
         }
+    }
+    private func playClaimSoundIfConfirmed(_ receipt: JSON) {
+        guard receipt["id"].string == packetID,
+              let amount = receipt["my_amount"].decimal, amount > 0 else { return }
+        ChatSoundEffects.shared.claimed(receipt: "\(session.user?.id ?? 0):\(packetID)")
     }
 }
