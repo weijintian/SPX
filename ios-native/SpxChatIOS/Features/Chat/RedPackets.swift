@@ -74,10 +74,7 @@ struct RedPacketSendView: View {
                                     .frame(width: 110)
                                     .focused($inputFocus, equals: .count)
                                     .accessibilityLabel("红包个数，1 至 100 个")
-                                    .onChange(of: countText) { value in
-                                        let digits = value.filter { $0.isASCII && $0.isNumber }
-                                        if digits != value { countText = digits }
-                                    }
+                                    .onChange(of: countText, perform: sanitizeCountText)
                                 Text("个").font(.system(size: 13)).foregroundStyle(SPXColor.muted)
                             }.frame(minHeight: 44)
                             Text(validCount ? "每次可发送 1–100 个红包" : "请输入 1–100 之间的整数").font(.system(size: 12)).foregroundStyle(validCount ? SPXColor.muted : Color.red)
@@ -154,6 +151,12 @@ struct RedPacketSendView: View {
         guard !busy else { return }; busy = true
         let owner = session.user?.id
         Task { defer { busy = false }; do { let result = try await APIClient.shared.get("payment.password.status"); guard session.user?.id == owner else { return }; password = ""; if result["configured"].flag { confirm = true } else { needsPaymentPassword = true } } catch { self.error = error.localizedDescription } }
+    }
+
+    private func sanitizeCountText(_ value: String) {
+        let sanitized = value.filter { $0.isASCII && $0.isNumber }
+        guard sanitized != value else { return }
+        countText = sanitized
     }
     private func loadBalance() {
         guard !balanceLoading else { return }
