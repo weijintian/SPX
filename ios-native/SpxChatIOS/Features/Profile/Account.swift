@@ -79,11 +79,82 @@ struct SecurityView: View {
                 InfoRow(title: "SPX ID", value: session.user?["spx_id"].string ?? "")
             }
             SPXPanel("安全管理") {
+                NavigationLink { PaymentPasswordView() } label: { SPXSettingsRow(title: "支付密码", icon: "lock.shield") }
                 NavigationLink { ChangePasswordView() } label: { SPXSettingsRow(title: "修改登录密码", icon: "key") }
                 NavigationLink { ChangePasswordView(emailVerification: true) } label: { SPXSettingsRow(title: "邮箱验证修改密码", icon: "envelope") }
                 NavigationLink { WalletBindingView() } label: { SPXSettingsRow(title: "钱包地址绑定", icon: "wallet") }
             }.buttonStyle(.plain)
         }.navigationTitle("账号与安全")
+    }
+}
+
+struct PaymentPasswordView: View {
+    @EnvironmentObject private var session: SessionStore
+    @State private var configured: Bool?
+    @State private var password = ""
+    @State private var confirmation = ""
+    @State private var code = ""
+    @State private var busy = false
+    @State private var cooldown = 0
+    @State private var error: String?
+    @State private var notice: String?
+    private var validPassword: Bool { password.count == 6 && password.allSatisfy { $0.isASCII && $0.isNumber } && password == confirmation }
+    var body: some View {
+        SPXDetailPage {
+            SPXPageHeading(title: "支付密码", subtitle: "独立六位数字密码，用于发送红包", icon: "lock.shield")
+            if let configured {
+                if configured {
+                    SPXPanel("邮箱验证", footer: "修改支付密码必须验证账号绑定邮箱。") {
+                        InfoRow(title: "绑定邮箱", value: session.user?["email"].string ?? "")
+                        SPXField("邮箱验证码") {
+                            HStack {
+                                TextField("六位验证码", text: $code).foregroundStyle(SPXColor.ink).tint(SPXColor.primary).keyboardType(.numberPad).textContentType(.oneTimeCode)
+                                Button(cooldown > 0 ? "\(cooldown)s" : "发送验证码") { sendCode() }.disabled(busy || cooldown > 0).fixedSize()
+                            }
+                        }
+                    }.disabled(busy)
+                }
+                SPXPanel(configured ? "设置新支付密码" : "首次设置支付密码", footer: "首次可直接设置。请勿与登录密码共用。") {
+                    SPXField("支付密码") { SecureField("六位数字", text: $password).foregroundStyle(SPXColor.ink).tint(SPXColor.primary).keyboardType(.numberPad).textContentType(.newPassword) }
+                    SPXField("确认支付密码") { SecureField("再次输入六位数字", text: $confirmation).foregroundStyle(SPXColor.ink).tint(SPXColor.primary).keyboardType(.numberPad).textContentType(.newPassword) }
+                }.disabled(busy)
+            } else if busy { ProgressView() }
+            else { Button("重新读取支付密码状态") { load() } }
+            if let error { ErrorBanner(message: error) }
+        }.safeAreaInset(edge: .bottom, spacing: 0) {
+            SPXBottomAction {
+                Button(busy ? "正在处理…" : configured == true ? "验证并修改支付密码" : "设置支付密码") { save() }
+                    .disabled(busy || configured == nil || !validPassword || (configured == true && code.count != 6))
+            }
+        }.navigationTitle("支付密码").successToast($notice).task { load() }
+            .task(id: cooldown) { guard cooldown > 0 else { return }; do { try await SPXSleep.seconds(1); cooldown -= 1 } catch { } }
+            .onDisappear { password = ""; confirmation = ""; code = "" }
+    }
+    private func load() {
+        guard !busy else { return }; busy = true
+        let owner = session.user?.id
+        Task { defer { busy = false }; do { let result = try await APIClient.shared.get("payment.password.status"); guard session.user?.id == owner else { return }; configured = result["configured"].flag; error = nil } catch { self.error = error.localizedDescription } }
+    }
+    private func sendCode() {
+        guard !busy, cooldown == 0 else { return }; busy = true
+        let owner = session.user?.id
+        Task { defer { busy = false }; do { try await APIClient.shared.post("payment.password.email.code"); guard session.user?.id == owner else { return }; cooldown = 60; notice = "验证码已发送，请查收绑定邮箱"; error = nil } catch { self.error = error.localizedDescription } }
+    }
+    private func save() {
+        guard !busy, let configured, validPassword else { return }; busy = true
+        let owner = session.user?.id
+        var payload: [String: JSON] = ["password": .string(password), "confirmation": .string(confirmation)]
+        if configured { payload["code"] = .string(code) }
+        Task {
+            defer { busy = false; password = ""; confirmation = ""; code = "" }
+            do {
+                try await APIClient.shared.post(configured ? "payment.password.change.email" : "payment.password.set", payload)
+                guard session.user?.id == owner else { return }; self.configured = true; error = nil; notice = "支付密码已保存"
+            } catch {
+                self.error = error.localizedDescription
+                if let result = try? await APIClient.shared.get("payment.password.status"), session.user?.id == owner { self.configured = result["configured"].flag }
+            }
+        }
     }
 }
 
@@ -134,6 +205,11 @@ struct SettingsView: View {
                 NavigationLink { SecurityView() } label: { SPXSettingsRow(title: "账号与安全", icon: "lock.shield") }
                 NavigationLink { BenefitsView() } label: { SPXSettingsRow(title: "我的权益", icon: "seal") }
                 NavigationLink { MessageNotificationSettingsView() } label: { SPXSettingsRow(title: "消息通知与角标", icon: "bell.badge") }
+            }
+            SPXPanel("支付安全") {
+                NavigationLink { PaymentPasswordView() } label: {
+                    SPXSettingsRow(title: "支付密码", icon: "lock.shield", detail: "独立六位数字密码")
+                }
             }
             SPXPanel("通用") {
                 SPXField("外观") { Picker("外观", selection: $appearance) { Text("跟随系统").tag("system"); Text("浅色").tag("light"); Text("深色").tag("dark") }.pickerStyle(.segmented) }
