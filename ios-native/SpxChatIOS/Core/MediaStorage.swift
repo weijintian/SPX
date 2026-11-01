@@ -231,6 +231,18 @@ actor MediaCache {
     private var observers: [String: [UUID: @Sendable (Double) -> Void]] = [:]
     private let session: URLSession
     init(session: URLSession = NetworkSession.shared) { self.session = session }
+    private static func isVoiceMedia(_ url: URL) -> Bool {
+        ["3gp", "amr", "m4a", "aac", "mp3", "ogg", "wav"].contains(url.pathExtension.lowercased())
+    }
+    private static func isErrorDocument(_ url: URL) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        let prefix = String(decoding: (try? handle.read(upToCount: 128)) ?? Data(), as: UTF8.self)
+            .replacingOccurrences(of: "\u{feff}", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        return prefix.hasPrefix("<!doctype html") || prefix.hasPrefix("<html") || prefix.hasPrefix("{")
+    }
     func file(_ source: String, userID: Int, progress: (@Sendable (Double) -> Void)? = nil) async throws -> URL {
         let endpoint = try await APIClient.shared.endpoint()
         guard let remote = URL(string: source, relativeTo: endpoint)?.absoluteURL, ["https", "http"].contains(remote.scheme ?? ""), !source.isEmpty else { throw APIError.invalidURL }
@@ -241,7 +253,10 @@ actor MediaCache {
         defer { observers[key]?[observer] = nil; if observers[key]?.isEmpty == true { observers[key] = nil } }
         let hash = SHA256.hash(data: Data(source.utf8)).map { String(format: "%02x", $0) }.joined()
         let target = try MediaFiles.directory(userID: userID, component: "media").appendingPathComponent(hash).appendingPathExtension(remote.pathExtension)
-        if FileManager.default.fileExists(atPath: target.path) { try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: target.path); return target }
+        if FileManager.default.fileExists(atPath: target.path) {
+            if Self.isVoiceMedia(remote), Self.isErrorDocument(target) { try FileManager.default.removeItem(at: target) }
+            else { try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: target.path); return target }
+        }
         if let entry = tasks[key] { return try await waitForDownload(entry, key: key, observer: observer) }
         let taskID = UUID()
         let task = Task<URL, Error> {
@@ -251,8 +266,15 @@ actor MediaCache {
             let (temporary, response) = try await session.download(from: remote, delegate: delegate)
             defer { try? FileManager.default.removeItem(at: temporary) }
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw APIError.invalidResponse }
+            let mimeType = (http.value(forHTTPHeaderField: "Content-Type") ?? "").split(separator: ";", maxSplits: 1).first.map { String($0).lowercased() } ?? ""
+            guard !Self.isVoiceMedia(remote) || (!mimeType.contains("html") && !mimeType.contains("json")) else {
+                throw APIError.server(502, "媒体地址返回了错误页面，请稍后重试")
+            }
             let bytes = try temporary.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
             guard bytes > 0 else { throw APIError.invalidResponse }
+            if Self.isVoiceMedia(remote), Self.isErrorDocument(temporary) {
+                throw APIError.server(502, "语音地址返回了错误页面，请稍后重试")
+            }
             try Task.checkCancellation()
             guard generations[userID] == generation else { throw CancellationError() }
             if !FileManager.default.fileExists(atPath: target.path) { try FileManager.default.moveItem(at: temporary, to: target) }
