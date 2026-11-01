@@ -531,19 +531,27 @@ struct DocumentPreview: UIViewControllerRepresentable {
         guard allowed else { throw APIError.server(403, "请在系统设置允许麦克风权限") }
         guard CallCoordinator.shared.call == nil, !recording else { throw APIError.server(409, "当前正在通话或录音，请稍后再试") }
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
-        try session.setActive(true)
-        let url = try MediaFiles.directory(userID: userID, component: "attachments").appendingPathComponent(UUID().uuidString + ".m4a")
+        var outputURL: URL?
+        var activatedSession = false
         do {
-            recorder = try AVAudioRecorder(url: url, settings: [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 44100, AVNumberOfChannelsKey: 1, AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue])
-            recorder?.delegate = self
-            guard recorder?.record(forDuration: 60) == true else { throw APIError.invalidResponse }
+            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+            try session.setActive(true)
+            activatedSession = true
+            let url = try MediaFiles.directory(userID: userID, component: "attachments").appendingPathComponent(UUID().uuidString + ".m4a")
+            outputURL = url
+            let next = try AVAudioRecorder(url: url, settings: [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 44100, AVNumberOfChannelsKey: 1, AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue])
+            next.delegate = self
+            guard next.prepareToRecord(), next.record(forDuration: 60) else { throw APIError.server(500, "无法初始化录音，请检查麦克风权限后重试") }
+            recorder = next
             errorMessage = nil; recording = true
         } catch {
+            let failure = error as NSError
+            NSLog("[VoiceRecorder] start failed (%@, %ld)", failure.domain, failure.code)
             recorder?.delegate = nil; recorder?.stop(); recorder = nil
-            try? FileManager.default.removeItem(at: url)
-            if CallCoordinator.shared.call == nil { try? session.setActive(false, options: .notifyOthersOnDeactivation) }
-            throw error
+            if let outputURL { try? FileManager.default.removeItem(at: outputURL) }
+            if activatedSession, CallCoordinator.shared.call == nil { try? session.setActive(false, options: .notifyOthersOnDeactivation) }
+            if let apiError = error as? APIError { throw apiError }
+            throw APIError.server(500, "录音启动失败，请检查麦克风权限和设备音频设置后重试")
         }
     }
     func finish() {
