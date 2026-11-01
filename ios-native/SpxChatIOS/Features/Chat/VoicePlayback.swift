@@ -77,8 +77,17 @@ enum VoiceMessageMetadata {
             try audio.setCategory(.playAndRecord, mode: .default, options: [.allowBluetooth, .allowBluetoothA2DP])
             try audio.setActive(true); ownsAudioSession = true
             UIDevice.current.isProximityMonitoringEnabled = true; try applyRoute()
-            let next = try AVAudioPlayer(contentsOf: file); next.delegate = self; next.prepareToPlay(); player = next
-            guard next.play() else { throw APIError.invalidResponse }
+            let next: AVAudioPlayer
+            do {
+                next = try AVAudioPlayer(contentsOf: file)
+                guard next.prepareToPlay() else { throw APIError.invalidResponse }
+            } catch {
+                let failure = error as NSError
+                NSLog("[VoicePlayback] prepare failed (%@, %ld)", failure.domain, failure.code)
+                throw APIError.server(415, "这条语音暂时无法播放，可能是格式不兼容或文件已损坏")
+            }
+            next.delegate = self; player = next
+            guard next.play() else { throw APIError.server(500, "语音播放启动失败，请重试") }
             if next.duration.isFinite { durations[source] = max(1, Int(ceil(next.duration))) }
             markListened(source, userID: userID); loading = false; playing = true
         } catch { if epoch == generation { stop() }; if !(error is CancellationError) { throw error } }
