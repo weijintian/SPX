@@ -385,6 +385,7 @@ struct ConversationView: View {
     @StateObject private var recorder = VoiceRecorder()
     @Environment(\.scenePhase) private var phase
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var session: SessionStore
     @State private var text = ""
     @State private var plus = false
     @State private var photos: [SPXPhotosPickerItem] = []
@@ -438,6 +439,7 @@ struct ConversationView: View {
     @State private var cancelRecording = false
     @State private var recordingRequest = UUID()
     @State private var contextMessage: Record?
+    @State private var redialMedia: Int?
     @State private var activeSheet: ConversationSheet?
     @State private var visible = false
     private enum ConversationSheet: Identifiable {
@@ -605,9 +607,8 @@ struct ConversationView: View {
                     TextEditor(text: $text)
                         .font(.system(size: 16))
                         .focused($composerFocused)
-                        // Keep the composer close to the Android width and prevent an
-                        // empty TextEditor from expanding into a large white panel.
-                        .frame(width: min(240, max(180, UIScreen.main.bounds.width - 150)), height: 42)
+                        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 40, maxHeight: 120)
+                        .layoutPriority(1)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(SPXColor.card, in: RoundedRectangle(cornerRadius: 10))
@@ -707,6 +708,10 @@ struct ConversationView: View {
             .confirmationDialog("为所有人删除这条消息？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
                 Button("确认删除", role: .destructive) { if let deleting { Task { do { try await model.delete(deleting) } catch { self.error = error.localizedDescription } } }; deleting = nil }
             }
+            .confirmationDialog(redialMedia == 2 ? "给\(item.name)拨打视频？" : "给\(item.name)拨打语音？", isPresented: Binding(get: { redialMedia != nil }, set: { if !$0 { redialMedia = nil } }), titleVisibility: .visible) {
+                Button { let media = redialMedia; redialMedia = nil; guard let media, (media == 1 || media == 2), !isGroup, item.id > 0, session.user?.id == userID else { return }; CallCoordinator.shared.dial(chat: item, video: media == 2) } label: { Label(redialMedia == 2 ? "视频呼叫" : "语音呼叫", systemImage: redialMedia == 2 ? "video.fill" : "phone.fill") }
+                Button("取消", role: .cancel) { redialMedia = nil }
+            } message: { Text("确认后发起通话。") }
     }
     private var recordingContent: some View {
         messageEditorContent
@@ -908,7 +913,8 @@ struct ConversationView: View {
     private func open(_ message: Record) {
         if let card = MessageContent.product(message) { sharedProduct = Record(["id": card["product_id"], "name": card["name"], "image_url": card["image_url"], "cny_price": card["cny_price"]]); return }
         if let code = MessageContent.groupCode(message) { sharedGroupCode = code; sharedGroup = true; activeSheet = .sharedGroup; return }
-        if message["message_origin"].string == "call", !isGroup { CallCoordinator.shared.dial(chat: item, video: message["content"].string.hasPrefix("[视频通话]")); return }
+        if let call = CallRecordPresentation(message: message, isGroup: isGroup) { redialMedia = call.media; return }
+        if message["message_origin"].string == "call", !isGroup { redialMedia = message["content"].string.hasPrefix("[视频通话]") ? 2 : 1; return }
         switch MessageContent.messageType(message) {
         case "image", "video": selectedMedia = message
         case "voice": Task { do { try await VoicePlayback.shared.toggle(message["media_url"].string, userID: userID) } catch { self.error = error.localizedDescription } }
@@ -948,7 +954,9 @@ struct MessageBubble: View {
     private var greeting: String { MessageContent.redPacketGreeting(message) }
     private var packetMode: String { MessageContent.redPacketMode(message) }
     var body: some View {
-        if MessageContent.isSystem(message) {
+        if let call = CallRecordPresentation(message: message, isGroup: isGroup) {
+            CallRecordMessageBubble(message: message, currentUserID: currentUserID, call: call, open: open, mention: mention)
+        } else if MessageContent.isSystem(message) {
             SystemMessageNotice(message: message)
         } else {
         HStack(alignment: .top, spacing: 10) {
@@ -992,6 +1000,108 @@ struct MessageBubble: View {
             if !mine { Spacer(minLength: 44) }
         }
         }
+    }
+}
+
+private struct CallRecordPresentation {
+    let media: Int
+    let title: String
+    let subtitle: String
+    let completed: Bool
+
+    init?(message: Record, isGroup: Bool) {
+        guard !isGroup, message["message_origin"].string == "call", message["message_type"].string == "text" else { return nil }
+        let content = message["content"].string
+        let media: Int, prefix: String
+        if content.hasPrefix("[语音通话] ") { media = 1; prefix = "[语音通话] " }
+        else if content.hasPrefix("[视频通话] ") { media = 2; prefix = "[视频通话] " }
+        else { return nil }
+
+        let result = String(content.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        let durationPrefix = "通话时长 "
+        let duration = result.hasPrefix(durationPrefix) ? String(result.dropFirst(durationPrefix.count)) : ""
+        let components = duration.split(separator: ":", omittingEmptySubsequences: false)
+        let validDuration = components.count == 2
+            && (2...8).contains(components[0].count)
+            && components[0].allSatisfy { $0.isASCII && $0.isNumber }
+            && components[1].count == 2
+            && components[1].allSatisfy { $0.isASCII && $0.isNumber }
+            && (Int(components[1]) ?? 60) <= 59
+        let hasDuration = validDuration
+        let status: String
+        if hasDuration { status = "通话时长 \(duration)" }
+        else {
+            switch result {
+            case "已取消", "已拒绝", "对方忙线中", "无人接听", "对方暂时不在线", "连接中断": status = result
+            default: status = result.isEmpty ? "通话已结束" : result
+            }
+        }
+        self.media = media
+        title = status
+        subtitle = "\(media == 2 ? "视频通话" : "语音通话") · \(hasDuration ? "再次呼叫" : "点击回拨")"
+        completed = hasDuration
+    }
+}
+
+private struct CallRecordBubbleShape: Shape {
+    let mine: Bool
+    func path(in rect: CGRect) -> Path {
+        let topLeft: CGFloat = 19, topRight: CGFloat = 19
+        let bottomRight: CGFloat = mine ? 6 : 19, bottomLeft: CGFloat = mine ? 19 : 6
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + topLeft, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - topRight, y: rect.minY))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + topRight), control: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - bottomRight))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX - bottomRight, y: rect.maxY), control: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX + bottomLeft, y: rect.maxY))
+        path.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.maxY - bottomLeft), control: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + topLeft))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + topLeft, y: rect.minY), control: CGPoint(x: rect.minX, y: rect.minY))
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct CallRecordMessageBubble: View {
+    let message: Record
+    let currentUserID: Int
+    let call: CallRecordPresentation
+    let open: () -> Void
+    var mention: (() -> Void)?
+    private var mine: Bool { message["sender_id"].int == currentUserID }
+    private var blue: Color { SPXColor.hex(0x2D4ECF) }
+    private var ink: Color { mine ? .white : SPXColor.ink }
+    private var muted: Color { mine ? .white.opacity(0.86) : Color(red: 0.49, green: 0.53, blue: 0.62) }
+    var body: some View {
+        HStack(spacing: 10) {
+            if mine { Spacer(minLength: 52) }
+            else { Avatar(url: message.avatar, name: message.name, size: 36).onLongPressGesture { mention?() }.accessibilityAction(named: "提醒这位成员") { mention?() } }
+            Button(action: open) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 14).fill(mine ? Color.white.opacity(0.12) : SPXColor.hex(0xEEF2FF))
+                        Image(systemName: iconName).font(.system(size: 18, weight: .semibold)).foregroundStyle(mine ? .white : Color(red: 0.38, green: 0.45, blue: 0.79))
+                    }.frame(width: 41, height: 41)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(call.title).font(.system(size: 16, weight: .medium)).foregroundStyle(ink).lineLimit(2).truncationMode(.tail)
+                        Text(call.subtitle).font(.system(size: 11)).foregroundStyle(muted).lineLimit(2).truncationMode(.tail)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(mine ? .white.opacity(0.62) : Color(red: 0.69, green: 0.72, blue: 0.79))
+                }
+                .padding(.horizontal, 15).padding(.vertical, 14).frame(minWidth: 248, maxWidth: 248, minHeight: 74)
+                .background(mine ? blue : .white, in: CallRecordBubbleShape(mine: mine))
+                .overlay { if !mine { CallRecordBubbleShape(mine: mine).stroke(Color(red: 0.91, green: 0.93, blue: 0.96), lineWidth: 0.75) } }
+                .contentShape(CallRecordBubbleShape(mine: mine))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(call.title)，\(call.subtitle)，点击确认后回拨")
+            if !mine { Spacer(minLength: 22) }
+        }
+    }
+    private var iconName: String {
+        if call.media == 2 { return call.completed ? "video.fill" : "video.slash.fill" }
+        return call.completed ? "phone.fill" : "phone.down.fill"
     }
 }
 
