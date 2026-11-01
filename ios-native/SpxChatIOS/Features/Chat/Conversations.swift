@@ -594,8 +594,9 @@ struct ConversationView: View {
                 Button { voiceMode.toggle(); plus = false; emoji = false; composerFocused = !voiceMode; if !voiceMode { stopRecording(cancel: true) } } label: { Image(systemName: voiceMode ? "keyboard" : "waveform.circle").font(.system(size: 25, weight: .regular)).frame(width: 32, height: 40) }.accessibilityLabel(voiceMode ? "切换文字输入" : "切换语音输入")
                 if voiceMode {
                     Text(recordingGesture ? (cancelRecording ? "松开取消" : "松开发送，上滑取消") : "按住说话")
-                        .font(.subheadline.weight(.medium)).frame(maxWidth: .infinity).padding(.vertical, 12)
-                        .background(cancelRecording ? Color.red.opacity(0.12) : SPXColor.card, in: RoundedRectangle(cornerRadius: 14))
+                        .font(.subheadline.weight(.medium))
+                        .frame(minWidth: 0, maxWidth: 180, minHeight: 40)
+                        .background(cancelRecording ? Color.red.opacity(0.12) : SPXColor.card, in: RoundedRectangle(cornerRadius: 10))
                         .foregroundStyle(cancelRecording ? .red : SPXColor.ink)
                         .gesture(DragGesture(minimumDistance: 0).onChanged { value in
                             beginRecording()
@@ -604,13 +605,7 @@ struct ConversationView: View {
                         }.onEnded { _ in stopRecording(cancel: cancelRecording) })
                         .accessibilityAction(named: "开始或结束录音") { if recorder.recording { stopRecording(cancel: false) } else { beginRecording() } }
                 } else {
-                    TextEditor(text: $text)
-                        .font(.system(size: 16))
-                        .focused($composerFocused)
-                        .frame(minWidth: 0, maxWidth: 220, minHeight: 40, maxHeight: 120)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(SPXColor.card, in: RoundedRectangle(cornerRadius: 10))
+                    messageInput
                 }
                 Button { emoji.toggle(); plus = false; composerFocused = false } label: { Image(systemName: "face.smiling").font(.system(size: 25, weight: .regular)).frame(width: 32, height: 40) }.accessibilityLabel("表情")
                 if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -627,6 +622,31 @@ struct ConversationView: View {
             if emoji { EmojiPanel { text += $0 } }
             }
         }
+    }
+    private var messageInput: some View {
+        // Measure at most four lines instead of letting TextEditor fill the
+        // available height. The zero-width space also measures a trailing newline.
+        Text(text.isEmpty ? " " : text + "\u{200B}")
+            .font(.system(size: 16))
+            .lineLimit(4)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 13)
+            .padding(.vertical, 8)
+            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 40)
+            .hidden()
+            .accessibilityHidden(true)
+            .overlay {
+                TextEditor(text: $text)
+                    .font(.system(size: 16))
+                    .foregroundStyle(SPXColor.ink)
+                    .tint(SPXColor.primary)
+                    .focused($composerFocused)
+                    .padding(.horizontal, 8)
+                    .accessibilityLabel("输入消息")
+            }
+            .frame(minWidth: 0, maxWidth: 180)
+            .background(SPXColor.card, in: RoundedRectangle(cornerRadius: 10))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
     }
     private func dismissInputPanels() {
         guard composerFocused || plus || emoji else { return }

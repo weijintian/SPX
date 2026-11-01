@@ -7,6 +7,7 @@ import Combine
     static let shared = ChatSoundEffects()
     private var effect: AVAudioPlayer?
     private var effectOwnsSession = false
+    private var effectIsClaim = false
     private var waiting: AVAudioPlayer?
     private var packetKeys: [String] = []
     private var claimedPacketKeys: [String] = []
@@ -32,10 +33,14 @@ import Combine
         packetKeys.append(key); if packetKeys.count > 256 { packetKeys.removeFirst() }
         playEffect("red_packet", ext: "mp3")
     }
-    func claimed(receipt: String) {
-        guard !receipt.isEmpty, !claimedPacketKeys.contains(receipt) else { return }
+    @discardableResult func claimed(receipt: String) -> Bool {
+        guard !receipt.isEmpty else { return false }
+        if claimedPacketKeys.contains(receipt) { return true }
+        // Only mark a receipt after AVAudioPlayer actually starts; a temporary
+        // audio/session failure must not consume the success sound permanently.
+        guard playEffect("red_packet_claim", ext: "mp3", isClaim: true) else { return false }
         claimedPacketKeys.append(receipt); if claimedPacketKeys.count > 256 { claimedPacketKeys.removeFirst() }
-        playEffect("red_packet_claim", ext: "mp3")
+        return true
     }
     func incoming(_ event: JSON, userID: Int) {
         guard userID > 0, ["message", "group.message"].contains(event["type"].string) else { return }
@@ -85,20 +90,45 @@ import Combine
     func reset() { stopCall(); audioActive = false; packetKeys = []; claimedPacketKeys = []; eventKeys = []; pendingMentions = [:]; mutedConversations = [] }
     func stopEffect() {
         effect?.delegate = nil; effect?.stop(); effect = nil
+        effectIsClaim = false
         if effectOwnsSession { effectOwnsSession = false; try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
     }
-    private func playEffect(_ name: String, ext: String) {
-        guard UIApplication.shared.applicationState == .active, CallCoordinator.shared.call == nil, !VoicePlayback.shared.playing, !VoicePlayback.shared.loading, !Self.recording, let file = Self.resource(name, extension: ext) else { return }
+    @discardableResult private func playEffect(_ name: String, ext: String, isClaim: Bool = false) -> Bool {
+        guard UIApplication.shared.applicationState == .active, CallCoordinator.shared.call == nil, !VoicePlayback.shared.playing, !VoicePlayback.shared.loading, !Self.recording else { return false }
+        // An incoming message must not cut off a confirmed claim celebration.
+        guard !effectIsClaim || isClaim else { return false }
+        guard let file = Self.resource(name, extension: ext) else {
+            NSLog("[ChatSoundEffects] Missing bundled sound: %@.%@", name, ext)
+            return false
+        }
         stopEffect()
         do {
-            // Ambient respects the silent switch and never interrupts the RTC audio session.
-            try AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default, options: [.mixWithOthers]); try AVAudioSession.sharedInstance().setActive(true)
+            // Ambient matches Android's ringer-mode behavior and leaves the
+            // silent switch in control. The guards above leave ongoing audio alone.
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+            try session.setActive(true)
             effectOwnsSession = true
-            effect = try AVAudioPlayer(contentsOf: file); effect?.delegate = self; effect?.volume = 0.65; effect?.play()
-        } catch { stopEffect() }
+            let player = try AVAudioPlayer(contentsOf: file)
+            effect = player; effectIsClaim = isClaim
+            player.delegate = self; player.volume = 0.65
+            guard player.prepareToPlay(), player.play() else {
+                NSLog("[ChatSoundEffects] Could not start bundled sound: %@.%@", name, ext)
+                stopEffect()
+                return false
+            }
+            return true
+        } catch {
+            NSLog("[ChatSoundEffects] Sound playback failed: %@", error.localizedDescription)
+            stopEffect()
+            return false
+        }
     }
     static var recording = false
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) { Task { @MainActor in if self.effect === player { self.stopEffect() } } }
+    nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        Task { @MainActor in if self.effect === player { self.stopEffect() } }
+    }
 }
 
 extension Notification.Name { static let spxMentionReceived = Notification.Name("spx.mentionReceived") }

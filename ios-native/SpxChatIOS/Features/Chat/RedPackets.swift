@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 extension Notification.Name { static let spxOpenPacket = Notification.Name("spx.openPacket") }
 
@@ -214,28 +215,53 @@ struct RedPacketPopup: View {
     @State private var loading = false
     @State private var claimCompleted = false
     @State private var claimRequestConfirmed = false
+    @State private var awaitingClaimSound = false
+    @State private var claimOwnerID: Int?
     @State private var showingClaims = false
     @State private var coinRotation = 0.0
     @State private var error: String?
     var body: some View {
         ZStack {
             Color.black.opacity(0.55).ignoresSafeArea().onTapGesture { if !busy { close() } }
-            ScrollView {
-                VStack(spacing: 0) {
-                    envelopeHeader
-                    VStack(spacing: 14) {
-                        claimAction
-                        if let error { Text(error).font(.footnote).foregroundStyle(Color(red: 0.72, green: 0.22, blue: 0.17)).multilineTextAlignment(.center) }
-                        if !packet["id"].string.isEmpty { claimsSection }
-                        Button("关闭") { close() }.font(.subheadline).foregroundStyle(SPXColor.muted).disabled(busy).padding(.top, 2)
-                    }.padding(.horizontal, 22).padding(.vertical, 20).frame(maxWidth: .infinity).background(Color.white)
+            GeometryReader { geometry in
+                ScrollView(showsIndicators: false) {
+                    packetCard
+                        .frame(maxWidth: 310)
+                        .padding(.horizontal, 24)
+                        .frame(maxWidth: .infinity)
+                        // Fill the viewport before centering; expanded claim
+                        // records can still grow beyond it and scroll normally.
+                        .frame(minHeight: max(0, geometry.size.height - 32), alignment: .center)
+                        .padding(.vertical, 16)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .frame(maxWidth: 340)
-                .padding(.horizontal, 24)
-                .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
             }
-        }.task { load() }
+        }
+        .task { load() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            playClaimSoundIfConfirmed(packet)
+        }
+        .onReceive(VoicePlayback.shared.$playing) { playing in
+            if !playing, !VoicePlayback.shared.loading { playClaimSoundIfConfirmed(packet) }
+        }
+        .onReceive(VoicePlayback.shared.$loading) { loading in
+            if !loading, !VoicePlayback.shared.playing { playClaimSoundIfConfirmed(packet) }
+        }
+        .onReceive(CallCoordinator.shared.$call) { call in
+            if case nil = call { playClaimSoundIfConfirmed(packet) }
+        }
+    }
+    private var packetCard: some View {
+        VStack(spacing: 0) {
+            envelopeHeader
+            VStack(spacing: 14) {
+                claimAction
+                if let error { Text(error).font(.footnote).foregroundStyle(Color(red: 0.72, green: 0.22, blue: 0.17)).multilineTextAlignment(.center) }
+                if !packet["id"].string.isEmpty { claimsSection }
+                Button("关闭") { close() }.font(.subheadline).foregroundStyle(SPXColor.muted).disabled(busy).padding(.top, 2)
+            }.padding(.horizontal, 22).padding(.vertical, 20).frame(maxWidth: .infinity).background(Color.white)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 17))
+        .shadow(color: .black.opacity(0.20), radius: 24, y: 10)
     }
     private var envelopeHeader: some View {
         VStack(spacing: 10) {
@@ -326,20 +352,34 @@ struct RedPacketPopup: View {
     private func load() {
         guard !loading else { return }
         loading = true
-        Task { defer { loading = false }; do { let result = try await APIClient.shared.get("redpackets.detail", ["id": packetID]); guard result["id"].string == packetID else { throw APIError.staleSession }; packet = result; claimCompleted = claimRequestConfirmed && confirmedAmount == nil; error = nil } catch { discardInaccessiblePacket(error); self.error = error.localizedDescription } }
+        let owner = session.user?.id
+        Task {
+            defer { loading = false }
+            do {
+                let result = try await APIClient.shared.get("redpackets.detail", ["id": packetID])
+                guard session.user?.id == owner, result["id"].string == packetID else { throw APIError.staleSession }
+                packet = result
+                playClaimSoundIfConfirmed(result)
+                if confirmedAmount != nil { claimRequestConfirmed = true }
+                claimCompleted = claimRequestConfirmed && confirmedAmount == nil
+                error = nil
+            } catch { discardInaccessiblePacket(error); self.error = error.localizedDescription }
+        }
     }
     private func discardInaccessiblePacket(_ error: Error) {
         if let apiError = error as? APIError, case .server(let code, _) = apiError, [403,404,422].contains(code) { packet = .null }
     }
     private func claim() {
-        guard !busy, packet["can_claim"].flag else { return }
+        guard !busy, !loading, packet["can_claim"].flag, let owner = session.user?.id, owner > 0 else { return }
         busy = true
+        awaitingClaimSound = true
+        claimOwnerID = owner
         withAnimation(.easeOut(duration: 0.48)) { coinRotation += 360 }
         Task {
             defer { busy = false }
             do {
                 let receipt = try await APIClient.shared.post("redpackets.claim", ["id": .string(packetID)])
-                guard receipt["id"].string == packetID else { throw APIError.staleSession }
+                guard session.user?.id == owner, receipt["id"].string == packetID else { throw APIError.staleSession }
                 packet = receipt
                 claimRequestConfirmed = true
                 claimCompleted = true
@@ -347,7 +387,7 @@ struct RedPacketPopup: View {
                 playClaimSoundIfConfirmed(receipt)
                 do {
                     let latest = try await APIClient.shared.get("redpackets.detail", ["id": packetID])
-                    guard latest["id"].string == packetID else { throw APIError.staleSession }
+                    guard session.user?.id == owner, latest["id"].string == packetID else { throw APIError.staleSession }
                     packet = latest
                     playClaimSoundIfConfirmed(latest)
                     claimCompleted = confirmedAmount == nil
@@ -355,9 +395,10 @@ struct RedPacketPopup: View {
                     self.error = "领取已提交，状态暂时无法刷新，请稍后重试。"
                 }
             } catch {
+                guard session.user?.id == owner else { return }
                 discardInaccessiblePacket(error)
                 self.error = error.localizedDescription
-                if let result = try? await APIClient.shared.get("redpackets.detail", ["id": packetID]), result["id"].string == packetID {
+                if let result = try? await APIClient.shared.get("redpackets.detail", ["id": packetID]), session.user?.id == owner, result["id"].string == packetID {
                     packet = result
                     playClaimSoundIfConfirmed(result)
                     if confirmedAmount != nil { claimRequestConfirmed = true }
@@ -370,8 +411,8 @@ struct RedPacketPopup: View {
         }
     }
     private func playClaimSoundIfConfirmed(_ receipt: JSON) {
-        guard receipt["id"].string == packetID,
+        guard awaitingClaimSound, let owner = session.user?.id, owner == claimOwnerID, owner > 0, receipt["id"].string == packetID,
               let amount = receipt["my_amount"].decimal, amount > 0 else { return }
-        ChatSoundEffects.shared.claimed(receipt: "\(session.user?.id ?? 0):\(packetID)")
+        if ChatSoundEffects.shared.claimed(receipt: "\(owner):\(packetID)") { awaitingClaimSound = false }
     }
 }
