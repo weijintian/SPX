@@ -9,6 +9,7 @@ import Combine
     private var effectOwnsSession = false
     private var waiting: AVAudioPlayer?
     private var packetKeys: [String] = []
+    private var claimedPacketKeys: [String] = []
     private var eventKeys: [String] = []
     private var callID: String?
     private var audioActive = false
@@ -30,6 +31,11 @@ import Combine
         guard !key.isEmpty, !packetKeys.contains(key) else { return }
         packetKeys.append(key); if packetKeys.count > 256 { packetKeys.removeFirst() }
         playEffect("red_packet", ext: "mp3")
+    }
+    func claimed(receipt: String) {
+        guard !receipt.isEmpty, !claimedPacketKeys.contains(receipt) else { return }
+        claimedPacketKeys.append(receipt); if claimedPacketKeys.count > 256 { claimedPacketKeys.removeFirst() }
+        playEffect("red_packet_claim", ext: "mp3")
     }
     func incoming(_ event: JSON, userID: Int) {
         guard userID > 0, ["message", "group.message"].contains(event["type"].string) else { return }
@@ -76,7 +82,7 @@ import Combine
         stopEffect(); effect = try? AVAudioPlayer(contentsOf: file); effect?.delegate = self; effect?.volume = 0.5; effect?.play()
     }
     func stopCall() { waiting?.stop(); waiting = nil; callID = nil; connectedID = nil; connectionTonePending = false; audioActive = false; stopEffect() }
-    func reset() { stopCall(); audioActive = false; packetKeys = []; eventKeys = []; pendingMentions = [:]; mutedConversations = [] }
+    func reset() { stopCall(); audioActive = false; packetKeys = []; claimedPacketKeys = []; eventKeys = []; pendingMentions = [:]; mutedConversations = [] }
     func stopEffect() {
         effect?.delegate = nil; effect?.stop(); effect = nil
         if effectOwnsSession { effectOwnsSession = false; try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
