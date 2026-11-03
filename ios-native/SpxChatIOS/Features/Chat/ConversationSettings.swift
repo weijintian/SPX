@@ -247,6 +247,7 @@ struct GroupMembersView: View {
             }
             .confirmationDialog("将 \(remove?.name ?? "") 移出群聊？", isPresented: Binding(get: { remove != nil },set: { if !$0 { remove = nil } }), titleVisibility: .visible) {
                 Button("移出群聊",role: .destructive) { if let member = remove { act("groups.members.remove",member: member) }; remove = nil }
+                Button("拉黑并移出，禁止再次入群",role: .destructive) { if let member = remove { act("groups.members.remove",member: member,extra: ["ban": .bool(true)]) }; remove = nil }
             }
     }
     private func userID(_ member: Record) -> Int { member["user_id"].int > 0 ? member["user_id"].int : member.id }

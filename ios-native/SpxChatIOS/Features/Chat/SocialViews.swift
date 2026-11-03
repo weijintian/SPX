@@ -238,19 +238,12 @@ struct GroupJoinView: View {
     }
     private func join(_ result: Record, code query: String) {
         guard !joining, query == normalizedCode, query == resultCode else { return }
-        // Invalidate a duplicate search that may still be completing. Its late
-        // error must not appear after the join request already succeeded.
-        requestID = UUID()
-        searching = false; joining = true; error = nil
+        joining = true
         Task {
             defer { joining = false }
             do {
                 let response = try await APIClient.shared.post("groups.join", ["group_code": .string(query)])
-                guard response["group_id"].int > 0 || result.id > 0 else { throw APIError.invalidResponse }
-                var item = result
-                item["id"] = response["group_id"].int > 0 ? response["group_id"] : result["id"]
-                item["member_count"] = response["member_count"].int > 0 ? response["member_count"] : result["member_count"]
-                error = nil
+                var item = result; item["id"] = response["group_id"].int > 0 ? response["group_id"] : result["id"]
                 chat = item
             } catch { self.error = error.localizedDescription }
         }
@@ -437,22 +430,9 @@ struct ScheduledMessageView: View {
     private let manager = CLLocationManager()
     override init() { super.init(); manager.delegate = self; manager.desiredAccuracy = kCLLocationAccuracyHundredMeters }
     func request() { manager.requestWhenInUseAuthorization(); if manager.authorizationStatus == .authorizedWhenInUse || manager.authorizationStatus == .authorizedAlways { manager.requestLocation() } }
-    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        let status = manager.authorizationStatus
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            if status == .authorizedWhenInUse || status == .authorizedAlways { self.manager.requestLocation() }
-            else if status == .denied { self.error = "请在系统设置允许位置权限" }
-        }
-    }
-    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        let coordinate = locations.last?.coordinate
-        Task { @MainActor [weak self] in self?.coordinate = coordinate }
-    }
-    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        let message = error.localizedDescription
-        Task { @MainActor [weak self] in self?.error = message }
-    }
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) { if manager.authorizationStatus == .authorizedWhenInUse || manager.authorizationStatus == .authorizedAlways { manager.requestLocation() } else if manager.authorizationStatus == .denied { error = "请在系统设置允许位置权限" } }
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) { coordinate = locations.last?.coordinate }
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) { self.error = error.localizedDescription }
 }
 
 struct SendLocationView: View {

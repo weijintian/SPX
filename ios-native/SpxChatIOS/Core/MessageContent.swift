@@ -44,6 +44,14 @@ enum MessageContent {
         }
         return json["mode"].string == "random" ? "random" : "ordinary"
     }
+    static func redPacketSymbol(_ message: Record) -> String {
+        let raw = message["content"].string
+        guard let data = raw.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let symbol = object["symbol"] as? String,
+              ["SPX001", "FISS"].contains(symbol) else { return "SPX001" }
+        return symbol
+    }
 
     static func product(_ message: Record) -> Record? {
         guard message["message_type"].string == "product",

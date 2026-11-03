@@ -199,6 +199,9 @@ struct SettingsView: View {
     @State private var logout = false
     @State private var notice: String?
     @State private var error: String?
+    @State private var updateAlert = false
+    @State private var updateVersion = ""
+    @State private var updateURL = """"
     var body: some View {
         SPXDetailPage {
             SPXPanel("账号与通知") {
@@ -221,6 +224,7 @@ struct SettingsView: View {
             SPXPanel("关于与协议") {
                 InfoRow(title: "应用", value: "SPX Chat for iOS")
                 InfoRow(title: "当前版本", value: (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "") + " (" + (Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "") + ")")
+                Button { Task { await checkUpdateNow() } } label: { SPXSettingsRow(title: "检查更新", icon: "arrow.triangle.2.circlepath") }
                 NavigationLink { UpdateHistoryView() } label: { SPXSettingsRow(title: "版本记录", icon: "clock.arrow.circlepath") }
                 NavigationLink { PolicyView(kind: "agreement") } label: { SPXSettingsRow(title: "服务协议", icon: "doc.text") }
                 NavigationLink { PolicyView(kind: "privacy") } label: { SPXSettingsRow(title: "隐私政策", icon: "hand.raised") }
@@ -228,9 +232,31 @@ struct SettingsView: View {
             }
             Button { logout = true } label: { Text("退出登录").font(.system(size: 15, weight: .semibold)).foregroundStyle(.red).frame(maxWidth: .infinity).padding(17).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 16)) }.buttonStyle(.plain)
         }.buttonStyle(.plain).navigationTitle("设置").spxPage().errorAlert($error).successToast($notice)
+            .alert("发现新版本 \(updateVersion)", isPresented: $updateAlert) {
+                Button("去更新") { if let url = URL(string: updateURL) { UIApplication.shared.open(url) } }
+                Button("稍后", role: .cancel) {}
+            } message: { Text("建议更新到最新版本，以获得最新的功能与修复。") }
             .confirmationDialog("退出当前账号？", isPresented: $logout, titleVisibility: .visible) { Button("退出登录", role: .destructive) { Task { await session.logout() } } }
             .confirmationDialog("清除已下载的聊天媒体？后续可重新下载", isPresented: $clear, titleVisibility: .visible) { Button("清理缓存", role: .destructive) { Task { do { try await MediaCache.shared.clear(userID: session.user?.id ?? 0); notice = "缓存已清理" } catch { self.error = error.localizedDescription } } } }
     }
+}
+
+extension SettingsView {
+    /// 设置页手动检查更新（与启动时的自动检查共用 ios_version 配置）
+    private func checkUpdateNow() async {
+        guard let config = try? await APIClient.shared.get("app.download.config") else {
+            error = "检查更新失败，请检查网络后重试"
+            return
+        }
+        let latest = config["ios_version"].string
+        let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+        guard !latest.isEmpty else { notice = "当前已是最新版本"; return }
+        guard MainTabView.isNewer(latest, than: current) else { notice = "当前已是最新版本（\(current)）"; return }
+        updateVersion = latest
+        updateURL = config["ios_download_url"].string
+        updateAlert = true
+    }
+
 }
 
 struct PolicyView: View {
@@ -313,6 +339,12 @@ struct RecordsView: View {
     @StateObject private var state = PageState()
     @State private var error: String?
     private var finance: Bool { action == "merchant.finance" }
+
+    /// 记录里带的币种优先，缺省回落到 SPX001（历史数据）
+    private func recordSymbol(_ row: Record) -> String {
+        let value = row["symbol"].string
+        return ["SPX001", "USDT", "FISS"].contains(value) ? value : "SPX001"
+    }
     var body: some View {
         SPXDetailPage {
             ForEach(state.rows) { row in
@@ -323,15 +355,15 @@ struct RecordsView: View {
                         InfoRow(title: "处理状态", value: DisplayLabels.transactionStatus(row["status"].string))
                         if row["mall_order_id"].int > 0 { InfoRow(title: "关联订单", value: "#" + row["mall_order_id"].string) }
                         if row["type"].string == "merchant_settlement" {
-                            InfoRow(title: "订单总额", value: DisplayLabels.amount(row["gross_amount"].string) + " SPX001")
-                            InfoRow(title: "平台手续费", value: DisplayLabels.amount(row["fee_amount"].string) + " SPX001")
-                            InfoRow(title: "实际到账", value: DisplayLabels.amount(row["net_amount"].string) + " SPX001")
+                            InfoRow(title: "订单总额", value: DisplayLabels.amount(row["gross_amount"].string) + " " + recordSymbol(row))
+                            InfoRow(title: "平台手续费", value: DisplayLabels.amount(row["fee_amount"].string) + " " + recordSymbol(row))
+                            InfoRow(title: "实际到账", value: DisplayLabels.amount(row["net_amount"].string) + " " + recordSymbol(row))
                         }
-                        if let stakeable = row["stakeable_amount"].decimal, stakeable > 0 { InfoRow(title: "其中可质押数量", value: DisplayLabels.amount(Money.format(stakeable, scale: 18)) + " SPX001") }
+                        if let stakeable = row["stakeable_amount"].decimal, stakeable > 0 { InfoRow(title: "其中可质押数量", value: DisplayLabels.amount(Money.format(stakeable, scale: 18)) + " " + recordSymbol(row)) }
                     } else {
                         if row["target_id"].int > 0 { InfoRow(title: "关联业务编号", value: "#" + row["target_id"].string) }
                         let metadata = metadata(row)
-                        if !metadata["amount"].string.isEmpty { InfoRow(title: "数量", value: DisplayLabels.amount(metadata["amount"].string) + " SPX001") }
+                        if !metadata["amount"].string.isEmpty { InfoRow(title: "数量", value: DisplayLabels.amount(metadata["amount"].string) + " " + recordSymbol(row)) }
                         if !metadata["version"].string.isEmpty { InfoRow(title: "商品版本", value: metadata["version"].string) }
                         if !metadata["ids"].array.isEmpty { InfoRow(title: "涉及商品", value: metadata["ids"].array.map(\.string).joined(separator: "、")) }
                     }

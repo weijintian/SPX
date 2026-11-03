@@ -350,6 +350,17 @@ struct ChatListView: View {
         messages.removeAll { $0.id == message.id }
         await persistIfNeeded()
     }
+    /// 仅本地删除：只影响当前账号，不影响对方或群成员
+    func deleteLocally(_ ids: [Int]) async throws {
+        guard !ids.isEmpty else { return }
+        try await post(action + ".delete.local", [
+            key: .number(Decimal(target)),
+            "message_ids": .array(ids.map { .number(Decimal($0)) })
+        ])
+        let removed = Set(ids)
+        messages.removeAll { removed.contains($0.id) }
+        await persistIfNeeded()
+    }
 }
 
 struct ChatDetailView: View {
@@ -405,6 +416,9 @@ struct ConversationView: View {
     @State private var oldestDisplayedID: Int?
     @State private var atBottom = true
     @State private var lastViewportHeight: CGFloat = 0
+    @State private var followLatestAfterKeyboard = false
+    @State private var deletingSelected = false
+    @State private var confirmDeleteSelected = false
     @State private var timelineCache = ChatTimelineCache()
     @State private var latestSeenID = 0
     @State private var observedLastMessageID: Int?
@@ -502,7 +516,7 @@ struct ConversationView: View {
                             SystemMessageNotice(message: message).id(entry.id)
                         } else {
                         HStack(spacing: 10) {
-                            if selecting { Button { toggleSelection(message.id) } label: { Image(systemName: selectedMessages.contains(message.id) ? "checkmark.circle.fill" : "circle").font(.title3).foregroundStyle(SPXColor.primary) }.disabled(!MessageContent.canForward(message)) }
+                            if selecting { Button { toggleSelection(message.id) } label: { Image(systemName: selectedMessages.contains(message.id) ? "checkmark.circle.fill" : "circle").font(.title3).foregroundStyle(SPXColor.primary) }.disabled(!MessageContent.canForward(message) && !canDeleteForEveryone(message)) }
                             MessageBubble(message: message, currentUserID: userID, isGroup: isGroup, open: { if selecting { toggleSelection(message.id) } else { open(message) } }, reply: { let value = Record(["id": message["reply"]["id"]]); contextMessage = value; activeSheet = .context(value) }, mention: isGroup ? { insertMention(id: message["sender_id"].int, name: message.name) } : nil)
                         }
                             .id(entry.id)
@@ -510,7 +524,7 @@ struct ConversationView: View {
                                 Button("复制", systemImage: "doc.on.doc") { UIPasteboard.general.string = message["content"].string }
                                 Button("引用", systemImage: "arrowshape.turn.up.left") { replied = message }
                                 if MessageContent.canForward(message) { Button("转发", systemImage: "arrowshape.turn.up.right") { forward = message; activeSheet = .forward(message) } }
-                                if MessageContent.canForward(message) { Button("多选", systemImage: "checkmark.circle") { selectedMessages = [message.id]; selecting = true } }
+                                if MessageContent.canForward(message) || canDeleteForEveryone(message) { Button("多选", systemImage: "checkmark.circle") { selectedMessages = [message.id]; selecting = true } }
                                 if message["sender_id"].int == userID, message["message_origin"].string != "call", message["message_origin"].string != "system" {
                                     if message["message_type"].string == "text", MessageContent.groupCode(message) == nil { Button("编辑", systemImage: "pencil") { editing = message; editText = message["content"].string } }
                                     if message["message_type"].string != "red_packet" { Button("为所有人删除", systemImage: "trash", role: .destructive) { deleting = message } }
@@ -538,7 +552,7 @@ struct ConversationView: View {
                     lastViewportHeight = height
                     // Follow the latest message across keyboard/panel size changes,
                     // while leaving someone reading older messages in place.
-                    if resized, didInitialScroll, atBottom {
+                    if resized, didInitialScroll, (atBottom || followLatestAfterKeyboard) {
                         scrollToLatest(proxy, animated: false)
                         return
                     }
@@ -579,7 +593,15 @@ struct ConversationView: View {
                 }
                 .onChange(of: outbox.acknowledgements) { map in model.merge(Array(map.values.filter { $0[isGroup ? "group_id" : "chat_id"].int == item.id })) }
                 .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { _ in
-                    if composerFocused, atBottom { scrollToLatest(proxy, animated: false) }
+                    guard composerFocused, followLatestAfterKeyboard else { return }
+                    scheduleKeyboardScroll(proxy)
+                }
+                .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
+                    guard composerFocused, followLatestAfterKeyboard else { return }
+                    scheduleKeyboardScroll(proxy)
+                }
+                .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in
+                    followLatestAfterKeyboard = false
                 }
             }
             if let replied { HStack { Text("回复：\(replied["content"].string)").lineLimit(1); Spacer(); Button { self.replied = nil } label: { Image(systemName: "xmark.circle.fill") } }.font(.caption).padding(10).background(.thinMaterial) }
@@ -588,7 +610,16 @@ struct ConversationView: View {
             }
             Divider()
             if selecting {
-                HStack { Button("取消多选") { selecting = false; selectedMessages = [] }; Spacer(); Button("逐条转发 (\(selectedMessages.count))", systemImage: "arrowshape.turn.up.right") { forwardingSelected = true; activeSheet = .forwardingSelected }.disabled(selectedMessages.isEmpty) }.font(.subheadline).padding(16).background(.bar)
+                HStack(spacing: 14) {
+                    Button("取消多选") { selecting = false; selectedMessages = [] }
+                    Spacer()
+                    Button("删除 (\(deletableSelectedCount))", systemImage: "trash", role: .destructive) { confirmDeleteSelected = true }
+                        .disabled(deletableSelectedCount == 0 || deletingSelected)
+                    Button("本地删除 (\(selectedMessages.count))", systemImage: "trash.slash", role: .destructive) { deleteSelectedLocally() }
+                        .disabled(selectedMessages.isEmpty || deletingSelected)
+                    Button("转发 (\(selectedMessages.count))", systemImage: "arrowshape.turn.up.right") { forwardingSelected = true; activeSheet = .forwardingSelected }
+                        .disabled(selectedMessages.isEmpty)
+                }.font(.subheadline).padding(16).background(.bar)
             } else {
             HStack(alignment: .bottom, spacing: 10) {
                 Button { voiceMode.toggle(); plus = false; emoji = false; composerFocused = !voiceMode; if !voiceMode { stopRecording(cancel: true) } } label: { Image(systemName: voiceMode ? "keyboard" : "waveform.circle").font(.system(size: 25, weight: .regular)).frame(width: 32, height: 40) }.accessibilityLabel(voiceMode ? "切换文字输入" : "切换语音输入")
@@ -663,6 +694,7 @@ struct ConversationView: View {
             .toolbar { ToolbarItem(placement: .navigationBarTrailing) { NavigationLink { ConversationSettingsView(item: item, isGroup: isGroup) } label: { Image(systemName: "ellipsis") } } }
             
             .spxPage().errorAlert($error)
+            .overlay { if recorder.recording { VoiceRecordingOverlay(level: recorder.level, elapsed: recorder.elapsed, cancelled: cancelRecording).transition(.opacity) } }
             .overlay(alignment: .top) { if let mentionNotice { Text(mentionNotice).font(.subheadline.weight(.medium)).padding(.horizontal, 18).padding(.vertical, 11).background(.regularMaterial, in: Capsule()).padding(.top, 10).allowsHitTesting(false) } }
             .task(id: mentionNotice) { guard mentionNotice != nil else { return }; do { try await SPXSleep.seconds(2); mentionNotice = nil } catch { } }
     }
@@ -679,10 +711,11 @@ struct ConversationView: View {
                 if value[index] == "@" { mentionTrigger = prefix; mentioning = true }
             }
             .onChange(of: composerFocused) { focused in
-                guard focused else { return }
+                guard focused else { followLatestAfterKeyboard = false; return }
+                followLatestAfterKeyboard = true
                 plus = false
                 emoji = false
-                if atBottom { pendingScrollToBottom = true }
+                pendingScrollToBottom = true
             }
             .onReceive(NotificationCenter.default.publisher(for: .spxMentionReceived)) { event in if let value = event.object as? Record, isGroup, value["group_id"].int == item.id { mentionNotice = "有人 @ 了你"; ChatSoundEffects.shared.readGroup(item.id) } }
             .onReceive(NotificationCenter.default.publisher(for: .spxRealtime)) { notification in if let event = notification.object as? JSON { model.receive(event) } }
@@ -726,6 +759,10 @@ struct ConversationView: View {
             }
             .confirmationDialog("为所有人删除这条消息？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
                 Button("确认删除", role: .destructive) { if let deleting { Task { do { try await model.delete(deleting) } catch { self.error = error.localizedDescription } } }; deleting = nil }
+            }
+            .confirmationDialog("为所有人删除选中的 \(deletableSelectedCount) 条消息？", isPresented: $confirmDeleteSelected, titleVisibility: .visible) {
+                Button("删除选中消息", role: .destructive) { deleteSelected() }
+                Button("取消", role: .cancel) { }
             }
             .confirmationDialog(redialMedia == 2 ? "给\(item.name)拨打视频？" : "给\(item.name)拨打语音？", isPresented: Binding(get: { redialMedia != nil }, set: { if !$0 { redialMedia = nil } }), titleVisibility: .visible) {
                 Button { let media = redialMedia; redialMedia = nil; guard let media, (media == 1 || media == 2), !isGroup, item.id > 0, session.user?.id == userID else { return }; CallCoordinator.shared.dial(chat: item, video: media == 2) } label: { Label(redialMedia == 2 ? "视频呼叫" : "语音呼叫", systemImage: redialMedia == 2 ? "video.fill" : "phone.fill") }
@@ -870,8 +907,57 @@ struct ConversationView: View {
         } catch { self.error = error.localizedDescription }
     }
     private func toggleSelection(_ id: Int) {
-        guard let message = model.messages.first(where: { $0.id == id }), MessageContent.canForward(message) else { return }
+        guard let message = model.messages.first(where: { $0.id == id }), MessageContent.canForward(message) || canDeleteForEveryone(message) else { return }
         if selectedMessages.contains(id) { selectedMessages.remove(id) } else if selectedMessages.count < 100 { selectedMessages.insert(id) } else { error = "一次最多选择 100 条消息" }
+    }
+    private var deletableSelectedCount: Int {
+        model.messages.filter { selectedMessages.contains($0.id) && canDeleteForEveryone($0) }.count
+    }
+    private func canDeleteForEveryone(_ message: Record) -> Bool {
+        message["sender_id"].int == userID && message["message_origin"].string != "call"
+            && message["message_origin"].string != "system" && message["message_type"].string != "red_packet"
+    }
+    private func deleteSelected() {
+        guard !deletingSelected else { return }
+        let messages = model.messages.filter { selectedMessages.contains($0.id) && canDeleteForEveryone($0) }
+        guard !messages.isEmpty else { return }
+        deletingSelected = true
+        Task {
+            var failures = 0
+            var deletedIDs = Set<Int>()
+            for message in messages {
+                do { try await model.delete(message); deletedIDs.insert(message.id) } catch { failures += 1 }
+            }
+            deletingSelected = false
+            selectedMessages.subtract(deletedIDs)
+            if selectedMessages.isEmpty { selecting = false }
+            if failures > 0 { error = "已处理部分消息；\(failures) 条删除失败，请检查网络后重试" }
+        }
+    }
+    private func deleteSelectedLocally() {
+        guard !deletingSelected else { return }
+        let ids = Array(selectedMessages)
+        guard !ids.isEmpty else { return }
+        deletingSelected = true
+        Task {
+            do {
+                try await model.deleteLocally(ids)
+                selectedMessages = []
+                selecting = false
+            } catch {
+                self.error = error.localizedDescription
+            }
+            deletingSelected = false
+        }
+    }
+
+    private func scheduleKeyboardScroll(_ proxy: ScrollViewProxy) {
+        for delay in [0.05, 0.25, 0.45] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                guard composerFocused, followLatestAfterKeyboard else { return }
+                scrollToLatest(proxy, animated: false)
+            }
+        }
     }
     private func queue(file: URL, kind: String, name: String) async throws {
         var content = name
@@ -972,6 +1058,7 @@ struct MessageBubble: View {
     private var type: String { MessageContent.messageType(message) }
     private var greeting: String { MessageContent.redPacketGreeting(message) }
     private var packetMode: String { MessageContent.redPacketMode(message) }
+    private var packetSymbol: String { MessageContent.redPacketSymbol(message) }
     var body: some View {
         if let call = CallRecordPresentation(message: message, isGroup: isGroup) {
             CallRecordMessageBubble(message: message, currentUserID: currentUserID, call: call, open: open, mention: mention)
@@ -1001,7 +1088,7 @@ struct MessageBubble: View {
                             }
                             Text("轻触打开红包").font(.caption).foregroundStyle(.white.opacity(0.86))
                             Rectangle().fill(.white.opacity(0.22)).frame(height: 1)
-                            Text((packetMode == "random" ? "拼手气红包" : "普通红包") + " · SPX001")
+                            Text((packetMode == "random" ? "拼手气红包" : "普通红包") + " · \(packetSymbol)")
                                 .font(.system(size: 11)).foregroundStyle(.white.opacity(0.86))
                         }
                         .padding(.horizontal, 14)

@@ -27,7 +27,7 @@ struct RedPacketHistoryView: View {
                       Divider()
                       HStack(alignment: .firstTextBaseline) {
                           Text(DisplayLabels.amount(packet[filter == "received" ? "my_amount" : "total_amount"].string)).font(.system(size: 21, weight: .semibold)).foregroundStyle(SPXColor.ink).monospacedDigit()
-                          Text("SPX001").font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+                          Text(["SPX001", "FISS"].contains(packet["symbol"].string) ? packet["symbol"].string : "SPX001").font(.system(size: 12)).foregroundStyle(SPXColor.muted)
                           Spacer()
                           SPXStatusPill(title: status(packet), color: packet["status"].string == "active" ? .red : SPXColor.muted)
                       }

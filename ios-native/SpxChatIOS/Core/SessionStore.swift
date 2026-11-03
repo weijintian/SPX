@@ -40,15 +40,18 @@ import UIKit
         recoveringSession = true
         defer { restoring = false; recoveringSession = false }
         let epoch = lifecycle
-        await APIClient.shared.setToken(savedToken)
-        guard epoch == lifecycle else { return }
         let lastID = Int(Keychain.read("lastUserID") ?? "0") ?? 0
         if user == nil, lastID > 0,
            let cached: Record = await LocalStore.shared.read("profile", userID: lastID),
            epoch == lifecycle, cached.id == lastID { user = cached }
         guard epoch == lifecycle else { return }
+        await APIClient.shared.setToken(savedToken)
+        guard epoch == lifecycle else { return }
+        // Show the matching cached account immediately; the API actor already has the
+        // credential, while the authoritative /me read refreshes or expires it below.
+        if let user, user.id > 0, user.id == lastID { restoring = false }
         do {
-            let profile = try await APIClient.shared.get("me").record
+            let profile = try await APIClient.shared.get("me", Self.versionParams).record
             guard epoch == lifecycle else { return }
             guard profile.id > 0, lastID == 0 || profile.id == lastID else { throw APIError.invalidResponse }
             try Keychain.write(String(profile.id), account: "lastUserID")
@@ -108,10 +111,18 @@ import UIKit
             await persistUser(); await startServices()
         } catch {if epoch == lifecycle {self.error = AuthenticationErrorMessage.describe(error)}}
     }
+    /// 上报给服务端的客户端版本参数（用于后台版本分布）
+    static var versionParams: [String: String] {
+        let info = Bundle.main.infoDictionary
+        let name = info?["CFBundleShortVersionString"] as? String ?? ""
+        let build = Int(info?["CFBundleVersion"] as? String ?? "") ?? 0
+        return ["platform": "ios", "version_code": String(build), "version_name": name]
+    }
+
     func refreshProfile() async throws {
         let epoch = lifecycle
         let owner = user?.id
-        let profile = try await APIClient.shared.get("me").record
+        let profile = try await APIClient.shared.get("me", Self.versionParams).record
         guard epoch == lifecycle else { throw APIError.staleSession }
         guard profile.id > 0, owner == nil || owner == profile.id else { throw APIError.invalidResponse }
         user = profile

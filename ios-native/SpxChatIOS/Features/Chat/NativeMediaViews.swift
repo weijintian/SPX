@@ -112,11 +112,7 @@ struct MediaPreview: View {
                 ForEach(Array(messages.enumerated()), id: \.offset) { index, message in
                     MediaPage(message: message, active: selected == index).tag(index)
                 }
-            }
-            .tabViewStyle(.page(indexDisplayMode: .always))
-            .background(Color.black)
-            .ignoresSafeArea()
-            .preferredColorScheme(.dark)
+            }.tabViewStyle(.page(indexDisplayMode: .always)).background(.black)
                 
                 .toolbar {
                     ToolbarItem(placement: .navigationBarLeading) { Button { dismiss() } label: { Image(systemName: "xmark") } }
@@ -156,8 +152,6 @@ struct VideoMessagePreview: View {
     let source: String
     @EnvironmentObject private var session: SessionStore
     @State private var thumbnail: UIImage?
-    @State private var duration: Double?
-    @State private var durationLoader: RemoteVideoResourceLoader?
 
     var body: some View {
         ZStack {
@@ -177,45 +171,24 @@ struct VideoMessagePreview: View {
                 .font(.system(size: 42))
                 .symbolRenderingMode(.palette)
                 .foregroundStyle(.white, .black.opacity(0.35))
-            VStack {
-                Spacer()
-                HStack(spacing: 7) {
-                    Rectangle().fill(.white.opacity(0.78)).frame(height: 2)
-                    Text(duration.map(Self.formatDuration) ?? "视频")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundStyle(.white)
-                }
-                .padding(.horizontal, 10)
-                .padding(.bottom, 8)
-            }
         }
         .frame(width: ChatMediaLayout.width, height: ChatMediaLayout.height)
         .contentShape(RoundedRectangle(cornerRadius: 10))
         .clipped()
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        // The enclosing message button owns playback even while the poster is loading.
+        .allowsHitTesting(false)
         .accessibilityLabel("视频，轻点播放")
         .task(id: "\(session.user?.id ?? 0):\(source)") {
             thumbnail = nil
-            duration = nil
-            durationLoader?.cancelAllRequests(); durationLoader = nil
             guard !source.isEmpty, let userID = session.user?.id, userID > 0 else { return }
             do {
-                async let poster = ImageThumbnailCache.shared.video(source, userID: userID)
-                let resource = try await VideoAssetSource.make(source: source, userID: userID)
-                durationLoader = resource.loader
-                let loadedDuration = try await resource.asset.load(.duration).seconds
-                if loadedDuration.isFinite, loadedDuration > 0 { duration = loadedDuration }
-                let image = try await poster
+                let image = try await ImageThumbnailCache.shared.video(source, userID: userID)
                 try Task.checkCancellation()
                 guard session.user?.id == userID else { return }
                 thumbnail = image
             } catch { /* The video remains playable if its optional poster cannot be generated. */ }
         }
-        .onDisappear { durationLoader?.cancelAllRequests(); durationLoader = nil }
-    }
-    private static func formatDuration(_ value: Double) -> String {
-        let total = max(0, Int(value.rounded()))
-        return String(format: "%d:%02d", total / 60, total % 60)
     }
 }
 
@@ -336,24 +309,17 @@ struct MediaPage: View {
     @State private var videoLoadID = UUID()
     @State private var buffering = false
     @State private var playbackObservation: NSKeyValueObservation?
-    @State private var playbackTimeObserver: Any?
-    @State private var videoDuration = 0.0
-    @State private var videoPosition = 0.0
-    @State private var seeking = false
     private var loadKey: String {
         [String(message.id), message["media_url"].string, String(session.user?.id ?? 0), String(retry), String(active), String(describing: scenePhase)].joined(separator: ":")
     }
     var body: some View {
         pageContent
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.black)
             .task(id: loadKey) { await loadVideo() }
             .onChange(of: active) { value in if !value { player?.pause() } }
             .onChange(of: message.id) { _ in resetImageTransform() }
             .onDisappear {
                 videoLoadID = UUID()
-                if let observer = playbackTimeObserver, let player { player.removeTimeObserver(observer) }
-                playbackTimeObserver = nil
                 player?.pause(); player = nil; videoObservation = nil; playbackObservation = nil
                 videoLoader?.cancelAllRequests(); videoLoader = nil
             }
@@ -363,33 +329,7 @@ struct MediaPage: View {
         else { imageContent }
     }
     @ViewBuilder private var videoContent: some View {
-        if let player {
-            VideoPlayer(player: player)
-                .overlay {
-                    if buffering {
-                        ProgressView("正在缓冲…").tint(.white).foregroundStyle(.white).padding(14)
-                            .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
-                            .allowsHitTesting(false)
-                    }
-                }
-                .overlay(alignment: .bottom) {
-                    if videoDuration > 0 {
-                        VStack(spacing: 3) {
-                            Slider(value: Binding(get: { videoPosition }, set: { videoPosition = min(videoDuration, max(0, $0)) }), in: 0...videoDuration, onEditingChanged: { editing in
-                                seeking = editing
-                                if !editing { player.seek(to: CMTime(seconds: videoPosition, preferredTimescale: 600)) }
-                            }).tint(.white)
-                            HStack {
-                                Text(Self.formatDuration(videoPosition))
-                                Spacer()
-                                Text(Self.formatDuration(videoDuration))
-                            }.font(.system(size: 11, design: .monospaced)).foregroundStyle(.white)
-                        }
-                        .padding(.horizontal, 14).padding(.vertical, 10)
-                        .background(.black.opacity(0.42))
-                    }
-                }
-        }
+        if let player { VideoPlayer(player: player).overlay { if buffering { ProgressView("正在缓冲…").tint(.white).foregroundStyle(.white).padding(14).background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 12)).allowsHitTesting(false) } } }
         else if let error {
             VStack(spacing: 14) {
                 Text(error).font(.footnote).multilineTextAlignment(.center)
@@ -399,7 +339,6 @@ struct MediaPage: View {
     }
     private var imageContent: some View {
         CachedImage(source: message["media_url"].string, maximumPixelSize: 4096)
-            .background(Color.black)
             .scaleEffect(scale)
             .offset(imageOffset)
             .gesture(MagnificationGesture()
@@ -423,8 +362,6 @@ struct MediaPage: View {
         guard active, scenePhase == .active else {
             videoLoadID = UUID(); player?.pause(); player = nil
             videoObservation = nil; playbackObservation = nil; buffering = false
-            if let observer = playbackTimeObserver, let player { player.removeTimeObserver(observer) }
-            playbackTimeObserver = nil; videoDuration = 0; videoPosition = 0; seeking = false
             videoLoader?.cancelAllRequests(); videoLoader = nil
             return
         }
@@ -432,16 +369,12 @@ struct MediaPage: View {
         videoLoadID = loadID
         player?.pause(); player = nil
         videoObservation = nil; playbackObservation = nil; buffering = false
-        if let observer = playbackTimeObserver, let player { player.removeTimeObserver(observer) }
-        playbackTimeObserver = nil; videoDuration = 0; videoPosition = 0; seeking = false
         videoLoader?.cancelAllRequests(); videoLoader = nil
         error = nil
         do {
             let resource = try await VideoAssetSource.make(source: message["media_url"].string, userID: session.user?.id ?? 0)
             guard !Task.isCancelled, videoLoadID == loadID else { resource.loader?.cancelAllRequests(); return }
             let item = AVPlayerItem(asset: resource.asset)
-            let loadedDuration = try? await resource.asset.load(.duration).seconds
-            if let loadedDuration, loadedDuration.isFinite, loadedDuration > 0 { videoDuration = loadedDuration }
             VoicePlayback.shared.stop()
             let audio = AVAudioSession.sharedInstance()
             try audio.setCategory(.playback, mode: .moviePlayback)
@@ -455,15 +388,10 @@ struct MediaPage: View {
                     error = reason
                     player?.pause(); player = nil
                     videoLoader?.cancelAllRequests(); videoLoader = nil
-                    videoObservation = nil
+                    videoObservation = nil; playbackObservation = nil; buffering = false
                 }
             }
             let playback = AVPlayer(playerItem: item)
-            playbackTimeObserver = playback.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.25, preferredTimescale: 600), queue: .main) { time in
-                guard !seeking else { return }
-                let seconds = time.seconds
-                if seconds.isFinite { videoPosition = max(0, min(videoDuration, seconds)) }
-            }
             playbackObservation = playback.observe(\.timeControlStatus, options: [.initial, .new]) { observed, _ in
                 let waiting = observed.timeControlStatus == .waitingToPlayAtSpecifiedRate
                 Task { @MainActor in guard videoLoadID == loadID else { return }; buffering = waiting }
@@ -478,10 +406,6 @@ struct MediaPage: View {
         scale = 1
         imageOffset = .zero
         dragOrigin = .zero
-    }
-    private static func formatDuration(_ value: Double) -> String {
-        let total = max(0, Int(value.rounded()))
-        return String(format: "%d:%02d", total / 60, total % 60)
     }
 }
 
@@ -519,6 +443,9 @@ struct DocumentPreview: UIViewControllerRepresentable {
     @Published var recording = false
     @Published var completedURL: URL?
     @Published var errorMessage: String?
+    @Published var level: CGFloat = 0
+    @Published var elapsed: Double = 0
+    private var meterTimer: Timer?
     private var recorder: AVAudioRecorder?
     private var request = UUID()
     private var starting = false
@@ -541,9 +468,11 @@ struct DocumentPreview: UIViewControllerRepresentable {
             outputURL = url
             let next = try AVAudioRecorder(url: url, settings: [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 44100, AVNumberOfChannelsKey: 1, AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue])
             next.delegate = self
+            next.isMeteringEnabled = true
             guard next.prepareToRecord(), next.record(forDuration: 60) else { throw APIError.server(500, "无法初始化录音，请检查麦克风权限后重试") }
             recorder = next
             errorMessage = nil; recording = true
+            startMetering()
         } catch {
             let failure = error as NSError
             NSLog("[VoiceRecorder] start failed (%@, %ld)", failure.domain, failure.code)
@@ -554,8 +483,26 @@ struct DocumentPreview: UIViewControllerRepresentable {
             throw APIError.server(500, "录音启动失败，请检查麦克风权限和设备音频设置后重试")
         }
     }
+    private func startMetering() {
+        stopMetering()
+        meterTimer = Timer.scheduledTimer(withTimeInterval: 0.09, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, let recorder = self.recorder, recorder.isRecording else { return }
+                recorder.updateMeters()
+                let power = recorder.averagePower(forChannel: 0)
+                let normalized = max(0, min(1, (power + 50) / 50))
+                self.level = CGFloat(normalized)
+                self.elapsed = recorder.currentTime
+            }
+        }
+    }
+    private func stopMetering() {
+        meterTimer?.invalidate(); meterTimer = nil
+        level = 0; elapsed = 0
+    }
     func finish() {
         request = UUID(); starting = false
+        stopMetering()
         guard recording else { return }
         let url = recorder?.url
         let duration = recorder?.currentTime ?? 0
@@ -569,6 +516,7 @@ struct DocumentPreview: UIViewControllerRepresentable {
     }
     func cancel() {
         request = UUID(); starting = false
+        stopMetering()
         let ownedAudioSession = recorder != nil || recording
         recording = false; recorder?.delegate = nil; recorder?.stop(); if let url = recorder?.url { try? FileManager.default.removeItem(at: url) }; recorder = nil; completedURL = nil
         if ownedAudioSession, CallCoordinator.shared.call == nil { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
@@ -577,6 +525,7 @@ struct DocumentPreview: UIViewControllerRepresentable {
         let url = recorder.url
         Task { @MainActor in
             guard self.recorder === recorder, recording else { return }
+            stopMetering()
             let duration = recorder.currentTime
             recording = false; self.recorder = nil
             if flag && duration >= 0.5 { completedURL = url }
@@ -588,6 +537,55 @@ struct DocumentPreview: UIViewControllerRepresentable {
         Task { @MainActor in
             guard self.recorder === recorder else { return }
             cancel(); errorMessage = "录音保存失败，请检查设备存储后重试"
+        }
+    }
+}
+
+struct VoiceRecordingOverlay: View {
+    let level: CGFloat
+    let elapsed: Double
+    let cancelled: Bool
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "mic.fill")
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(cancelled ? Color.red : Color.white)
+            VoiceWaveBars(level: level, cancelled: cancelled)
+            Text(cancelled ? "松开手指，取消发送" : "松开发送 · 上滑取消")
+                .font(.system(size: 13)).foregroundStyle(cancelled ? Color.red : Color.white)
+            Text(String(format: "%02d:%02d", Int(elapsed) / 60, Int(elapsed) % 60))
+                .font(.system(size: 12).monospacedDigit())
+                .foregroundStyle(.white.opacity(0.8))
+        }
+        .padding(.horizontal, 28)
+        .padding(.vertical, 22)
+        .background(Color.black.opacity(0.76), in: RoundedRectangle(cornerRadius: 20))
+        .shadow(color: .black.opacity(0.25), radius: 18, y: 8)
+        .allowsHitTesting(false)
+        .transition(.opacity)
+    }
+}
+
+private struct VoiceWaveBars: View {
+    let level: CGFloat
+    let cancelled: Bool
+    @State private var history: [CGFloat] = Array(repeating: 0.08, count: 24)
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 3) {
+            ForEach(history.indices, id: \.self) { index in
+                Capsule()
+                    .fill(cancelled ? Color.red.opacity(0.9) : Color.white)
+                    .frame(width: 4, height: max(6, 44 * history[index]))
+            }
+        }
+        .frame(width: 170, height: 46)
+        .onChange(of: level) { value in
+            var next = history
+            next.removeFirst()
+            next.append(max(0.08, min(1, value)))
+            history = next
         }
     }
 }

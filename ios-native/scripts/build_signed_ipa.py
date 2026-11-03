@@ -179,7 +179,7 @@ def prepare_signing_info_plist(source, target, settings):
     return target
 
 
-def build():
+def build_manual():
     if sys.platform != "darwin":
         raise BuildFailure("This command requires macOS, Xcode, XcodeGen and CocoaPods.")
     for executable in ("xcodebuild", "xcodegen", "pod", "security", "codesign", "ditto"):
@@ -201,6 +201,9 @@ def build():
         profile = plistlib.loads(run("Decode provisioning profile",
                                     ["security", "cms", "-D", "-i", str(profile_path)], capture=True))
         settings = profile_settings(profile, os.environ.get("SPX_BUNDLE_IDENTIFIER", ""))
+        print("[signing] profile bundle={} team={} method={} push={!r} expires={}".format(
+            settings["bundleID"], settings["teamID"], settings["method"],
+            settings["pushEnvironment"], settings["expiration"]), flush=True)
         old_keychains = shlex.split(run("Read existing keychain search list",
                                        ["security", "list-keychains", "-d", "user"], capture=True).decode())
         state["oldKeychains"] = old_keychains
@@ -303,6 +306,7 @@ def build():
         report = {"status": "success", "file": name, "bytes": target.stat().st_size, "sha256": digest,
             "bundleID": settings["bundleID"], "version": info["CFBundleShortVersionString"],
             "build": info["CFBundleVersion"], "method": settings["method"], "teamID": settings["teamID"],
+            "signingMode": "manual",
             "profileExpires": settings["expiration"], "registeredDevices": settings["deviceCount"],
             "signatureVerified": True, "networkTrust": info.get("SPXNetworkTrust"),
             "sourceCommit": os.environ.get("GITHUB_SHA") or os.environ.get("CM_COMMIT", "local"),
@@ -311,6 +315,166 @@ def build():
         print(json.dumps(report), flush=True)
     finally:
         cleanup(state)
+
+
+def signing_mode():
+    """Choose the signing strategy.
+
+    manual    - a .p12 and a .mobileprovision are supplied (historical pipeline).
+    automatic - Xcode creates and renews certificates/profiles through an App Store
+                Connect API key, so no signing material is stored in the repository.
+
+    The mode is auto-detected when SPX_SIGNING_MODE is unset: an ASC key without any
+    manual material selects automatic, everything else keeps the manual path.
+    """
+    explicit = os.environ.get("SPX_SIGNING_MODE", "").strip().lower()
+    if explicit in {"manual", "automatic"}:
+        return explicit
+    manual_material = any(os.environ.get(name) for name in (
+        "SPX_IOS_CERTIFICATE_BASE64", "SPX_IOS_CERTIFICATE_PATH",
+        "SPX_IOS_PROFILE_BASE64", "SPX_IOS_PROFILE_PATH"))
+    if not manual_material and os.environ.get("SPX_ASC_KEY_ID"):
+        return "automatic"
+    return "manual"
+
+
+def developer_team():
+    team = os.environ.get("SPX_DEVELOPMENT_TEAM", "").strip()
+    if team:
+        return team
+    try:
+        text = (ROOT / "project.yml").read_text(encoding="utf-8")
+    except OSError as error:
+        raise BuildFailure("Cannot read project.yml to resolve DEVELOPMENT_TEAM.") from error
+    match = re.search(r"^\s*DEVELOPMENT_TEAM:\s*([A-Za-z0-9]+)", text, re.MULTILINE)
+    if not match:
+        raise BuildFailure("Missing SPX_DEVELOPMENT_TEAM (or DEVELOPMENT_TEAM in project.yml).")
+    return match.group(1)
+
+
+def automatic_settings():
+    """Settings-shaped dict for automatic signing: no profile, so no UUID/expiry/certs."""
+    bundle = os.environ.get("SPX_BUNDLE_IDENTIFIER", "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]*", bundle):
+        raise BuildFailure("Supply a concrete SPX_BUNDLE_IDENTIFIER for automatic signing.")
+    team = developer_team()
+    push = os.environ.get("SPX_PUSH_ENVIRONMENT", "").strip().lower()
+    if push not in {"", "development", "production"}:
+        raise BuildFailure("SPX_PUSH_ENVIRONMENT must be development or production.")
+    return {
+        "bundleID": bundle, "teamID": team, "prefix": team, "uuid": "", "name": "",
+        "method": "app-store-connect", "expiration": "", "deviceCount": 0,
+        "debugAllowed": False, "certificateSHA1s": [], "pushEnvironment": push,
+    }
+
+
+def build_automatic():
+    if sys.platform != "darwin":
+        raise BuildFailure("This command requires macOS and Xcode.")
+    for executable in ("xcodebuild", "xcodegen", "pod", "codesign", "ditto"):
+        if not shutil.which(executable):
+            raise BuildFailure(f"Required tool is missing: {executable}")
+    key_id = os.environ.get("SPX_ASC_KEY_ID", "").strip()
+    issuer = os.environ.get("SPX_ASC_ISSUER_ID", "").strip()
+    if not key_id or not issuer:
+        raise BuildFailure("Automatic signing needs SPX_ASC_KEY_ID and SPX_ASC_ISSUER_ID.")
+    build_number = os.environ.get("SPX_BUILD_NUMBER", "")
+    if build_number and not re.fullmatch(r"[1-9][0-9]*", build_number):
+        raise BuildFailure("SPX_BUILD_NUMBER must be a positive integer.")
+    os.umask(0o077)
+    temporary = Path(tempfile.mkdtemp(prefix="spx-ios-automatic-"))
+    try:
+        key = temporary / "AuthKey.p8"
+        write_credential(key, "SPX_ASC_KEY_BASE64", "SPX_ASC_KEY_PATH")
+        auth = ["-allowProvisioningUpdates", "-authenticationKeyPath", str(key),
+                "-authenticationKeyID", key_id, "-authenticationKeyIssuerID", issuer]
+        settings = automatic_settings()
+        release = {
+            "PRODUCT_BUNDLE_IDENTIFIER": settings["bundleID"],
+            "DEVELOPMENT_TEAM": settings["teamID"],
+            "CODE_SIGN_STYLE": "Automatic",
+        }
+        signing_info = prepare_signing_info_plist(
+            ROOT / "SpxChatIOS/Info.plist", temporary / "SpxChatIOS-Info.plist", settings)
+        release["INFOPLIST_FILE"] = str(signing_info)
+        if settings["pushEnvironment"] in {"development", "production"}:
+            push_entitlements = temporary / "SpxChatIOS.entitlements"
+            push_entitlements.write_bytes(plistlib.dumps({"aps-environment": settings["pushEnvironment"]}))
+            release["CODE_SIGN_ENTITLEMENTS"] = str(push_entitlements)
+        if build_number:
+            release["CURRENT_PROJECT_VERSION"] = build_number
+        spec = ROOT / "project.signing.generated.json"
+        if spec.exists():
+            raise BuildFailure("Remove a stale project.signing.generated.json before signing.")
+        spec.write_text(json.dumps({"include": ["project.yml"], "targets": {
+            "SpxChatIOS": {"settings": {"configs": {"Release": release}}}
+        }}, indent=2), encoding="utf-8")
+        try:
+            run("Generate signing project", ["xcodegen", "generate", "--spec", str(spec)])
+        finally:
+            spec.unlink(missing_ok=True)
+        run_with_retries("Resolve pinned dependencies", ["pod", "install"])
+        archive = ROOT / "build/SpxChatIOS-signed.xcarchive"
+        run("Archive with automatic signing", ["xcodebuild", "-workspace", "SpxChatIOS.xcworkspace",
+            "-scheme", "SpxChatIOS", "-configuration", "Release", "-destination", "generic/platform=iOS",
+            "-derivedDataPath", "build/SignedDerivedData", "-archivePath", str(archive), *auth, "archive"])
+        options = temporary / "ExportOptions.plist"
+        options.write_bytes(plistlib.dumps({
+            "method": "app-store-connect", "destination": "export", "teamID": settings["teamID"],
+            "signingStyle": "automatic", "manageAppVersionAndBuildNumber": False,
+            "stripSwiftSymbols": True,
+        }))
+        export_staging = temporary / "export"
+        export_staging.mkdir()
+        run("Export signed IPA", ["xcodebuild", "-exportArchive", "-archivePath", str(archive),
+            "-exportOptionsPlist", str(options), "-exportPath", str(export_staging), *auth])
+        ipas = list(export_staging.glob("*.ipa"))
+        if len(ipas) != 1:
+            raise BuildFailure("Expected exactly one exported IPA.")
+        info = verify_ipa(ipas[0], settings, build_number)
+        run("Extract IPA preserving executable permissions",
+            ["ditto", "-x", "-k", str(ipas[0]), str(temporary / "verification")])
+        app = next((temporary / "verification/Payload").glob("*.app"))
+        run("Verify application and nested code signatures",
+            ["codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app)])
+        signed = run("Verify signed entitlements", ["codesign", "-d", "--entitlements", ":-", str(app)], capture=True)
+        entitlements = plistlib.loads(signed[signed.index(b"<?xml"):])
+        if entitlements.get("application-identifier") != settings["prefix"] + "." + settings["bundleID"]:
+            raise BuildFailure("Exported signing application identifier is incorrect.")
+        if bool(entitlements.get("get-task-allow")):
+            raise BuildFailure("A store export must not allow debugging.")
+        if entitlements.get("aps-environment", "") != settings["pushEnvironment"]:
+            raise BuildFailure("Exported push entitlement does not match SPX_PUSH_ENVIRONMENT.")
+        name = f"SPX-{info['CFBundleShortVersionString']}-{info['CFBundleVersion']}.ipa"
+        output = ROOT / "build/export"
+        output.mkdir(parents=True, exist_ok=True)
+        target = output / name
+        if target.exists():
+            raise BuildFailure("An IPA with the target version already exists; use a new build number.")
+        shutil.copyfile(ipas[0], target)
+        with target.open("rb") as stream:
+            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        (output / "SHA256SUMS.txt").write_text(f"{digest}  {target.name}\n", encoding="utf-8")
+        report = {"status": "success", "file": name, "bytes": target.stat().st_size, "sha256": digest,
+            "bundleID": settings["bundleID"], "version": info["CFBundleShortVersionString"],
+            "build": info["CFBundleVersion"], "method": settings["method"], "teamID": settings["teamID"],
+            "signingMode": "automatic", "profileExpires": "managed-by-xcode",
+            "registeredDevices": 0, "signatureVerified": True,
+            "networkTrust": info.get("SPXNetworkTrust"),
+            "sourceCommit": os.environ.get("GITHUB_SHA") or os.environ.get("CM_COMMIT", "local"),
+            "realDeviceTesting": "not_run"}
+        (output / "signing-report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        print(json.dumps(report), flush=True)
+    finally:
+        shutil.rmtree(temporary, ignore_errors=True)
+
+
+def build():
+    mode = signing_mode()
+    print(f"[signing] signing mode: {mode}", flush=True)
+    if mode == "automatic":
+        return build_automatic()
+    return build_manual()
 
 
 def main():

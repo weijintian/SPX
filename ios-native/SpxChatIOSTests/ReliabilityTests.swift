@@ -21,6 +21,30 @@ final class ReliabilityTests: XCTestCase {
         XCTAssertEqual(StakingPresentation.amount("0.000000000000000001"), "<0.01")
         for raw in ["", "invalid", "-1"] { XCTAssertEqual(StakingPresentation.amount(raw), "—") }
         XCTAssertEqual(StakingPresentation.rate(nil), "—")
+        XCTAssertEqual(StakingPresentation.rate(.string("60")), "60.00%")
+        XCTAssertEqual(StakingPresentation.rate(.string("8.2")), "8.20%")
+        XCTAssertEqual(StakingPresentation.rate(.string("8.265")), "8.27%")
+        XCTAssertEqual(StakingPresentation.rate(.string("0")), "0.00%")
+        XCTAssertEqual(StakingPresentation.rate(.string("0.001")), "<0.01%")
+        XCTAssertEqual(StakingPresentation.rate(.string("-1")), "—")
+        XCTAssertEqual(StakingPresentation.rate(.string("invalid")), "—")
+    }
+    func testAuthenticationInputValidationAndEmailCooldown() {
+        XCTAssertTrue(AuthenticationInput.validEmail(" person@example.com "))
+        XCTAssertFalse(AuthenticationInput.validEmail("person@localhost"))
+        XCTAssertFalse(AuthenticationInput.validEmail("person example.com"))
+        XCTAssertTrue(AuthenticationInput.validCode("012345"))
+        XCTAssertFalse(AuthenticationInput.validCode("１２３４５６"))
+        XCTAssertFalse(AuthenticationInput.validCode("12345x"))
+
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var cooldown = EmailCodeCooldown()
+        cooldown.sent(to: " Person@Example.com ", purpose: "register", now: now)
+        XCTAssertEqual(cooldown.remaining(for: "person@example.com", purpose: "register", now: now), 60)
+        XCTAssertEqual(cooldown.remaining(for: "person@example.com", purpose: "register", now: now.addingTimeInterval(59.2)), 1)
+        XCTAssertEqual(cooldown.remaining(for: "person@example.com", purpose: "register", now: now.addingTimeInterval(60)), 0)
+        XCTAssertEqual(cooldown.remaining(for: "person@example.com", purpose: "password_reset", now: now), 0)
+        XCTAssertEqual(cooldown.remaining(for: "other@example.com", purpose: "register", now: now), 0)
     }
     func testStakingActivePrincipalExcludesRedeemedRecordsAndRejectsMissingAmounts() {
         let active = Record(["id": 1, "status": "active", "amount": "100000"])

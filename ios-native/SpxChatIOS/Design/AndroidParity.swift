@@ -16,7 +16,6 @@ struct SPXList<Content: View>: View {
         Group { if plain { list.listStyle(.plain) } else { list.listStyle(.insetGrouped) } }
             .environment(\.defaultMinListRowHeight, 52).font(.system(size: 15))
             .spxDismissKeyboardOnTap().spxPage()
-
     }
 }
 

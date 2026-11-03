@@ -24,6 +24,9 @@ actor APIClient {
     static let shared = APIClient()
     private var token: String?
     private var generation = UUID()
+    /// 容灾地址广播（杭州）：香港连不上时从这里取最新 API 地址
+    static let discoveryURL = URL(string: "https://121.196.246.42:8443/config.json")!
+    private var lastDiscoveryAt = Date.distantPast
     private let session: URLSession
     init() {
         let configuration = URLSessionConfiguration.default
@@ -56,6 +59,18 @@ actor APIClient {
         guard let url = c.url else {throw APIError.invalidURL}; return url
     }
     func request(_ action:String, method:String = "GET", query:[String:String] = [:], body:[String:JSON]? = nil, timeout: TimeInterval = 30) async throws -> JSON {
+        do {
+            return try await perform(action, method: method, query: query, body: body, timeout: timeout)
+        } catch let failure as URLError where Self.isNetworkFailure(failure) {
+            // 连接层失败：先向杭州地址广播要一次最新地址，拿到就重试一次
+            if await refreshFromDiscovery() {
+                return try await perform(action, method: method, query: query, body: body, timeout: timeout)
+            }
+            throw failure
+        }
+    }
+
+    private func perform(_ action:String, method:String = "GET", query:[String:String] = [:], body:[String:JSON]? = nil, timeout: TimeInterval = 30) async throws -> JSON {
         let expectedScope = try readCacheScope()
         var request = URLRequest(url:try requestURL(action,query:query))
         // APIReadCache owns display freshness; live reads must not reuse URLSession responses.
@@ -109,6 +124,56 @@ actor APIClient {
         if AccountMutation.affectsOrders(action) { NotificationCenter.default.post(name: .spxOrdersChanged, object: event) }
         return result
     }
+    /// 从杭州地址广播拉取最新节点并写入 spx.apiURL；成功返回 true，每分钟最多一次。
+    func refreshFromDiscovery() async -> Bool {
+        let now = Date()
+        guard now.timeIntervalSince(lastDiscoveryAt) > 60 else { return false }
+        lastDiscoveryAt = now
+        var request = URLRequest(url: Self.discoveryURL)
+        request.timeoutInterval = 5
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        guard let (data, response) = try? await session.data(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode == 200,
+              let payload = try? JSONDecoder().decode(JSON.self, from: data) else { return false }
+        for node in payload["nodes"].array {
+            let url = node["url"].string.trimmingCharacters(in: .whitespacesAndNewlines)
+            if url.isEmpty { continue }
+            let enabledValue = node["enabled"]
+            if enabledValue != .null, !enabledValue.flag { continue }
+            let base = Self.normalizedBase(url)
+            if base.isEmpty { continue }
+            UserDefaults.standard.set(base, forKey: "spx.apiURL")
+            return true
+        }
+        return false
+    }
+
+    nonisolated static func defaultBase() -> String { "https://70.39.201.191/spxchat/api.php" }
+
+    /// 把用户/广播给的地址规范化成 .../spxchat/api.php
+    nonisolated static func normalizedBase(_ raw: String) -> String {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        while value.hasSuffix("/") { value.removeLast() }
+        if value.isEmpty { return "" }
+        if value.hasSuffix("/spxchat/api.php") { }
+        else if value.hasSuffix("/spxchat") { value += "/api.php" }
+        else if value.contains("/spxchat/") { }
+        else { value += "/spxchat/api.php" }
+        guard let url = URL(string: value), url.scheme == "https", url.host != nil else { return "" }
+        return value
+    }
+
+    nonisolated static func isNetworkFailure(_ error: URLError) -> Bool {
+        switch error.code {
+        case .timedOut, .cannotFindHost, .cannotConnectToHost, .networkConnectionLost,
+             .dnsLookupFailed, .notConnectedToInternet, .resourceUnavailable, .secureConnectionFailed:
+            return true
+        default:
+            return false
+        }
+    }
+
     private func readCacheScope() throws -> String {
         APIReadCache.scope(endpoint: try endpoint().absoluteString, credential: token,
                            language: UserDefaults.standard.string(forKey: "spx.language") ?? Locale.preferredLanguages.first ?? "zh-CN")

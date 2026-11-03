@@ -10,7 +10,7 @@ struct WalletView: View {
     @State private var loaded = false
     @State private var loading = false
     @State private var error: String?
-    private var visibleAssets: [Record] { assets.filter { ["SPX001", "USDT"].contains($0["symbol"].string) } }
+    private var visibleAssets: [Record] { assets.filter { ["SPX001", "USDT", "FISS"].contains($0["symbol"].string) } }
     private var total: Decimal? {
         guard loaded else { return nil }
         var result = Decimal.zero
@@ -44,12 +44,12 @@ struct WalletView: View {
                 ForEach(visibleAssets, id: \.fields) { asset in
                     NavigationLink { WalletTransactionsView() } label: {
                         HStack(spacing: 14) {
-                            Image(asset["symbol"].string == "USDT" ? "wallet_usdt" : "wallet_spx001").resizable().scaledToFit().frame(width: 44, height: 44).clipShape(Circle())
+                            Image(asset["symbol"].string == "FISS" ? "wallet_fiss" : (asset["symbol"].string == "USDT" ? "wallet_usdt" : "wallet_spx001")).resizable().scaledToFit().frame(width: 44, height: 44).clipShape(Circle())
                             VStack(alignment: .leading, spacing: 5) { Text(asset["symbol"].string).font(.system(size: 16, weight: .semibold)); Text(asset["chain"].string.isEmpty ? "BSC" : asset["chain"].string).font(.system(size: 12)).foregroundStyle(SPXColor.muted) }
                             Spacer()
                             VStack(alignment: .trailing, spacing: 6) {
                                 Text(hidden ? "••••" : DisplayLabels.amount(asset["balance"].string)).font(.system(size: 18, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.6)
-                                if asset["symbol"].string == "SPX001" { Text(hidden ? "可质押 ••••" : "可质押 " + DisplayLabels.amount(asset["stakeable_balance"].string)).font(.system(size: 11)).foregroundStyle(SPXColor.muted) }
+                                if ["SPX001", "FISS"].contains(asset["symbol"].string) { Text(hidden ? "可质押 ••••" : "可质押 " + DisplayLabels.amount(asset["stakeable_balance"].string)).font(.system(size: 11)).foregroundStyle(SPXColor.muted) }
                             }
                         }.foregroundStyle(SPXColor.ink).padding(16).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 16))
                     }
@@ -119,25 +119,75 @@ struct WalletTransferView: View {
     @State private var error: String?
     @State private var unlock = false
     @State private var pending: Record?
+    @State private var withdrawConfig: JSON = .null
+    /// 后台可配置的费率（%），默认 1
+    private var feeRatePercent: Decimal {
+        let raw = withdrawConfig["symbols"][symbol]["fee_rate"].string
+        return Decimal(string: raw, locale: Locale(identifier: "en_US_POSIX")) ?? Decimal(string: "1")!
+    }
+    /// 后台可配置的最低提现量
+    private var minimumWithdraw: Decimal {
+        let raw = withdrawConfig["symbols"][symbol]["min_amount"].string
+        return Decimal(string: raw, locale: Locale(identifier: "en_US_POSIX")) ?? 0
+    }
+    /// 后台的 FISS 提现开关（充值不受影响）
+    private var fissWithdrawEnabled: Bool {
+        !withdrawal || withdrawConfig["fiss_enabled"].flag
+    }
+    private var feePercentText: String {
+        var value = feeRatePercent, rounded = Decimal()
+        NSDecimalRound(&rounded, &value, 4, .plain)
+        var out = NSDecimalNumber(decimal: rounded).stringValue
+        if out.hasSuffix(".0") { out = String(out.dropLast(2)) }
+        return out
+    }
+    private var withdrawTotal: Decimal? {
+        guard let total = Decimal(string: amount, locale: Locale(identifier: "en_US_POSIX")), total > 0 else { return nil }
+        return total
+    }
+    private var withdrawFee: Decimal {
+        guard let total = withdrawTotal else { return 0 }
+        var raw = total * feeRatePercent / 100, out = Decimal()
+        NSDecimalRound(&out, &raw, 18, .down)
+        return out
+    }
+    private var withdrawAmountIssue: String? {
+        guard withdrawal, let total = withdrawTotal else { return nil }
+        if minimumWithdraw > 0, total < minimumWithdraw {
+            return "最小提现数量为 \(DisplayLabels.amount(Money.format(minimumWithdraw, scale: 18))) \(symbol)"
+        }
+        if let net = withdrawTotal.map({ $0 - withdrawFee }), net <= 0 { return "提现数量必须大于手续费" }
+        return nil
+    }
     var body: some View {
         SPXDetailPage {
             SPXPageHeading(title: withdrawal ? "提现" : "充值", subtitle: "BSC 网络 · 请核对币种、地址与数量", icon: withdrawal ? "arrow.up.right" : "arrow.down.left", color: SPXColor.success)
             SPXPanel("资产与地址") {
-                Picker("币种", selection: $symbol) { Text("SPX001").tag("SPX001"); Text("USDT").tag("USDT") }.pickerStyle(.segmented)
+                Picker("币种", selection: $symbol) {
+                    Text("SPX001").tag("SPX001")
+                    Text("USDT").tag("USDT")
+                    if fissWithdrawEnabled { Text("FISS").tag("FISS") }
+                }.pickerStyle(.segmented)
+                .onChange(of: symbol) { _ in if symbol == "FISS" && !fissWithdrawEnabled { symbol = "SPX001" } }
                 InfoRow(title: "网络", value: "BSC")
                 InfoRow(title: withdrawal ? "提现至绑定地址" : "付款来源地址", value: info["bound_address"].string)
                 if !withdrawal {
-                    let destination = info[symbol == "USDT" ? "usdt_address" : "spx001_address"].string
+                    let addressKey = symbol == "USDT" ? "usdt_address" : (symbol == "FISS" ? "fiss_address" : "spx001_address")
+                let destination = info[addressKey].string.isEmpty ? info["spx001_address"].string : info[addressKey].string
                     Text("平台充值地址").foregroundStyle(.secondary)
                     Text(destination).font(.system(.subheadline, design: .monospaced)).textSelection(.enabled)
                     Button("复制充值地址", systemImage: "doc.on.doc") { UIPasteboard.general.string = destination }
                     SPXField("链上交易哈希") { TextField("请输入交易哈希", text: $hash).textInputAutocapitalization(.never) }
                 }
                 SPXField(withdrawal ? "提现数量" : "转账数量") { TextField("请输入数量", text: $amount).keyboardType(.decimalPad).font(.system(size: 28, weight: .semibold, design: .rounded)) }
-                if withdrawal, let total = Decimal(string: amount), Money.positive(amount, scale: 18) {
-                    InfoRow(title: "手续费（1%）", value: DisplayLabels.amount(Money.format(Money.withdrawalFee(total), scale: 18)) + " " + symbol)
-                    InfoRow(title: "预计到账", value: DisplayLabels.amount(Money.format(total - Money.withdrawalFee(total), scale: 18)) + " " + symbol)
+                if withdrawal, let total = withdrawTotal {
+                    InfoRow(title: "手续费（\(feePercentText)%）", value: DisplayLabels.amount(Money.format(withdrawFee, scale: 18)) + " " + symbol)
+                    InfoRow(title: "预计到账", value: DisplayLabels.amount(Money.format(total - withdrawFee, scale: 18)) + " " + symbol)
+                    if minimumWithdraw > 0 {
+                        InfoRow(title: "最小提现", value: DisplayLabels.amount(Money.format(minimumWithdraw, scale: 18)) + " " + symbol)
+                    }
                 }
+                if let withdrawAmountIssue { Text(withdrawAmountIssue).font(.footnote).foregroundStyle(.red) }
             }.disabled(busy || uncertain)
             SPXPanel("处理说明与结果核对") {
                 Text(withdrawal ? "手续费按当前服务器规则收取，提交后可在交易记录查看审核状态。" : "请使用绑定钱包在 BSC 网络转入对应资产，填写真实交易哈希，到账以链上确认与服务器核验为准。").font(.footnote).foregroundStyle(.secondary)
@@ -153,7 +203,7 @@ struct WalletTransferView: View {
 
             }
             if let error { ErrorBanner(message: error) }
-        }.safeAreaInset(edge: .bottom, spacing: 0) { if !uncertain { SPXBottomAction { Button(busy ? "正在提交…" : withdrawal ? "提交提现" : "提交充值核验") { confirmation = true }.disabled(busy || !Money.positive(amount, scale: 18) || info["bound_address"].string.isEmpty || (!withdrawal && hash.count != 66)) } } }.navigationTitle(withdrawal ? "提现" : "充值").task { await load() }
+        }.safeAreaInset(edge: .bottom, spacing: 0) { if !uncertain { SPXBottomAction { Button(busy ? "正在提交…" : withdrawal ? "提交提现" : "提交充值核验") { confirmation = true }.disabled(busy || !Money.positive(amount, scale: 18) || withdrawAmountIssue != nil || info["bound_address"].string.isEmpty || (!withdrawal && hash.count != 66)) } } }.navigationTitle(withdrawal ? "提现" : "充值").task { await load() }
             .confirmationDialog(withdrawal ? "确认提现 \(DisplayLabels.amount(amount)) \(symbol)？" : "确认提交链上充值记录？", isPresented: $confirmation, titleVisibility: .visible) { Button("确认提交") { submit() } }
             .confirmationDialog("请确认已在交易记录核实结果；解除后再次提交会创建新申请", isPresented: $unlock, titleVisibility: .visible) { Button("已核实，解除保护") { Task { await LocalStore.shared.remove("withdraw-pending", userID: session.user?.id ?? 0); uncertain = false; amount = "" } } }
     }
@@ -168,6 +218,11 @@ struct WalletTransferView: View {
         do {
             let result = try await APIClient.shared.get(withdrawal ? "wallet.binding" : "wallet.deposit.info")
             guard session.user?.id == owner else { return }; info = result
+            if withdrawal {
+                withdrawConfig = (try? await APIClient.shared.get("wallet.withdraw.config")) ?? .null
+                guard session.user?.id == owner else { return }
+                if symbol == "FISS" && !fissWithdrawEnabled { symbol = "SPX001" }
+            }
             if withdrawal, let saved = pending, !saved["client_request_id"].string.isEmpty {
                 let status = try await APIClient.shared.get("financial.request", ["operation": "wallet.withdraw", "client_request_id": saved["client_request_id"].string])
                 if status["exists"].flag { await finish(status["result"], owner: owner) }
@@ -301,7 +356,7 @@ struct WalletTransactionsView: View {
     @State private var cancel: Record?
     var body: some View {
         SPXDetailPage {
-            SPXFilterTabs(options: [("all", "全部"), ("SPX001", "SPX001"), ("USDT", "USDT")], selection: $filter)
+            SPXFilterTabs(options: [("all", "全部"), ("SPX001", "SPX001"), ("USDT", "USDT"), ("FISS", "FISS")], selection: $filter)
             ForEach(state.rows) { row in
                 SPXCard { DisclosureGroup {
                     ForEach(["id", "chain", "address", "tx_hash", "fee_amount", "created_at"], id: \.self) { key in if !row[key].string.isEmpty { InfoRow(title: ["id": "流水号", "chain": "网络", "address": "钱包地址", "tx_hash": "交易哈希", "fee_amount": "手续费", "created_at": "创建时间"][key] ?? key, value: key == "fee_amount" ? DisplayLabels.amount(row[key].string) : row[key].string) } }
@@ -333,9 +388,17 @@ struct StakingView: View {
     @State private var records: [Record] = []
     @State private var assets: [Record] = []
     @State private var selected = 0
+    @State private var symbol = "SPX001"
     @State private var amount = ""
     @State private var phase: JSON = .null
+    @State private var burnInfo: JSON = .null
     @State private var confirm: String?
+    @State private var stakeSheet = false
+    private var stakingSymbol: String {
+        guard let plan = selectedPlan else { return "SPX001" }
+        let value = plan["symbol"].string
+        return ["SPX001", "FISS"].contains(value) ? value : "SPX001"
+    }
     @State private var redeemID = 0
     @State private var busy = false
     @State private var error: String?
@@ -349,7 +412,7 @@ struct StakingView: View {
     @State private var success: String?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     private var selectedPlan: Record? { plans.first { $0.id == selected } }
-    private var stakeable: Decimal? { assets.first { $0["symbol"].string == "SPX001" && $0["chain"].string == "BSC" }?["stakeable_balance"].decimal }
+    private var stakeable: Decimal? { assets.first { $0["symbol"].string == symbol && $0["chain"].string == "BSC" }?["stakeable_balance"].decimal }
     private var activeTotal: Decimal? { StakingPresentation.activeTotal(records) }
     private var amountIssue: String? {
         StakingPresentation.validationMessage(amount: amount, plan: selectedPlan, balance: stakeable, activeTotal: activeTotal)
@@ -360,7 +423,27 @@ struct StakingView: View {
     }
     var body: some View {
         SPXDetailPage {
-            SPXPageHeading(title: "锁仓质押", subtitle: "质押 SPX001 积分，查看锁仓方案与生态分红", icon: "lock.shield", color: SPXColor.primary)
+            SPXPageHeading(title: "锁仓质押", subtitle: "质押 \(symbol) 积分，查看锁仓方案与生态分红", icon: "lock.shield", color: SPXColor.primary)
+            HStack(spacing: 8) {
+                ForEach(["SPX001", "FISS"], id: \.self) { option in
+                    Button {
+                        guard symbol != option else { return }
+                        symbol = option
+                        selected = 0
+                        amount = ""
+                        Task { await load() }
+                    } label: {
+                        Text(option)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(symbol == option ? Color.white : SPXColor.muted)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 9)
+                            .background(symbol == option ? SPXColor.primary : SPXColor.card, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                }
+            }
             if loading { ProgressView(loaded ? "正在更新质押数据…" : "正在读取质押数据…").frame(maxWidth: .infinity).padding(.vertical, 8) }
             if let error {
                 SPXCard {
@@ -371,9 +454,11 @@ struct StakingView: View {
                 }
             }
             if loaded {
-                phaseOverview
+                balanceHero
                 personalOverview
-                balanceOverview
+                quotaCard
+                if symbol != "SPX001" { burnLadderCard }
+                rulesOverview
             }
             if uncertain {
                 SPXPanel("提交结果待核对") {
@@ -387,14 +472,26 @@ struct StakingView: View {
                 }
             }
             if loaded {
-                rulesOverview
                 SPXSectionTitle(title: "选择质押方案")
                 if plans.isEmpty {
                     EmptyState(title: "暂无可用方案", description: "方案由平台配置，可稍后下拉刷新。", icon: "lock.shield")
                 }
                 ForEach(plans) { plan in planCard(plan) }
                 if !plans.isEmpty { amountForm }
-                SPXSectionTitle(title: "我的质押记录")
+                HStack(alignment: .firstTextBaseline) {
+                    SPXSectionTitle(title: "我的质押记录")
+                    Spacer()
+                    NavigationLink {
+                        StakingRecordsView(pageSymbol: symbol)
+                    } label: {
+                        Text("全部记录 ›").font(.subheadline.weight(.medium)).foregroundStyle(SPXColor.primary)
+                    }
+                    NavigationLink {
+                        StakingEarningsView(pageSymbol: symbol)
+                    } label: {
+                        Text("收益明细 ›").font(.subheadline.weight(.medium)).foregroundStyle(SPXColor.primary)
+                    }
+                }
                 if records.isEmpty {
                     EmptyState(title: "暂无质押记录", description: "参与质押后，可在这里查看本金、分红与赎回状态。", icon: "clock")
                 }
@@ -404,7 +501,8 @@ struct StakingView: View {
             .onReceive(NotificationCenter.default.publisher(for: .spxWalletChanged).debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { event in
                 Task { if await AccountMutation.isCurrent(event), !busy { await load() } }
             }
-            .confirmationDialog(confirm == "create" ? "确认质押 \(StakingPresentation.amount(amount)) SPX001？" : "确认赎回到期本金？", isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }), titleVisibility: .visible) { Button("确认") { let action = confirm; confirm = nil; submit(create: action == "create") } } message: {
+            .sheet(isPresented: $stakeSheet) { stakeQuickForm }
+            .confirmationDialog(confirm == "create" ? "确认质押 \(StakingPresentation.amount(amount)) \(stakingSymbol)？" : "确认赎回到期本金？", isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }), titleVisibility: .visible) { Button("确认") { let action = confirm; confirm = nil; submit(create: action == "create") } } message: {
                 Text(confirm == "create" ? "\(selectedPlan?["plan_days"].string ?? "—") 天锁定 · 年化 \(StakingPresentation.rate(selectedPlan?["apy"]))。锁定期间不可提前赎回，最终以服务器核验为准。" : "仅可赎回已到期的本金，结果以服务器核验为准。")
             }
             .confirmationDialog("解除后可创建新的质押，请确认已经核实上次申请", isPresented: $unlock, titleVisibility: .visible) { Button("确认已核实") {
@@ -419,97 +517,210 @@ struct StakingView: View {
                 }
             } }
     }
-    private var phaseOverview: some View {
+    private var pendingDividend: Decimal {
+        records.filter { $0["status"].string == "active" }.reduce(Decimal(0)) { total, record in
+            let expected = record["expected_reward"].decimal ?? 0
+            let paid = record["paid_dividend"].decimal ?? 0
+            return total + (expected > paid ? expected - paid : 0)
+        }
+    }
+    private var usedFraction: Double {
+        let total = phase["total_quota"].decimal ?? 0
+        let reserved = phase["reserved_quota"].decimal ?? 0
+        guard total > 0 else { return 0 }
+        let value = Double(truncating: NSDecimalNumber(decimal: reserved / total))
+        return min(1, max(0, value))
+    }
+    private func compactStaking(_ raw: String) -> String {
+        guard let value = Double(raw) else { return raw }
+        if value >= 99_999_999.5 { return String(format: "%.0f 亿", value / 100_000_000) }
+        if value >= 9_999.5 { return String(format: "%.0f 万", value / 10_000) }
+        return StakingPresentation.amount(raw)
+    }
+    private var balanceHero: some View {
         SPXCard {
-            VStack(alignment: .leading, spacing: 16) {
-                SPXViewThatFits(in: .horizontal) {
-                    HStack { Text("质押期数").foregroundStyle(SPXColor.muted); Spacer(); phaseBadge }
-                    VStack(alignment: .leading, spacing: 8) { Text("质押期数").foregroundStyle(SPXColor.muted); phaseBadge }
+            VStack(alignment: .leading, spacing: 12) {
+                Text("可质押余额").font(.caption).foregroundStyle(SPXColor.muted)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(StakingPresentation.amount(stakeable.map { NSDecimalNumber(decimal: $0).stringValue } ?? "0"))
+                        .font(.system(size: 32, weight: .bold)).monospacedDigit().foregroundStyle(SPXColor.ink)
+                        .minimumScaleFactor(0.6).lineLimit(1)
+                    Text(symbol).font(.footnote).foregroundStyle(SPXColor.muted)
                 }
-                if !phase["name"].string.isEmpty { Text(phase["name"].string).font(.subheadline).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true) }
                 Divider()
-                LazyVGrid(columns: dynamicTypeSize.isAccessibilitySize ? [GridItem(.flexible())] : [GridItem(.adaptive(minimum: 135), spacing: 16)], alignment: .leading, spacing: 16) {
-                    quotaMetric("分红 + 邀请总额度", value: phase["total_quota"].string, color: SPXColor.ink)
-                    quotaMetric("剩余额度", value: phase["remaining_quota"].string, color: SPXColor.success)
-                }
-                if let remaining = StakingPresentation.remainingFraction(phase) {
-                    ProgressView(value: remaining).tint(SPXColor.primary).accessibilityLabel("本期剩余奖励额度").accessibilityValue("\(Int(remaining * 100))%")
-                }
-                Text("以上为本期分红与邀请奖励额度，不代表可质押本金。").font(.caption).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
-                if !phaseOpen {
-                    Label(phase["status"].int == 1 ? "本期剩余额度不足，暂不可新增质押" : "当前没有开放的质押期", systemImage: "info.circle").font(.footnote).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 24) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("已质押").font(.caption2).foregroundStyle(SPXColor.muted)
+                        Text(StakingPresentation.amount(activeTotal.map { NSDecimalNumber(decimal: $0).stringValue } ?? "0"))
+                            .font(.subheadline.weight(.semibold)).monospacedDigit()
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("待发收益").font(.caption2).foregroundStyle(SPXColor.muted)
+                        Text(StakingPresentation.amount(NSDecimalNumber(decimal: pendingDividend).stringValue))
+                            .font(.subheadline.weight(.semibold)).monospacedDigit().foregroundStyle(SPXColor.success)
+                    }
+                    Spacer()
                 }
             }
         }
     }
-    private var phaseBadge: some View {
-        Text(StakingPresentation.phaseTitle(phase)).font(.headline).foregroundStyle(SPXColor.primary)
-            .padding(.horizontal, 12).padding(.vertical, 7).background(SPXColor.tint, in: Capsule()).fixedSize(horizontal: false, vertical: true)
+    private var quotaCard: some View {
+        SPXCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("总奖励额度").font(.caption).foregroundStyle(SPXColor.muted)
+                        Text(compactStaking(phase["total_quota"].string))
+                            .font(.system(size: 26, weight: .bold)).monospacedDigit().minimumScaleFactor(0.6).lineLimit(1)
+                    }
+                    Spacer(minLength: 8)
+                    VStack(alignment: .trailing, spacing: 6) {
+                        Text("剩余可用").font(.caption).foregroundStyle(SPXColor.muted)
+                        Text(compactStaking(phase["remaining_quota"].string))
+                            .font(.system(size: 18, weight: .bold)).monospacedDigit().foregroundStyle(SPXColor.success)
+                            .minimumScaleFactor(0.6).lineLimit(1)
+                    }
+                }
+                ProgressView(value: usedFraction).tint(SPXColor.primary)
+                HStack {
+                    Text("已发放 \(compactStaking(phase["paid_quota"].string))")
+                    Spacer()
+                    Text("已预扣 \(compactStaking(phase["reserved_quota"].string))")
+                }.font(.caption2).foregroundStyle(SPXColor.muted)
+                if !phase["name"].string.isEmpty {
+                    Text("\(phase["name"].string) · 剩余 = 总额度 − 已预扣")
+                        .font(.caption2).foregroundStyle(SPXColor.muted.opacity(0.9))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
     }
-    private func quotaMetric(_ title: String, value: String, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text(title).font(.caption).foregroundStyle(SPXColor.muted)
-            Text(StakingPresentation.amount(value)).font(.title3.weight(.bold)).monospacedDigit().foregroundStyle(color).fixedSize(horizontal: false, vertical: true)
-            Text("SPX001").font(.caption).foregroundStyle(SPXColor.muted)
-        }.frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children: .combine)
+    private var burnLadderCard: some View {
+        let tiers = burnInfo["tiers"].list
+        let current = burnInfo["tier_min"].string
+        let nextMin = burnInfo["next_min"].string
+        return SPXCard {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("起押门槛").font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text("当前 \(compactStaking(current)) 起")
+                        .font(.caption).foregroundStyle(SPXColor.hex(0xBC7A16))
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(SPXColor.hex(0xFFF6E7), in: Capsule())
+                }
+                HStack(alignment: .top, spacing: 0) {
+                    ForEach(Array(tiers.enumerated()), id: \.offset) { _, tier in
+                        let active = tier["min_stake"].string == current
+                        VStack(spacing: 6) {
+                            Circle()
+                                .fill(active ? SPXColor.primary : SPXColor.card)
+                                .overlay(Circle().stroke(active ? Color.clear : SPXColor.muted.opacity(0.35), lineWidth: 1))
+                                .frame(width: active ? 14 : 11, height: active ? 14 : 11)
+                            Text(compactStaking(tier["threshold"].string)).font(.system(size: 10)).foregroundStyle(SPXColor.muted)
+                            Text(compactStaking(tier["min_stake"].string))
+                                .font(.system(size: 12, weight: active ? .semibold : .regular))
+                                .foregroundStyle(active ? SPXColor.ink : SPXColor.muted)
+                        }.frame(maxWidth: .infinity)
+                    }
+                }
+                Divider()
+                HStack {
+                    Text("累计新增销毁 \(compactStaking(burnInfo["amount"].string))")
+                        .font(.caption2).foregroundStyle(SPXColor.muted)
+                    Spacer()
+                    Text(nextMin.isEmpty || nextMin == "null"
+                         ? "已是最高档"
+                         : "再销毁 \(compactStaking(burnInfo["remaining_to_next"].string)) → \(compactStaking(nextMin)) 起")
+                        .font(.caption2).foregroundStyle(SPXColor.primary)
+                }
+            }
+        }
     }
     private var personalOverview: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("我的质押总额", systemImage: "lock.shield.fill").font(.subheadline.weight(.medium))
             Text(StakingPresentation.amount(activeTotal.map { NSDecimalNumber(decimal: $0).stringValue } ?? "")).font(.largeTitle.weight(.bold)).monospacedDigit().fixedSize(horizontal: false, vertical: true)
-            Text("SPX001 积分 · 当前生效中的本金").font(.caption).foregroundStyle(.white.opacity(0.85))
+            Text("\(symbol) · 当前生效中的本金").font(.caption).foregroundStyle(.white.opacity(0.85))
             Divider().overlay(.white.opacity(0.25))
             Text("共 \(records.count) 条质押记录 · \(records.filter { $0["status"].string == "active" }.count) 条生效中").font(.footnote).fixedSize(horizontal: false, vertical: true)
         }.foregroundStyle(.white).padding(22).frame(maxWidth: .infinity, alignment: .leading)
             .background(LinearGradient(colors: [SPXColor.hex(0x405BFA), SPXColor.hex(0x7342ED)], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 22))
     }
-    private var balanceOverview: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Label("可质押余额", systemImage: "wallet.pass").font(.subheadline.weight(.medium))
-            Text(StakingPresentation.amount(stakeable.map { NSDecimalNumber(decimal: $0).stringValue } ?? "") + " SPX001").font(.title3.weight(.semibold)).monospacedDigit().fixedSize(horizontal: false, vertical: true)
-            Text("邀请奖励、分红及赎回本金不可再次用于质押。").font(.caption).fixedSize(horizontal: false, vertical: true)
-        }.foregroundStyle(SPXColor.success).padding(18).frame(maxWidth: .infinity, alignment: .leading).background(SPXColor.success.opacity(0.08), in: RoundedRectangle(cornerRadius: 18))
+    private var burnSummary: String {
+        let burned = StakingPresentation.amount(burnInfo["amount"].string)
+        let nextMin = burnInfo["next_min"].string
+        let remain = burnInfo["remaining_to_next"].string
+        if nextMin.isEmpty || nextMin == "null" {
+            return "累计新增销毁 \(burned) \(symbol) · 已是最高档"
+        }
+        return "累计新增销毁 \(burned) \(symbol) · 再销毁 \(StakingPresentation.amount(remain)) 可降至 \(StakingPresentation.amount(nextMin)) 起押"
     }
+
     private var rulesOverview: some View {
         SPXPanel("质押规则") {
             if let plan = selectedPlan {
                 detail("锁仓期限", value: plan["plan_days"].string + " 天")
                 detail("参考年化", value: StakingPresentation.rate(plan["apy"]))
-                detail("最低质押", value: StakingPresentation.minimum(plan).map { StakingPresentation.amount(NSDecimalNumber(decimal: $0).stringValue) } ?? "—", unit: "SPX001")
+                detail("最低质押", value: StakingPresentation.minimum(plan).map { StakingPresentation.amount(NSDecimalNumber(decimal: $0).stringValue) } ?? "—", unit: symbol)
+                if let step = plan["step_amount"].decimal, step > 1 {
+                    detail("数量递增", value: StakingPresentation.amount(NSDecimalNumber(decimal: step).stringValue) + " \(symbol) 的整数倍")
+                }
+                if let maxValue = plan["max_per_user"].decimal, maxValue > 0 {
+                    detail("单人生效本金上限", value: StakingPresentation.amount(NSDecimalNumber(decimal: maxValue).stringValue) + " \(symbol)")
+                }
             } else { Text("请选择下方方案，查看对应期限、年化和最低数量。").font(.subheadline).foregroundStyle(SPXColor.muted) }
-            detail("数量递增", value: StakingPresentation.amount(String(StakingPresentation.increment)) + " SPX001 的整数倍")
-            detail("单人生效本金上限", value: StakingPresentation.amount(String(StakingPresentation.maximum)) + " SPX001")
+            if symbol != "SPX001" {
+                Text(burnSummary).font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+            }
             Divider()
             Text("锁定期间不可提前赎回。服务端每 10 天结算分红，不足 10 天的尾期在到期时结算，本金由服务端到期结算返还。实际到账与处理时间请以交易记录为准；记录仍可赎回时，也可通过下方按钮核验处理。").font(.footnote).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
         }
     }
     private func planCard(_ plan: Record) -> some View {
-        Button { selected = plan.id } label: {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(plan.name.isEmpty ? plan["plan_days"].string + " 天锁仓" : plan.name).font(.headline)
-                        Text("锁定 \(plan["plan_days"].string) 天").font(.subheadline).foregroundStyle(SPXColor.muted)
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-                    Image(systemName: selected == plan.id ? "checkmark.circle.fill" : "circle").font(.title2).foregroundStyle(selected == plan.id ? SPXColor.primary : SPXColor.muted)
-                }
-                Text(StakingPresentation.rate(plan["apy"])).font(.largeTitle.weight(.bold)).foregroundStyle(SPXColor.primary).monospacedDigit().fixedSize(horizontal: false, vertical: true)
-                Text("参考年化收益率").font(.caption).foregroundStyle(SPXColor.muted)
-                Divider()
-                Text("最低质押 \(StakingPresentation.minimum(plan).map { StakingPresentation.amount(NSDecimalNumber(decimal: $0).stringValue) } ?? "—") SPX001").font(.footnote).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
-            }.foregroundStyle(SPXColor.ink).padding(18).frame(maxWidth: .infinity, alignment: .leading)
-                .background(selected == plan.id ? SPXColor.tint : SPXColor.card, in: RoundedRectangle(cornerRadius: 18))
-                .overlay(RoundedRectangle(cornerRadius: 18).stroke(selected == plan.id ? SPXColor.primary : SPXColor.line, lineWidth: selected == plan.id ? 1.5 : 0.7))
-        }.buttonStyle(.plain).disabled(busy || uncertain || loading).accessibilityAddTraits(selected == plan.id ? .isSelected : [])
+        let days = plan["plan_days"].int
+        let periods = max(1, Int(ceil(Double(days) / 10.0)))
+        let minText = StakingPresentation.minimum(plan).map { compactStaking(NSDecimalNumber(decimal: $0).stringValue) } ?? "—"
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("\(days) 天").font(.system(size: 20, weight: .bold)).foregroundStyle(SPXColor.ink)
+                Spacer()
+                Text(StakingPresentation.rate(plan["apy"]))
+                    .font(.system(size: 22, weight: .bold)).foregroundStyle(SPXColor.primary).monospacedDigit()
+            }
+            HStack(alignment: .top) {
+                Text("每 10 天发息 · 共 \(periods) 期 · 到期还本").font(.caption).foregroundStyle(SPXColor.muted)
+                Spacer()
+                Text("年化").font(.caption2).foregroundStyle(SPXColor.muted)
+            }
+            HStack {
+                Text("起押 \(minText) \(symbol) · \(compactStaking(plan["step_amount"].string)) 整数倍").font(.caption).foregroundStyle(SPXColor.muted)
+                Spacer()
+                Button { selected = plan.id; amount = ""; stakeSheet = true } label: {
+                    Text("立即质押")
+                        .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                        .padding(.horizontal, 18).padding(.vertical, 9)
+                        .background(SPXColor.primary, in: RoundedRectangle(cornerRadius: 12))
+                }.buttonStyle(.plain).disabled(busy || uncertain || loading)
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(SPXColor.card, in: RoundedRectangle(cornerRadius: 20))
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(selected == plan.id ? SPXColor.primary : SPXColor.line,
+                                                           lineWidth: selected == plan.id ? 2 : 1))
+        .accessibilityAddTraits(selected == plan.id ? .isSelected : [])
     }
+
     private var amountForm: some View {
         SPXPanel("填写质押数量") {
-            SPXField("质押数量 · SPX001") {
-                TextField("请输入质押数量", text: $amount).keyboardType(.numberPad).font(.title2.weight(.semibold)).accessibilityLabel("质押数量，单位 SPX001")
+            SPXField("质押数量 · \(symbol)") {
+                TextField("请输入质押数量", text: $amount).keyboardType(.numberPad).font(.title2.weight(.semibold)).accessibilityLabel("质押数量，单位 \(symbol)")
             }
+            if let plan = selectedPlan { stakingAmountExtras(plan) }
             if !amount.isEmpty, let amountIssue { Text(amountIssue).font(.footnote).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true) }
             if let plan = selectedPlan, amountIssue == nil, let reward = StakingPresentation.expectedReward(amount: amount, plan: plan) {
-                detail("预计全期分红", value: StakingPresentation.amount(NSDecimalNumber(decimal: reward).stringValue) + " SPX001")
+                detail("预计全期分红", value: StakingPresentation.amount(NSDecimalNumber(decimal: reward).stringValue) + " \(symbol)")
                 Text("参考测算 = 本金 × 年化 × 天数 ÷ 365；以服务端实际结算为准。").font(.caption).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
             }
             Button(busy ? "正在处理…" : "确认质押") { confirm = "create" }.buttonStyle(SPXPrimaryButtonStyle()).disabled(!canCreate)
@@ -517,24 +728,21 @@ struct StakingView: View {
         }.disabled(uncertain || busy || loading)
     }
     private func recordCard(_ record: Record) -> some View {
-        SPXPanel(record.text("plan_name", "name").isEmpty ? record["plan_days"].string + " 天锁仓" : record.text("plan_name", "name")) {
-            SPXStatusPill(title: record["can_redeem"].flag ? "已到期 · 待结算" : DisplayLabels.transactionStatus(record["status"].string), color: record["status"].string == "redeemed" ? SPXColor.muted : SPXColor.success)
-            detail("质押本金", value: StakingPresentation.amount(record["amount"].string) + " SPX001")
-            detail("年化收益率", value: StakingPresentation.rate(record["apy"]))
-            if let daily = StakingPresentation.expectedReward(amount: record["amount"].string, plan: record, days: 1) {
-                detail("参考每日分红", value: StakingPresentation.amount(NSDecimalNumber(decimal: daily).stringValue), unit: "SPX001")
-            }
-            if let period = StakingPresentation.expectedReward(amount: record["amount"].string, plan: record, days: 10) {
-                detail(record["plan_days"].int < 10 ? "参考尾期分红" : "参考每十天分红", value: StakingPresentation.amount(NSDecimalNumber(decimal: period).stringValue), unit: "SPX001")
-            }
-            detail("预计全期分红", value: StakingPresentation.amount(record["expected_reward"].string) + " SPX001")
-            detail("已发分红", value: StakingPresentation.amount(record["paid_dividend"].string) + " SPX001")
-            if !record["created_at"].string.isEmpty { detail("创建时间", value: record["created_at"].string) }
-            if record["can_redeem"].flag {
-                Button("赎回到期本金") { redeemID = record.id; confirm = "redeem" }.buttonStyle(SPXPrimaryButtonStyle()).disabled(busy || loading || !snapshotFresh)
+        NavigationLink {
+            StakingRecordDetailView(recordID: record.id)
+        } label: {
+            SPXPanel(record.text("plan_name", "name").isEmpty ? record["plan_days"].string + " 天锁仓" : record.text("plan_name", "name")) {
+                SPXStatusPill(title: record["can_redeem"].flag ? "已到期 · 待结算" : DisplayLabels.transactionStatus(record["status"].string), color: record["status"].string == "active" ? SPXColor.success : SPXColor.muted)
+                detail("质押本金", value: StakingPresentation.amount(record["amount"].string) + " \(symbol)")
+                detail("年化收益率", value: StakingPresentation.rate(record["apy"]))
+                detail("预计全期分红", value: StakingPresentation.amount(record["expected_reward"].string) + " \(symbol)")
+                detail("已发分红", value: StakingPresentation.amount(record["paid_dividend"].string) + " \(symbol)")
+                if !record["created_at"].string.isEmpty { detail("创建时间", value: record["created_at"].string) }
             }
         }
+        .buttonStyle(.plain)
     }
+
     private func detail(_ title: String, value: String, unit: String = "") -> some View {
         let displayedValue = unit.isEmpty ? value : value + " " + unit
         return SPXViewThatFits(in: .horizontal) {
@@ -571,12 +779,12 @@ struct StakingView: View {
             }
         }
         do {
-            async let planData = APIClient.shared.get("staking.plans")
-            async let recordData = APIClient.shared.get("staking")
+            async let planData = APIClient.shared.get("staking.plans", ["symbol": symbol])
+            async let recordData = APIClient.shared.get("staking", ["symbol": symbol])
             async let walletData = APIClient.shared.get("wallet")
             let (data, updatedRecords, updatedAssets) = try await (planData, recordData, walletData)
             guard loadID == requestID, session.user?.id == owner, !Task.isCancelled else { return }
-            plans = data["plans"].list; phase = data["phase"]; records = updatedRecords.list; assets = updatedAssets.list
+            plans = data["plans"].list; phase = data["phase"]; burnInfo = data["burn"]; records = updatedRecords.list; assets = updatedAssets.list
             if !uncertain, !plans.contains(where: { $0.id == selected }) { selected = plans.first?.id ?? 0 }
             loaded = true; snapshotFresh = true
         } catch is CancellationError { }
@@ -657,7 +865,14 @@ enum StakingPresentation {
     }
     static func rate(_ raw: JSON?) -> String {
         guard let value = raw?.decimal, !value.isNaN, value >= 0 else { return "—" }
-        return DisplayLabels.amount(NSDecimalNumber(decimal: value).stringValue) + "%"
+        if value > 0, value < Decimal(string: "0.01")! { return "<0.01%" }
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 2; formatter.maximumFractionDigits = 2
+        formatter.usesGroupingSeparator = false; formatter.roundingMode = .halfUp
+        guard let formatted = formatter.string(from: NSDecimalNumber(decimal: value)) else { return "—" }
+        return formatted + "%"
     }
     static func remainingFraction(_ phase: JSON) -> Double? {
         guard let total = phase["total_quota"].decimal, !total.isNaN, total > 0,
@@ -674,17 +889,21 @@ enum StakingPresentation {
     }
     static func minimum(_ plan: Record) -> Decimal? {
         guard let value = plan["minimum_amount"].decimal, !value.isNaN, value >= 0 else { return nil }
-        return max(Decimal(increment), value)
+        return value
     }
     static func validationMessage(amount: String, plan: Record?, balance: Decimal?, activeTotal: Decimal?) -> String? {
         guard let plan, plan.id > 0 else { return "请先选择质押方案" }
         guard let minimumAmount = plan["minimum_amount"].decimal, !minimumAmount.isNaN, minimumAmount >= 0,
               let apy = plan["apy"].decimal, !apy.isNaN, apy >= 0, plan["plan_days"].int > 0 else { return "方案数据不完整，请重新加载" }
-        guard !amount.isEmpty, amount.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }), amount.first != "0", let integer = Int(amount), integer >= increment, integer <= maximum, integer % increment == 0 else { return "请输入 100,000 的整数倍，单笔不超过 10,000,000 SPX001" }
+        guard !amount.isEmpty, amount.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }), amount.first != "0", let integer = Int(amount), integer > 0 else { return "请输入有效的质押数量" }
+        let stepValue = Int(truncating: (plan["step_amount"].decimal ?? Decimal(increment)) as NSDecimalNumber)
+        if stepValue > 1, integer % stepValue != 0 { return "质押数量必须是 \(amount(String(stepValue))) 的整数倍" }
         let value = Decimal(integer)
         guard value >= minimumAmount else { return "低于该方案的最低质押数量" }
         guard let balance, !balance.isNaN, balance >= 0, let activeTotal, !activeTotal.isNaN, activeTotal >= 0 else { return "余额或质押记录尚未完整读取，请刷新" }
-        guard value + activeTotal <= Decimal(maximum) else { return "本次质押将超过单人生效本金上限" }
+        if let maxValue = plan["max_per_user"].decimal, !maxValue.isNaN, maxValue > 0 {
+            guard value + activeTotal <= maxValue else { return "本次质押将超过单人累计上限" }
+        }
         guard value <= balance else { return "可质押余额不足" }
         return nil
     }
@@ -694,5 +913,348 @@ enum StakingPresentation {
         let periodDays = min(days ?? plan["plan_days"].int, plan["plan_days"].int)
         guard periodDays > 0 else { return nil }
         return principal * apy * Decimal(periodDays) / 36500
+    }
+}
+
+
+struct StakingRecordDetailView: View {
+    let recordID: Int
+    @State private var detail: Record?
+    @State private var error: String?
+    @State private var loading = true
+
+    var body: some View {
+        SPXDetailPage {
+            if loading {
+                ProgressView("正在读取质押详情…").frame(maxWidth: .infinity).padding(.vertical, 24)
+            }
+            if let error {
+                SPXCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ErrorBanner(message: error)
+                        Button("重新加载") { Task { await load() } }.disabled(loading)
+                    }
+                }
+            }
+            if let detail { content(detail) }
+        }
+        .navigationTitle("质押详情")
+        .task { await load() }
+    }
+
+    @ViewBuilder
+    private func content(_ d: Record) -> some View {
+        let symbol = d["symbol"].string
+        let active = d["status"].string == "active"
+        SPXCard {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text(symbol + " 锁仓").font(.caption).foregroundStyle(SPXColor.muted)
+                    Spacer()
+                    SPXStatusPill(title: active ? "进行中" : "已完成", color: active ? SPXColor.success : SPXColor.muted)
+                }
+                Text(StakingPresentation.amount(d["amount"].string) + " " + symbol)
+                    .font(.system(size: 30, weight: .bold)).monospacedDigit().minimumScaleFactor(0.6).lineLimit(1)
+                Text("年化 \(StakingPresentation.rate(d["apy"])) · 锁定 \(d["plan_days"].string) 天")
+                    .font(.caption).foregroundStyle(SPXColor.muted)
+            }
+        }
+        SPXCard {
+            VStack(alignment: .leading, spacing: 10) {
+                row("利息发放进度", "\(d["periods_paid"].string) / \(d["periods_total"].string) 期")
+                let paid = Double(d["periods_paid"].string) ?? 0
+                let total = max(1, Double(d["periods_total"].string) ?? 1)
+                ProgressView(value: min(1, max(0, paid / total))).tint(SPXColor.primary)
+                row("已发利息", StakingPresentation.amount(d["paid_dividend"].string) + " " + symbol)
+                row("待发利息", StakingPresentation.amount(d["remaining_reward"].string) + " " + symbol)
+                row("应发合计", StakingPresentation.amount(d["expected_reward"].string) + " " + symbol)
+            }
+        }
+        SPXCard {
+            VStack(alignment: .leading, spacing: 10) {
+                row("起息时间", d["created_at"].string)
+                row("到期时间", d["matures_at"].string)
+                let next = d["next_payout_at"].string
+                if !next.isEmpty && next != "null" { row("下期发放", next) }
+                let last = d["last_paid_at"].string
+                if !last.isEmpty && last != "null" { row("最近发放", last) }
+                let pool = d["phase"]["name"].string
+                if !pool.isEmpty { row("分红奖池", pool) }
+            }
+        }
+        let dividends = d["dividends"].list
+        SPXSectionTitle(title: "分红明细")
+        if dividends.isEmpty {
+            SPXCard { Text("还没有利息发放记录，每 10 天发放一次").font(.footnote).foregroundStyle(SPXColor.muted) }
+        } else {
+            SPXCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(dividends) { item in
+                        row("第 \(item["period_no"].string) 期",
+                            StakingPresentation.amount(item["amount"].string) + "  ·  " + item["paid_at"].string)
+                    }
+                }
+            }
+        }
+    }
+
+    private func row(_ title: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(title).font(.subheadline).foregroundStyle(SPXColor.muted).fixedSize()
+            Spacer(minLength: 8)
+            Text(value).font(.subheadline.weight(.medium)).multilineTextAlignment(.trailing)
+        }
+    }
+
+    private func load() async {
+        loading = true; error = nil
+        defer { loading = false }
+        do {
+            let data = try await APIClient.shared.get("staking.detail", ["id": String(recordID)])
+            guard data["id"].int > 0 else { throw APIError.server(404, "质押记录不存在") }
+            detail = data
+        } catch is CancellationError {
+            return
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}
+
+
+// MARK: - 立即质押（方案卡内直达）
+
+extension StakingView {
+    /// 快捷金额 + 余额 + 整数倍 + 到期提示（主表单与弹层共用，对齐安卓）
+    @ViewBuilder
+    func stakingAmountExtras(_ plan: Record) -> some View {
+        let minimum = StakingPresentation.minimum(plan) ?? 0
+        let step = plan["step_amount"].decimal ?? 1
+        let stepInt = max(1, Int(truncating: NSDecimalNumber(decimal: step)))
+        let balanceInt = Int(truncating: NSDecimalNumber(decimal: stakeable ?? 0))
+        let maxAmount = Decimal(max(0, (balanceInt / stepInt) * stepInt))
+        let options: [(String, Decimal)] = [
+            ("起押", minimum),
+            ("2 倍", minimum * 2),
+            ("5 倍", minimum * 5),
+            ("10 倍", minimum * 10),
+            ("全部", maxAmount)
+        ]
+        HStack(spacing: 6) {
+            ForEach(Array(options.enumerated()), id: \.offset) { _, item in
+                let label = item.0
+                let value = item.1
+                Button {
+                    let rounded = Int(truncating: NSDecimalNumber(decimal: value))
+                    guard rounded > 0 else { error = "可质押余额不足"; return }
+                    amount = String(rounded)
+                } label: {
+                    Text(label)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(SPXColor.primary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(SPXColor.hex(0xEEF2FF), in: RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+            }
+        }
+        Text("可质押余额 \(StakingPresentation.amount(NSDecimalNumber(decimal: stakeable ?? 0).stringValue)) \(symbol)")
+            .font(.caption).foregroundStyle(SPXColor.success)
+        Text("必须是 \(compactStaking(NSDecimalNumber(decimal: step).stringValue)) 的整数倍")
+            .font(.caption).foregroundStyle(SPXColor.muted)
+        if plan["plan_days"].int > 0 {
+            Text("预计到期：\(Date().addingTimeInterval(Double(plan["plan_days"].int) * 86400).formatted(.dateTime.year().month(.twoDigits).day(.twoDigits)))")
+                .font(.caption).foregroundStyle(SPXColor.muted)
+        }
+    }
+
+    /// 方案卡点「立即质押」后弹出的简化表单
+    var stakeQuickForm: some View {
+        NavigationStack {
+            SPXDetailPage {
+                if let plan = selectedPlan {
+                    SPXPanel("质押方案") {
+                        InfoRow(title: "锁仓期限", value: plan["plan_days"].string + " 天")
+                        InfoRow(title: "参考年化", value: StakingPresentation.rate(plan["apy"]))
+                        InfoRow(title: "当前起押", value: (StakingPresentation.minimum(plan).map { StakingPresentation.amount(NSDecimalNumber(decimal: $0).stringValue) } ?? "-") + " \(symbol)")
+                        if let step = plan["step_amount"].decimal, step > 1 {
+                            InfoRow(title: "数量递增", value: compactStaking(NSDecimalNumber(decimal: step).stringValue) + " \(symbol) 的整数倍")
+                        }
+                    }
+                }
+                SPXPanel("填写数量") {
+                    SPXField("质押数量 · \(symbol)") {
+                        TextField("请输入质押数量", text: $amount).keyboardType(.numberPad).font(.title2.weight(.semibold))
+                    }
+                    if let plan = selectedPlan { stakingAmountExtras(plan) }
+                    if !amount.isEmpty, let amountIssue {
+                        Text(amountIssue).font(.footnote).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                    }
+                    if amountIssue == nil, let plan = selectedPlan,
+                       let reward = StakingPresentation.expectedReward(amount: amount, plan: plan) {
+                        InfoRow(title: "预计全期分红", value: StakingPresentation.amount(NSDecimalNumber(decimal: reward).stringValue) + " \(symbol)")
+                    }
+                    Button("确认质押") { stakeSheet = false; submit(create: true) }
+                        .buttonStyle(SPXPrimaryButtonStyle())
+                        .disabled(!canCreate)
+                }
+            }
+            .navigationTitle("立即质押")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { stakeSheet = false } } }
+        }
+    }
+}
+
+// MARK: - 收益明细
+
+struct StakingEarningsView: View {
+    let pageSymbol: String
+    @State private var data: JSON = .null
+    @State private var loading = true
+    @State private var error: String?
+
+    private var symbol: String { pageSymbol }
+    private var records: [Record] { data["records"].list }
+    private var total: JSON { data["totals"][symbol] }
+
+    var body: some View {
+        SPXDetailPage {
+            SPXPageHeading(title: "收益明细", subtitle: "\(symbol) · 预计收益与已发放分红", icon: "chart.line.uptrend.xyaxis", color: SPXColor.success)
+            if loading {
+                ProgressView("正在读取收益明细…").frame(maxWidth: .infinity).padding(.vertical, 12)
+            }
+            if let error {
+                SPXCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ErrorBanner(message: error)
+                        Button("重新加载") { Task { await load() } }
+                    }
+                }
+            }
+            if !loading, error == nil {
+                SPXPanel("汇总") {
+                    InfoRow(title: "预计总收益", value: StakingPresentation.amount(total["expected"].string) + " \(symbol)")
+                    InfoRow(title: "已发放分红", value: StakingPresentation.amount(total["paid"].string) + " \(symbol)")
+                    InfoRow(title: "生效中本金", value: StakingPresentation.amount(total["active_amount"].string) + " \(symbol)")
+                }
+                if records.isEmpty {
+                    EmptyState(title: "暂无收益记录", description: "参与质押后，可在这里查看每笔质押的预计收益与到期时间。", icon: "clock")
+                } else {
+                    SPXSectionTitle(title: "按质押记录")
+                    ForEach(records) { record in
+                        SPXPanel(record["plan_days"].string + " 天 · " + StakingPresentation.amount(record["amount"].string) + " \(symbol)") {
+                            InfoRow(title: "预计全期分红", value: StakingPresentation.amount(record["expected_reward"].string) + " \(symbol)")
+                            InfoRow(title: "已发分红", value: StakingPresentation.amount(record["paid_dividend"].string) + " \(symbol)")
+                            InfoRow(title: "年化", value: StakingPresentation.rate(record["apy"]))
+                            if !record["matures_at"].string.isEmpty {
+                                InfoRow(title: "到期时间", value: record["matures_at"].string)
+                            }
+                            InfoRow(title: "状态", value: DisplayLabels.transactionStatus(record["status"]))
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("收益明细")
+        .task(id: symbol) { await load() }
+        .spxRefreshable { await load() }
+    }
+
+    private func load() async {
+        loading = true
+        defer { loading = false }
+        do {
+            data = try await APIClient.shared.get("staking.earnings", ["symbol": symbol])
+            error = nil
+        } catch is CancellationError {
+            return
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}
+
+
+// MARK: - 质押记录（全部 / 生效中 / 已结束）
+
+struct StakingRecordsView: View {
+    let pageSymbol: String
+    @State private var records: [Record] = []
+    @State private var filter = 0
+    @State private var loading = true
+    @State private var error: String?
+
+    private var symbol: String { pageSymbol }
+    private var filtered: [Record] {
+        switch filter {
+        case 1: return records.filter { $0["status"].string == "active" }
+        case 2: return records.filter { $0["status"].string != "active" }
+        default: return records
+        }
+    }
+
+    var body: some View {
+        SPXDetailPage {
+            Picker("筛选", selection: $filter) {
+                Text("全部").tag(0)
+                Text("生效中").tag(1)
+                Text("已结束").tag(2)
+            }
+            .pickerStyle(.segmented)
+            if loading {
+                ProgressView("正在读取质押记录…").frame(maxWidth: .infinity).padding(.vertical, 24)
+            }
+            if let error {
+                SPXCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ErrorBanner(message: error)
+                        Button("重新加载") { Task { await load() } }
+                    }
+                }
+            }
+            if !loading, error == nil {
+                if filtered.isEmpty {
+                    EmptyState(title: "暂无质押记录", description: "参与质押后，可在这里查看本金、分红与到期时间。", icon: "clock")
+                }
+                ForEach(filtered) { record in
+                    NavigationLink {
+                        StakingRecordDetailView(recordID: record.id)
+                    } label: {
+                        SPXPanel(record["plan_days"].string + " 天 · " + symbol) {
+                            HStack {
+                                Text(record["status"].string == "active" ? "生效中" : "已结束")
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(record["status"].string == "active" ? SPXColor.success : SPXColor.muted)
+                                Spacer()
+                                Text(record["matures_at"].string).font(.caption).foregroundStyle(SPXColor.muted)
+                            }
+                            InfoRow(title: "质押本金", value: StakingPresentation.amount(record["amount"].string) + " \(symbol)")
+                            InfoRow(title: "预计分红", value: StakingPresentation.amount(record["expected_reward"].string) + " \(symbol)")
+                            InfoRow(title: "已发分红", value: StakingPresentation.amount(record["paid_dividend"].string) + " \(symbol)")
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .navigationTitle("质押记录")
+        .task(id: symbol) { await load() }
+        .spxRefreshable { await load() }
+    }
+
+    private func load() async {
+        loading = true
+        defer { loading = false }
+        do {
+            let data = try await APIClient.shared.get("staking", ["symbol": symbol])
+            records = data.list
+            error = nil
+        } catch is CancellationError {
+            return
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 }

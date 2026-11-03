@@ -39,14 +39,37 @@ struct ScanCodeView: View {
     @State private var selectedPhoto: SPXPhotosPickerItem?
     @State private var cameraAllowed = false
     @State private var busy = false
+    @State private var torchOn = false
     var body: some View {
         VStack(spacing: 18) {
-            if #available(iOS 16.0, *), cameraAllowed, DataScannerViewController.isSupported, DataScannerViewController.isAvailable {
-                QRScanner { value in process(value) }.clipShape(RoundedRectangle(cornerRadius: 24)).padding(.horizontal, 20)
-            } else { EmptyState(title: "当前设备无法扫码", description: "可输入 SPX ID 或六位群号", icon: "qrcode.viewfinder") }
+            if cameraAllowed {
+                if #available(iOS 16.0, *), DataScannerViewController.isSupported, DataScannerViewController.isAvailable {
+                    QRScanner(onFound: { value in process(value) }, onError: { error = $0 })
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 420)
+                        .clipShape(RoundedRectangle(cornerRadius: 24))
+                        .padding(.horizontal, 20)
+                } else if AVCaptureDevice.default(for: .video) != nil {
+                    // iOS 15 及不支持 DataScanner 的设备，用 AVFoundation 兜底
+                    LegacyQRScanner(onFound: { value in process(value) }, onError: { error = $0 })
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 420)
+                        .clipShape(RoundedRectangle(cornerRadius: 24))
+                        .padding(.horizontal, 20)
+                } else {
+                    EmptyState(title: "当前设备无法扫码", description: "可输入 SPX ID 或六位群号", icon: "qrcode.viewfinder")
+                }
+                if AVCaptureDevice.default(for: .video)?.hasTorch == true {
+                    Button(torchOn ? "关闭手电筒" : "打开手电筒", systemImage: torchOn ? "flashlight.off.fill" : "flashlight.on.fill") { toggleTorch() }
+                        .font(.subheadline)
+                }
+            } else {
+                EmptyState(title: "需要相机权限", description: "请在系统设置中允许访问相机，或从相册识别二维码", icon: "camera")
+            }
             HStack { TextField("SPXUSER:用户ID 或 SPXGROUP:群号", text: $value).textInputAutocapitalization(.never).textFieldStyle(.roundedBorder); Button("识别") { process(value) } }.padding()
             SPXPhotosPicker(selection: $selectedPhoto, matching: .images) { Label("从相册识别二维码", systemImage: "photo") }.disabled(busy).padding(.bottom)
         }.navigationTitle("扫一扫").errorAlert($error)
+            .onDisappear { setTorch(false) }
             .task { cameraAllowed = await AVCaptureDevice.requestAccess(for: .video) }
             .onChange(of: selectedPhoto) { item in
                 guard let item else { return }
@@ -63,6 +86,18 @@ struct ScanCodeView: View {
             }
             .spxNavigationDestination(isPresented: Binding(get: { userID > 0 }, set: { if !$0 { userID = 0 } })) { UserProfileView(userID: userID) }
             .spxNavigationDestination(isPresented: Binding(get: { !groupCode.isEmpty }, set: { if !$0 { groupCode = "" } })) { GroupJoinView(initialCode: groupCode) }
+    }
+    private func toggleTorch() { setTorch(!torchOn) }
+    private func setTorch(_ on: Bool) {
+        guard let device = AVCaptureDevice.default(for: .video), device.hasTorch else { torchOn = false; return }
+        do {
+            try device.lockForConfiguration()
+            device.torchMode = on ? .on : .off
+            device.unlockForConfiguration()
+            torchOn = on
+        } catch {
+            torchOn = false
+        }
     }
     private func process(_ value: String) {
         guard !busy, userID == 0, groupCode.isEmpty else { return }
@@ -83,20 +118,115 @@ struct ScanCodeView: View {
 
 @available(iOS 16.0, *)
 private struct QRScanner: UIViewControllerRepresentable {
-    let found: (String) -> Void
-    func makeCoordinator() -> Coordinator { Coordinator(found) }
+    let onFound: (String) -> Void
+    let onError: (String) -> Void
+    func makeCoordinator() -> Coordinator { Coordinator(onFound, onError) }
     func makeUIViewController(context: Context) -> DataScannerViewController {
         let controller = DataScannerViewController(recognizedDataTypes: [.barcode(symbologies: [.qr])], qualityLevel: .balanced, recognizesMultipleItems: false, isHighFrameRateTrackingEnabled: false, isPinchToZoomEnabled: true, isGuidanceEnabled: true, isHighlightingEnabled: true)
-        controller.delegate = context.coordinator; try? controller.startScanning(); return controller
+        controller.delegate = context.coordinator
+        do { try controller.startScanning() } catch { context.coordinator.report(error) }
+        return controller
     }
-    func updateUIViewController(_ controller: DataScannerViewController, context: Context) { }
+    func updateUIViewController(_ controller: DataScannerViewController, context: Context) {
+        context.coordinator.found = onFound
+        context.coordinator.onError = onError
+        guard !controller.isScanning, DataScannerViewController.isSupported, DataScannerViewController.isAvailable else { return }
+        do { try controller.startScanning() } catch { context.coordinator.report(error) }
+    }
     static func dismantleUIViewController(_ controller: DataScannerViewController, coordinator: Coordinator) { controller.stopScanning() }
     final class Coordinator: NSObject, DataScannerViewControllerDelegate {
-        let found: (String) -> Void
+        var found: (String) -> Void
+        var onError: (String) -> Void
         private var last = ""
-        init(_ found: @escaping (String) -> Void) { self.found = found }
+        private var lastAt = Date.distantPast
+        init(_ found: @escaping (String) -> Void, _ onError: @escaping (String) -> Void) { self.found = found; self.onError = onError }
+        func report(_ error: Error) { NSLog("[QRScanner] start failed: %@", error.localizedDescription); onError("无法启动扫码，请确认相机权限正常后重试") }
         func dataScanner(_ dataScanner: DataScannerViewController, didAdd addedItems: [RecognizedItem], allItems: [RecognizedItem]) {
-            for item in addedItems { if case .barcode(let barcode) = item, let value = barcode.payloadStringValue, value != last { last = value; found(value); break } }
+            for item in addedItems {
+                guard case .barcode(let barcode) = item, let value = barcode.payloadStringValue else { continue }
+                let now = Date()
+                guard value != last || now.timeIntervalSince(lastAt) >= 2 else { continue }
+                last = value; lastAt = now; found(value); break
+            }
+        }
+        func dataScanner(_ dataScanner: DataScannerViewController, didRemove removedItems: [RecognizedItem], allItems: [RecognizedItem]) {
+            if allItems.isEmpty { last = ""; lastAt = .distantPast }
+        }
+    }
+}
+
+
+/// iOS 15 及不支持 DataScanner 的设备使用的 AVFoundation 扫码器
+private struct LegacyQRScanner: UIViewRepresentable {
+    let onFound: (String) -> Void
+    let onError: (String) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onFound, onError) }
+    func makeUIView(context: Context) -> ScannerView {
+        let view = ScannerView()
+        context.coordinator.configure(view: view)
+        return view
+    }
+    func updateUIView(_ uiView: ScannerView, context: Context) {
+        context.coordinator.found = onFound
+        context.coordinator.onError = onError
+    }
+    static func dismantleUIView(_ uiView: ScannerView, coordinator: Coordinator) { coordinator.stop() }
+
+    final class ScannerView: UIView {
+        override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
+        var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
+    }
+
+    final class Coordinator: NSObject, AVCaptureMetadataOutputObjectsDelegate {
+        var found: (String) -> Void
+        var onError: (String) -> Void
+        private let session = AVCaptureSession()
+        private var last = ""
+        private var lastAt = Date.distantPast
+
+        init(_ found: @escaping (String) -> Void, _ onError: @escaping (String) -> Void) {
+            self.found = found
+            self.onError = onError
+        }
+
+        func configure(view: ScannerView) {
+            guard let device = AVCaptureDevice.default(for: .video),
+                  let input = try? AVCaptureDeviceInput(device: device),
+                  session.canAddInput(input) else {
+                onError("无法启动相机，请确认相机权限")
+                return
+            }
+            session.beginConfiguration()
+            session.addInput(input)
+            let output = AVCaptureMetadataOutput()
+            if session.canAddOutput(output) {
+                session.addOutput(output)
+                output.setMetadataObjectsDelegate(self, queue: .main)
+                if output.availableMetadataObjectTypes.contains(.qr) {
+                    output.metadataObjectTypes = [.qr]
+                }
+            }
+            session.commitConfiguration()
+            view.previewLayer.session = session
+            view.previewLayer.videoGravity = .resizeAspectFill
+            DispatchQueue.global(qos: .userInitiated).async { [session] in
+                if !session.isRunning { session.startRunning() }
+            }
+        }
+
+        func stop() {
+            if session.isRunning { session.stopRunning() }
+        }
+
+        func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput metadataObjects: [AVMetadataObject], from connection: AVCaptureConnection) {
+            guard let object = metadataObjects.first as? AVMetadataMachineReadableCodeObject,
+                  let value = object.stringValue else { return }
+            let now = Date()
+            guard value != last || now.timeIntervalSince(lastAt) >= 2 else { return }
+            last = value
+            lastAt = now
+            found(value)
         }
     }
 }

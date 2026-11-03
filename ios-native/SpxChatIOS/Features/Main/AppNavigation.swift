@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct RootView: View {
     @EnvironmentObject private var session: SessionStore
@@ -118,6 +119,9 @@ private struct LinkedUserView: View {
 struct MainTabView: View {
     @State private var selected = 0
     @State private var path = SPXNavigationPath()
+    @State private var updateAlert = false
+    @State private var updateURL = ""
+    @State private var updateVersion = ""
     var body: some View {
         SPXNavigationContainer(path: $path) {
             Group {
@@ -136,6 +140,39 @@ struct MainTabView: View {
                 }
             }
         }.tint(SPXColor.primary)
+            .task { await checkUpdate() }
+            .alert("发现新版本 \(updateVersion)", isPresented: $updateAlert) {
+                Button("去更新") {
+                    if let url = URL(string: updateURL) { UIApplication.shared.open(url) }
+                }
+                Button("稍后", role: .cancel) {}
+            } message: {
+                Text("建议更新到最新版本，以获得最新的功能与修复。")
+            }
+    }
+
+    /// 服务端配置了 ios_version 且比当前新时提示一次
+    private func checkUpdate() async {
+        guard let config = try? await APIClient.shared.get("app.download.config") else { return }
+        let latest = config["ios_version"].string
+        let link = config["ios_download_url"].string
+        guard !latest.isEmpty, !link.isEmpty else { return }
+        let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+        guard Self.isNewer(latest, than: current) else { return }
+        updateVersion = latest
+        updateURL = link
+        updateAlert = true
+    }
+
+    static func isNewer(_ candidate: String, than current: String) -> Bool {
+        let a = candidate.split(separator: ".").map { Int($0) ?? 0 }
+        let b = current.split(separator: ".").map { Int($0) ?? 0 }
+        for index in 0..<max(a.count, b.count) {
+            let left = index < a.count ? a[index] : 0
+            let right = index < b.count ? b[index] : 0
+            if left != right { return left > right }
+        }
+        return false
     }
 }
 

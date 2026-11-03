@@ -9,6 +9,7 @@ struct RedPacketSendView: View {
     @EnvironmentObject private var session: SessionStore
     @Environment(\.dismiss) private var dismiss
     @State private var mode = "ordinary"
+    @State private var symbol = "SPX001"
     @State private var countText = "1"
     @FocusState private var inputFocus: PacketInput?
     @State private var amount = ""
@@ -31,7 +32,7 @@ struct RedPacketSendView: View {
         if mode == "random" { return "每人随机金额，试试谁的手气最好" }
         guard let total = Decimal(string: amount), count > 0 else { return "总金额按红包个数平均分配" }
         let each = total / Decimal(count)
-        return "每人 \(NSDecimalNumber(decimal: each).stringValue) SPX001"
+        return "每人 \(NSDecimalNumber(decimal: each).stringValue) \(symbol)"
     }
     var body: some View {
         SPXNavigationContainer {
@@ -44,7 +45,7 @@ struct RedPacketSendView: View {
                             .frame(width: 58, height: 58)
                             .background(SPXColor.hex(0xFBE5DC), in: RoundedRectangle(cornerRadius: 18))
                         Text("把心意装进红包").font(.system(size: 23, weight: .bold))
-                        Text("SPX001 · 领取后自动存入钱包").font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+                        Text("\(symbol) · 领取后自动存入钱包").font(.system(size: 12)).foregroundStyle(SPXColor.muted)
                     }
                     HStack(spacing: 4) {
                         Button { mode = "ordinary" } label: { Text("普通红包").frame(maxWidth: .infinity).frame(height: 42).foregroundStyle(mode == "ordinary" ? SPXColor.hex(0xC34438) : SPXColor.muted).background(mode == "ordinary" ? Color.white : Color.clear, in: RoundedRectangle(cornerRadius: 9)) }
@@ -52,8 +53,12 @@ struct RedPacketSendView: View {
                     }
                     .padding(4)
                     .background(SPXColor.hex(0xEBE7E1), in: RoundedRectangle(cornerRadius: 12))
+                    Picker("红包币种", selection: $symbol) {
+                        Text("SPX001").tag("SPX001")
+                        Text("FISS").tag("FISS")
+                    }.pickerStyle(.segmented).onChange(of: symbol) { _ in loadBalance() }
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("总金额 · SPX001").font(.system(size: 13)).foregroundStyle(SPXColor.muted)
+                        Text("总金额 · \(symbol)").font(.system(size: 13)).foregroundStyle(SPXColor.muted)
                         TextField("0.00", text: $amount)
                             .font(.system(size: 34, weight: .semibold))
                             .foregroundStyle(Color.black)
@@ -136,7 +141,7 @@ struct RedPacketSendView: View {
     private var paymentConfirmation: some View {
         SPXNavigationContainer {
             SPXDetailPage {
-                SPXPageHeading(title: "确认发送红包", subtitle: "总额 \(DisplayLabels.amount(amount)) SPX001，共 \(count) 个", icon: "gift")
+                SPXPageHeading(title: "确认发送红包", subtitle: "总额 \(DisplayLabels.amount(amount)) \(symbol)，共 \(count) 个", icon: "gift")
                 SPXPanel("支付验证", footer: "确认后从资产扣除，请输入独立支付密码。") {
                     SPXField("支付密码") { SecureField("六位数字支付密码", text: $password).foregroundStyle(SPXColor.ink).tint(SPXColor.primary).keyboardType(.numberPad).textContentType(.password) }
                 }
@@ -163,13 +168,14 @@ struct RedPacketSendView: View {
         guard !balanceLoading else { return }
         balanceLoading = true
         let owner = session.user?.id
+        let selectedSymbol = symbol
         Task {
             defer { balanceLoading = false }
             do {
                 let assets = try await APIClient.shared.get("wallet").list
                 guard session.user?.id == owner else { return }
-                if let asset = assets.first(where: { $0["symbol"].string == "SPX001" && ($0["chain"].string.isEmpty || $0["chain"].string == "BSC") }) {
-                    balanceText = "可用余额 \(DisplayLabels.amount(asset["balance"].string)) SPX001"
+                if let asset = assets.first(where: { $0["symbol"].string == selectedSymbol && ($0["chain"].string.isEmpty || $0["chain"].string == "BSC") }) {
+                    balanceText = "可用余额 \(DisplayLabels.amount(asset["balance"].string)) \(selectedSymbol)"
                 } else {
                     balanceText = "可用余额暂未读取 · 点击重试"
                 }
@@ -183,10 +189,10 @@ struct RedPacketSendView: View {
         guard validCount else { error = "红包个数请输入 1–100 之间的整数"; return }
         guard password.count == 6, password.allSatisfy({ $0.isASCII && $0.isNumber }) else { error = "请输入六位数字支付密码"; return }
         guard greeting.count <= 50 else { error = "祝福语最多 50 字"; return }
-        guard let total = Decimal(string: amount), total >= Decimal(count) * Decimal(string: "0.000001")! else { error = "每个红包至少 0.000001 SPX001"; return }
+        guard let total = Decimal(string: amount), total >= Decimal(count) * Decimal(string: "0.000001")! else { error = "每个红包至少 0.000001 \(symbol)"; return }
         if mode == "ordinary" { let each = total / Decimal(count); var raw = each; var rounded = Decimal(); NSDecimalRound(&rounded, &raw, 6, .down); guard rounded * Decimal(count) == total else { error = "普通红包需可按六位小数平均分配，请调整总额或个数"; return } }
         busy = true
-        let payload: [String: JSON] = ["request_id": .string(requestID), "scope": .string(scope), "target_id": .number(Decimal(targetID)), "mode": .string(mode), "count": .number(Decimal(count)), "amount": .string(amount), "greeting": .string(greeting), "payment_password": .string(password)]
+        let payload: [String: JSON] = ["request_id": .string(requestID), "scope": .string(scope), "target_id": .number(Decimal(targetID)), "mode": .string(mode), "count": .number(Decimal(count)), "amount": .string(amount), "symbol": .string(symbol), "chain": .string("BSC"), "greeting": .string(greeting), "payment_password": .string(password)]
         confirm = false
         Task {
             defer { busy = false; password = "" }
@@ -220,6 +226,7 @@ struct RedPacketPopup: View {
     @State private var showingClaims = false
     @State private var coinRotation = 0.0
     @State private var error: String?
+    private var packetSymbol: String { ["SPX001", "FISS"].contains(packet["symbol"].string) ? packet["symbol"].string : "SPX001" }
     var body: some View {
         ZStack {
             Color.black.opacity(0.55).ignoresSafeArea().onTapGesture { if !busy { close() } }
@@ -269,7 +276,7 @@ struct RedPacketPopup: View {
                 .font(.system(size: 16, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
             Text(packet["greeting"].string.isEmpty ? "恭喜发财，大吉大利" : packet["greeting"].string)
                 .font(.system(size: 14)).multilineTextAlignment(.center).lineLimit(2)
-            Text("SPX001 · 领取后自动存入钱包")
+            Text("\(packetSymbol) · 领取后自动存入钱包")
                 .font(.system(size: 11)).foregroundStyle(.white.opacity(0.76))
         }
         .foregroundStyle(.white)
@@ -281,7 +288,7 @@ struct RedPacketPopup: View {
         if let amount = confirmedAmount {
             VStack(spacing: 5) {
                 Text(DisplayLabels.amount(amount)).font(.system(size: 30, weight: .bold, design: .rounded)).monospacedDigit().foregroundStyle(Color(red: 0.78, green: 0.19, blue: 0.13))
-                Text("SPX001 · 已存入钱包可用余额").font(.footnote).foregroundStyle(SPXColor.muted)
+                Text("\(packetSymbol) · 已存入钱包可用余额").font(.footnote).foregroundStyle(SPXColor.muted)
             }.padding(.vertical, 5)
         } else if claimCompleted {
             Label("领取成功，正在更新状态", systemImage: "checkmark.circle.fill").font(.subheadline.weight(.semibold)).foregroundStyle(Color(red: 0.72, green: 0.22, blue: 0.17))
@@ -314,10 +321,10 @@ struct RedPacketPopup: View {
             HStack {
                 Text("已领取 \(packet["claimed_count"].int) / \(packet["total_count"].int) 个")
                 Spacer(minLength: 8)
-                if !packet["total_amount"].string.isEmpty { Text("共 \(DisplayLabels.amount(packet["total_amount"].string)) SPX001") }
+                if !packet["total_amount"].string.isEmpty { Text("共 \(DisplayLabels.amount(packet["total_amount"].string)) \(packetSymbol)") }
             }.font(.caption).foregroundStyle(SPXColor.muted)
             if packet["status"].string == "expired", !packet["refund_amount"].string.isEmpty {
-                Text("未领取金额 \(DisplayLabels.amount(packet["refund_amount"].string)) SPX001 已退回")
+                Text("未领取金额 \(DisplayLabels.amount(packet["refund_amount"].string)) \(packetSymbol) 已退回")
                     .font(.caption).foregroundStyle(Color(red: 0.72, green: 0.22, blue: 0.17)).frame(maxWidth: .infinity, alignment: .leading)
             }
             if !packet["claims"].array.isEmpty {
@@ -329,7 +336,7 @@ struct RedPacketPopup: View {
                     VStack(spacing: 9) {
                         ForEach(packet["claims"].array.indices, id: \.self) { index in
                             let claim = packet["claims"].array[index]
-                            HStack { Text(claim["nickname"].string.isEmpty ? "好友" : claim["nickname"].string).lineLimit(1); Spacer(minLength: 8); Text(DisplayLabels.amount(claim["amount"].string) + " SPX001").monospacedDigit() }
+                            HStack { Text(claim["nickname"].string.isEmpty ? "好友" : claim["nickname"].string).lineLimit(1); Spacer(minLength: 8); Text(DisplayLabels.amount(claim["amount"].string) + " \(packetSymbol)").monospacedDigit() }
                                 .font(.caption).foregroundStyle(SPXColor.ink)
                         }
                     }.padding(.top, 2)
