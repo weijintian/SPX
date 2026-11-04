@@ -610,7 +610,8 @@ struct StakingView: View {
                         .background(SPXColor.hex(0xFFF6E7), in: Capsule())
                 }
                 HStack(alignment: .top, spacing: 0) {
-                    ForEach(Array(tiers.enumerated()), id: \.offset) { _, tier in
+                    ForEach(Array(tiers.enumerated()), id: \.offset) { pair in
+                    let tier = pair.element
                         let active = tier["min_stake"].string == current
                         VStack(spacing: 6) {
                             Circle()
@@ -897,7 +898,7 @@ enum StakingPresentation {
               let apy = plan["apy"].decimal, !apy.isNaN, apy >= 0, plan["plan_days"].int > 0 else { return "方案数据不完整，请重新加载" }
         guard !amount.isEmpty, amount.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }), amount.first != "0", let integer = Int(amount), integer > 0 else { return "请输入有效的质押数量" }
         let stepValue = Int(truncating: (plan["step_amount"].decimal ?? Decimal(increment)) as NSDecimalNumber)
-        if stepValue > 1, integer % stepValue != 0 { return "质押数量必须是 \(amount(String(stepValue))) 的整数倍" }
+        if stepValue > 1, integer % stepValue != 0 { return "质押数量必须是 \(StakingPresentation.amount(String(stepValue))) 的整数倍" }
         let value = Decimal(integer)
         guard value >= minimumAmount else { return "低于该方案的最低质押数量" }
         guard let balance, !balance.isNaN, balance >= 0, let activeTotal, !activeTotal.isNaN, activeTotal >= 0 else { return "余额或质押记录尚未完整读取，请刷新" }
@@ -1012,7 +1013,7 @@ struct StakingRecordDetailView: View {
         do {
             let data = try await APIClient.shared.get("staking.detail", ["id": String(recordID)])
             guard data["id"].int > 0 else { throw APIError.server(404, "质押记录不存在") }
-            detail = data
+            detail = data.record
         } catch is CancellationError {
             return
         } catch {
@@ -1041,9 +1042,9 @@ extension StakingView {
             ("全部", maxAmount)
         ]
         HStack(spacing: 6) {
-            ForEach(Array(options.enumerated()), id: \.offset) { _, item in
-                let label = item.0
-                let value = item.1
+            ForEach(Array(options.enumerated()), id: \.offset) { pair in
+                let label = pair.element.0
+                let value = pair.element.1
                 Button {
                     let rounded = Int(truncating: NSDecimalNumber(decimal: value))
                     guard rounded > 0 else { error = "可质押余额不足"; return }
@@ -1072,7 +1073,7 @@ extension StakingView {
 
     /// 方案卡点「立即质押」后弹出的简化表单
     var stakeQuickForm: some View {
-        NavigationStack {
+        SPXNavigationContainer {
             SPXDetailPage {
                 if let plan = selectedPlan {
                     SPXPanel("质押方案") {
@@ -1151,7 +1152,7 @@ struct StakingEarningsView: View {
                             if !record["matures_at"].string.isEmpty {
                                 InfoRow(title: "到期时间", value: record["matures_at"].string)
                             }
-                            InfoRow(title: "状态", value: DisplayLabels.transactionStatus(record["status"]))
+                            InfoRow(title: "状态", value: DisplayLabels.transactionStatus(record["status"].string))
                         }
                     }
                 }
