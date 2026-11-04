@@ -201,7 +201,7 @@ struct SettingsView: View {
     @State private var error: String?
     @State private var updateAlert = false
     @State private var updateVersion = ""
-    @State private var updateURL = """"
+    @State private var updateURL = ""
     var body: some View {
         SPXDetailPage {
             SPXPanel("账号与通知") {

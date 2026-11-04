@@ -1,11 +1,11 @@
 {
   "swift_files": 73,
-  "lines": 13686,
+  "lines": 14689,
   "syntax_errors": [],
-  "literal_api_actions": 99,
+  "literal_api_actions": 103,
   "actions_not_found_in_local_backend": [],
   "actions_missing_from_backend_snapshot": [],
-  "api_action_validation_source": "local_backend",
+  "api_action_validation_source": "exported_backend_action_snapshot_not_live_server",
   "policy_resources": [
     "SpxChatIOS\\Resources\\privacy.txt",
     "SpxChatIOS\\Resources\\agreement.txt"
