@@ -155,6 +155,16 @@ def verify_ipa(ipa, settings, build_number):
             raise BuildFailure("Exported IPA does not contain the expected push environment.")
         if "NSAppTransportSecurity" in info:
             raise BuildFailure("Exported IPA unexpectedly relaxes system transport security.")
+        families = info.get("UIDeviceFamily")
+        if families != [1] or any(type(value) is not int for value in families):
+            raise BuildFailure(
+                "Exported IPA must be iPhone-only (UIDeviceFamily=[1]); got {!r}. "
+                "Set TARGETED_DEVICE_FAMILY=1 on the SpxChatIOS target, not only the project.".format(families))
+        orientations = info.get("UISupportedInterfaceOrientations")
+        if orientations != ["UIInterfaceOrientationPortrait"]:
+            raise BuildFailure(
+                "Exported IPA must preserve the portrait-only iPhone configuration "
+                "(UISupportedInterfaceOrientations); got {!r}.".format(orientations))
         embedded = entries[0].removesuffix("Info.plist") + "embedded.mobileprovision"
         if embedded not in package.namelist():
             raise BuildFailure("Exported IPA has no embedded provisioning profile.")
@@ -234,6 +244,7 @@ def build_manual():
         installed.chmod(0o600)
         release = {
             "PRODUCT_BUNDLE_IDENTIFIER": settings["bundleID"], "DEVELOPMENT_TEAM": settings["teamID"],
+            "TARGETED_DEVICE_FAMILY": "1",
             "CODE_SIGN_STYLE": "Manual", "CODE_SIGN_IDENTITY": identity,
             "PROVISIONING_PROFILE_SPECIFIER": settings["name"],
             "OTHER_CODE_SIGN_FLAGS": "--keychain " + shlex.quote(str(keychain)),
@@ -309,6 +320,8 @@ def build_manual():
             "signingMode": "manual",
             "profileExpires": settings["expiration"], "registeredDevices": settings["deviceCount"],
             "signatureVerified": True, "networkTrust": info.get("SPXNetworkTrust"),
+            "deviceFamily": info["UIDeviceFamily"],
+            "supportedOrientations": info["UISupportedInterfaceOrientations"],
             "sourceCommit": os.environ.get("GITHUB_SHA") or os.environ.get("CM_COMMIT", "local"),
             "realDeviceTesting": "not_run"}
         (output / "signing-report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
@@ -392,6 +405,7 @@ def build_automatic():
         release = {
             "PRODUCT_BUNDLE_IDENTIFIER": settings["bundleID"],
             "DEVELOPMENT_TEAM": settings["teamID"],
+            "TARGETED_DEVICE_FAMILY": "1",
             "CODE_SIGN_STYLE": "Automatic",
         }
         signing_info = prepare_signing_info_plist(
@@ -461,6 +475,8 @@ def build_automatic():
             "signingMode": "automatic", "profileExpires": "managed-by-xcode",
             "registeredDevices": 0, "signatureVerified": True,
             "networkTrust": info.get("SPXNetworkTrust"),
+            "deviceFamily": info["UIDeviceFamily"],
+            "supportedOrientations": info["UISupportedInterfaceOrientations"],
             "sourceCommit": os.environ.get("GITHUB_SHA") or os.environ.get("CM_COMMIT", "local"),
             "realDeviceTesting": "not_run"}
         (output / "signing-report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

@@ -1,5 +1,11 @@
 # iOS 版本变更
 
+## 1.0.21 (24) · 2026-11-05
+
+- 修复 App Store 上传 90474：在应用目标级与签名 Release 配置中显式限定 iPhone，保留现有竖屏界面。
+- 导出后检查最终 IPA 的 UIDeviceFamily 和 UISupportedInterfaceOrientations；不匹配时终止构建，签名报告增加实际设备与方向信息。
+- 新增 IPA 设备类型、方向与二进制 plist 回归测试；仍需由 macOS/Xcode 构建并完成 App Store 上传验证。
+
 ## 1.0.21 (22) · 2026-11-04
 
 - 钱包新增 FISS 资产展示、估值、充值/提现与质押支持；质押方案和数量校验按资产规则处理。

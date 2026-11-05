@@ -6,10 +6,6 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    # 1 = 仅 iPhone。改成 "1,2"（通用）时，iPad 必须声明全部四个方向
-    # （UIInterfaceOrientationPortrait / PortraitUpsideDown / LandscapeLeft / LandscapeRight），
-    # 否则 App Store 会报 90474：无效的捆绑包（iPad 多任务处理要求）。
-    TARGETED_DEVICE_FAMILY: "1"
     ENABLE_TESTABILITY: YES
     # Apple Developer team that owns the App ID com.spx.chat.ios.
     DEVELOPMENT_TEAM: VX2SVTNSZ3
@@ -27,9 +23,11 @@ targets:
         buildPhase: resources
     settings:
       base:
+        # Override XcodeGen's target-level iPhone/iPad preset; project-level settings alone lose.
+        TARGETED_DEVICE_FAMILY: "1"
         PRODUCT_BUNDLE_IDENTIFIER: com.spx.chat.ios
         INFOPLIST_FILE: SpxChatIOS/Info.plist
-        CURRENT_PROJECT_VERSION: 23
+        CURRENT_PROJECT_VERSION: 24
         MARKETING_VERSION: 1.0.21
         SWIFT_OBJC_BRIDGING_HEADER: SpxChatIOS/Support/SpxChatIOS-Bridging-Header.h
         CLANG_ENABLE_OBJC_ARC: YES

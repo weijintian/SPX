@@ -21,6 +21,15 @@ class SigningConfigurationTests(unittest.TestCase):
         value.update(changes)
         return value
 
+    def app_info(self, settings, **changes):
+        value = {
+            "CFBundleIdentifier": settings["bundleID"], "CFBundleVersion": "7",
+            "SPXNetworkTrust": "system-public-ip-v1", "UIDeviceFamily": [1],
+            "UISupportedInterfaceOrientations": ["UIInterfaceOrientationPortrait"],
+        }
+        value.update(changes)
+        return value
+
     def test_ad_hoc_identifier_and_device_count(self):
         result = profile_settings(self.profile())
         self.assertEqual(result["bundleID"], "com.example.spx")
@@ -59,7 +68,7 @@ class SigningConfigurationTests(unittest.TestCase):
             target = Path(directory) / "Info.plist"
             prepare_signing_info_plist(source, target, settings)
             info = plistlib.loads(target.read_bytes())
-            info.update(CFBundleIdentifier=settings["bundleID"], CFBundleVersion="7")
+            info.update(CFBundleIdentifier=settings["bundleID"], CFBundleVersion="7", UIDeviceFamily=[1])
             ipa = Path(directory) / "test.ipa"
             with zipfile.ZipFile(ipa, "w") as package:
                 package.writestr("Payload/Test.app/Info.plist", plistlib.dumps(info))
@@ -92,8 +101,7 @@ class SigningConfigurationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             ipa = Path(directory) / "test.ipa"
             with zipfile.ZipFile(ipa, "w") as package:
-                package.writestr("Payload/Test.app/Info.plist", plistlib.dumps({
-                    "CFBundleIdentifier": settings["bundleID"], "CFBundleVersion": "7", "SPXNetworkTrust": "system-public-ip-v1"}))
+                package.writestr("Payload/Test.app/Info.plist", plistlib.dumps(self.app_info(settings)))
                 package.writestr("Payload/Test.app/embedded.mobileprovision", b"fixture")
             self.assertEqual(verify_ipa(ipa, settings, "7")["CFBundleVersion"], "7")
             with self.assertRaises(BuildFailure):
@@ -108,7 +116,7 @@ class SigningConfigurationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             ipa = Path(directory) / "test.ipa"
             for environment in [None, "development", "production"]:
-                info = {"CFBundleIdentifier": settings["bundleID"], "CFBundleVersion": "7", "SPXNetworkTrust": "system-public-ip-v1"}
+                info = self.app_info(settings)
                 if environment:
                     info["SPXPushEnvironment"] = environment
                 with zipfile.ZipFile(ipa, "w") as package:
@@ -125,8 +133,7 @@ class SigningConfigurationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             ipa = Path(directory) / "test.ipa"
             with zipfile.ZipFile(ipa, "w") as package:
-                package.writestr("Payload/Test.app/Info.plist", plistlib.dumps({
-                    "CFBundleIdentifier": settings["bundleID"], "CFBundleVersion": "7", "SPXNetworkTrust": "system-public-ip-v1"}))
+                package.writestr("Payload/Test.app/Info.plist", plistlib.dumps(self.app_info(settings)))
             with self.assertRaises(BuildFailure):
                 verify_ipa(ipa, settings, "7")
 
@@ -142,6 +149,51 @@ class SigningConfigurationTests(unittest.TestCase):
                     package.writestr("Payload/Test.app/embedded.mobileprovision", b"fixture")
                 with self.assertRaises(BuildFailure):
                     verify_ipa(ipa, settings, "7")
+
+    def test_exported_ipa_rejects_wrong_or_missing_device_family(self):
+        settings = profile_settings(self.profile())
+        with tempfile.TemporaryDirectory() as directory:
+            ipa = Path(directory) / "test.ipa"
+            for family in ([1, 2], [2], [], [True], "1", None):
+                with self.subTest(device_family=family):
+                    info = self.app_info(settings, UIDeviceFamily=family)
+                    if family is None:
+                        info.pop("UIDeviceFamily")
+                    with zipfile.ZipFile(ipa, "w") as package:
+                        package.writestr("Payload/Test.app/Info.plist", plistlib.dumps(info))
+                        package.writestr("Payload/Test.app/embedded.mobileprovision", b"fixture")
+                    with self.assertRaisesRegex(BuildFailure, "UIDeviceFamily"):
+                        verify_ipa(ipa, settings, "7")
+
+    def test_exported_ipa_preserves_portrait_only_orientation(self):
+        settings = profile_settings(self.profile())
+        with tempfile.TemporaryDirectory() as directory:
+            ipa = Path(directory) / "test.ipa"
+            cases = ([], ["UIInterfaceOrientationLandscapeLeft"],
+                     ["UIInterfaceOrientationPortrait", "UIInterfaceOrientationLandscapeRight"],
+                     "UIInterfaceOrientationPortrait", None)
+            for orientations in cases:
+                with self.subTest(orientations=orientations):
+                    info = self.app_info(settings, UISupportedInterfaceOrientations=orientations)
+                    if orientations is None:
+                        info.pop("UISupportedInterfaceOrientations")
+                    with zipfile.ZipFile(ipa, "w") as package:
+                        package.writestr("Payload/Test.app/Info.plist", plistlib.dumps(info))
+                        package.writestr("Payload/Test.app/embedded.mobileprovision", b"fixture")
+                    with self.assertRaisesRegex(BuildFailure, "UISupportedInterfaceOrientations"):
+                        verify_ipa(ipa, settings, "7")
+
+    def test_exported_ipa_accepts_binary_plist_for_portrait_iphone(self):
+        settings = profile_settings(self.profile())
+        with tempfile.TemporaryDirectory() as directory:
+            ipa = Path(directory) / "test.ipa"
+            with zipfile.ZipFile(ipa, "w") as package:
+                package.writestr("Payload/Test.app/Info.plist",
+                                 plistlib.dumps(self.app_info(settings), fmt=plistlib.FMT_BINARY))
+                package.writestr("Payload/Test.app/embedded.mobileprovision", b"fixture")
+            info = verify_ipa(ipa, settings, "7")
+            self.assertEqual(info["UIDeviceFamily"], [1])
+            self.assertEqual(info["UISupportedInterfaceOrientations"], ["UIInterfaceOrientationPortrait"])
 
 if __name__ == "__main__":
     unittest.main()
