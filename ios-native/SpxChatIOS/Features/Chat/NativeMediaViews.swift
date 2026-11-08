@@ -484,7 +484,7 @@ struct DocumentPreview: UIViewControllerRepresentable {
         var outputURL: URL?
         var activatedSession = false
         do {
-            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothHFP])
             try session.setActive(true)
             activatedSession = true
             let url = try MediaFiles.directory(userID: userID, component: "attachments").appendingPathComponent(UUID().uuidString + ".m4a")
