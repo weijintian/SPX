@@ -1,0 +1,15 @@
+{
+    "version" : "1.0",
+    "configurations" : [
+        {
+            "playground" : "standard",
+            "type" : "uni-app:app-ios"
+        },
+        {
+            "customPlaygroundType" : "device",
+            "packageName" : "com.spx.chat",
+            "playground" : "custom",
+            "type" : "uni-app:app-android"
+        }
+    ]
+}

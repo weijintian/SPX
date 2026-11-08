@@ -1,0 +1,2 @@
+8b79a6be5b02255692c32d115cb4c24f6fd06424ea422ea008f7ce6b9c81a2ed  SPX-IM-1.45-release.apk
+1eb94efcc876ce23a7ec81dc613bf1d5cc2852ddc545321aa0647345dce0235c  SPX-MALL-1.45-server-update.zip

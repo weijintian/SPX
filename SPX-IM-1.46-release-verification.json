@@ -1,0 +1,17 @@
+{
+  "versionName": "1.46",
+  "versionCode": 47,
+  "variant": "release",
+  "package": "com.spx.chat",
+  "debuggable": false,
+  "testOnly": false,
+  "sourceFilesCompared": 28,
+  "compiledClassesVerifiedInApk": 183,
+  "zipAlignmentVerified": true,
+  "sizeBytes": 9615187,
+  "sha256": "05e3d24808821447ee2f2441e7910a18ba50e9c8dd2bb162062c9458cf188fb7",
+  "artifact": "C:\\Users\\雷神\\Documents\\HBuilderProjects\\SPX聊天\\SPX-IM-1.46-release.apk",
+  "signingCertificateSha256": "776718a739e05447b4be92a46fb822b8ecc946aee334bc7b81d0eba009f68aa5",
+  "originalReleaseCertificateVerified": true,
+  "standardOutputUpdated": true
+}

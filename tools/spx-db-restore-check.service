@@ -1,0 +1,9 @@
+[Unit]
+Description=每周 SPX IM 数据库恢复演练（验证备份可用）
+After=mysql.service mariadb.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/spx-db-restore-check.sh
+Nice=15
+TimeoutStartSec=1800

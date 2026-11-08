@@ -1,0 +1,396 @@
+   150 private MallCommerce commerce(){if(commerce==null)commerce=new MallCommerce(this);return commerce;}
+   163 private void rememberPage() {
+   168 private boolean restorePreviousPage() {
+   194 void mallShow(LinearLayout root){showingCommerce=true;try{openSubPage(root,2);}finally{showingCommerce=false;}}
+   195 void mallBeforeNavigation(){
+   199 void mallExit(){currentCommercePage=false;if(restorePreviousPage())return;subPageOpen=false;setBottomNavVisible(true);renderTab(activeTab);}
+   200 int mallUserId(){return currentUserId;}
+   201 void mallContact(JSONObject shop){openMerchantContact(shop);}
+   202 void mallShop(int id){openShopPage(id);}
+   203 void mallPin(LinearLayout body,View button){
+   268 private final Runnable presenceHeartbeat = new Runnable() {
+   276 private final Runnable periodicUpdateCheck = new Runnable() {
+   303 protected void onCreate(Bundle savedInstanceState) {
+   350 private boolean validProductLink(Uri link) {
+   354 void mallJoinGroup(JSONObject group) {
+   357 public void onSuccess(Object result){if(result instanceof JSONObject){commerce.externalPage();openChatWindow(0,((JSONObject)result).optInt("group_id"),group.optString("name","?????
+   358 public void onError(String message){toast(message);}
+   363 private ChatExperience chatTools() {
+   367 void mallShareProduct(JSONObject product) { chatTools().shareProduct(product); }
+   368 private void productMessageLinks(TextView view,String content) { ChatLinks.bind(this,view); }
+   369 private String productPreview(String content) {
+   372 private View addProductCard(LinearLayout parent,boolean mine,String sender,String avatarUrl,String raw) {
+   388 private void readSharedProduct(Intent intent) {
+   397 private void openPendingSharedProduct() {
+   405 private void showSplashPage() {
+   433 private void continueAfterSplash() {
+   478 private void showAuthLoading() {
+   486 private void showAuthenticationPage() {
+   495 private void renderAuthenticationPage() {
+   540 private void buildLoginForm(LinearLayout page, TextView status) {
+   565 private void openForgotPasswordPage() {
+   625 private void buildRegisterForm(LinearLayout page, TextView status) {
+   695 private ApiClient.Callback authCallback(View submit, TextView status) {
+   724 private void startCodeCountdown(TextView button, int seconds) {
+   749 private void syncDeviceInfo() {
+   762 private void startPresenceTracking() {
+   769 private void updatePresence(boolean online) {
+   780 private void addAuthStatus(LinearLayout page, TextView status) {
+   786 private void showAuthError(TextView status, String message) {
+   791 private TextView authPrimaryButton(String label) {
+   798 private LinearLayout.LayoutParams authButtonParams() {
+   805 public void onBackPressed() {
+   826 protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+   916 private void handleScannedCode(String value) {
+   935 private void openScannedUser(String spxId) {
+   960 private void decodeQrFromImage(Uri uri) {
+   992 public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+  1011 private void uploadAvatar(Uri uri) {
+  1025 private void uploadChatMedia(Uri uri) {
+  1037 private View showPendingMediaBubble(Uri uri) {
+  1056 private void removePendingMediaBubble() {
+  1065 private void requestCamera(int requestCode) {
+  1076 private void launchCamera(int requestCode) {
+  1102 private boolean startVoiceRecording() {
+  1132 private void finishVoiceRecording(boolean send) {
+  1158 private void releaseVoiceRecorder() {
+  1165 private void buildApp() {
+  1244 private void createChatNotificationChannel() {
+  1252 private void requestChatNotificationPermission() {
+  1258 private void showChatNotification(JSONObject message, int chatId, int groupId) {
+  1281 private void showIncomingMessageBanner(JSONObject message, int chatId, int groupId) {
+  1329 private TextView navItem(String icon, String label) {
+  1343 private void setBottomNavVisible(boolean visible) {
+  1348 private void switchTab(int tab) {
+  1367 private void renderTab(int tab) {
+  1388 private View userAvatarView(int size) {
+  1430 private void saveRemoteAvatar(String url, boolean refresh) {
+  1437 private File avatarCacheFile(String url) {
+  1441 private void invalidateAvatarCache(String url) {
+  1446 private String resolveAssetUrl(String value) {
+  1465 private void loadAvatarInto(ImageView image, String url) {
+  1509 private void chooseAvatar() {
+  1516 private void openImagePicker(int requestCode) {
+  1520 private void chooseChatBackground() {
+  1524 private JSONArray loadAreaData() {
+  1540 private String[] areaNames(JSONArray items) {
+  1546 private JSONArray areaChildren(JSONArray items, int index) {
+  1552 private int areaIndex(JSONArray items, String name) {
+  1559 private void showQrDialog(String value) {
+  1597 private void openProfileEditPage() {
+  1648 private void copyText(String value, String label) {
+  1655 private void openEmailRegisterPage() {
+  1764 private ScrollView pageScroll(LinearLayout page) {
+  1774 private LinearLayout page() {
+  1785 void replaceRows(LinearLayout source) {
+  1790 void appendRows(LinearLayout source) {
+  1810 private ListView createPageList(LinearLayout page, ViewRowsAdapter adapter) {
+  1824 private void buildChatPage() {
+  1929 private void syncChatHome() {
+  1995 private void renderChatSnapshot(LinearLayout page, JSONArray items, boolean replace, String filter, ViewRowsAdapter adapter) {
+  2075 private String conversationTime(JSONObject item) {
+  2082 private String cachedGroupName(int groupId) {
+  2100 private String chatListDisplaySignature(JSONArray snapshot) {
+  2115 private void refreshVisibleChatList() {
+  2121 private void saveChatListStateBeforeOpen() {
+  2129 private void restoreChatListStateIfUnchanged() {
+  2137 private String chatListSortSignature(JSONArray snapshot) {
+  2156 private String normalizeOptionalText(String value) {
+  2163 private JSONArray readCachedArray(String key) {
+  2168 private void updateCachedContactRemark(int userId, String remark) {
+  2179 private void updateCachedPresence(int userId, boolean online) {
+  2200 private void removeCachedContact(int userId) {
+  2210 private String userProfileCacheKey(int userId) {
+  2214 private JSONObject readCachedUserProfile(int userId) {
+  2221 private void cacheUserProfile(JSONObject profile) {
+  2231 private void loadUserProfile(int userId, UserProfileCallback callback) {
+  2253 private void removeLoadingNote(LinearLayout page) {
+  2257 private String shortChatTime(String value) {
+  2263 private String formatBeijingMessageTime(String value) {
+  2291 private String formatAmount(String value) {
+  2298 private String formatUsd(java.math.BigDecimal value) {
+  2302 private String formatUsdPrice(double value) {
+  2306 private String formatPrice(String value) {
+  2312 private void loadSpx001UsdPrice(UsdPriceCallback callback) {
+  2322 private void addChat(LinearLayout parent, String avatar, String name, String message, String time, String status, String unread, String c1, String c2) {
+  2326 private void addChat(LinearLayout parent, int chatId, int groupId, String name, String avatar, String message, String time, String status, String unread, String c1, String c2) {
+  2330 private void addChat(LinearLayout parent, int chatId, int groupId, String name, String avatar, String message, String time, String status, String unread, String c1, String c2, bool
+  2334 private void addChat(LinearLayout parent, int chatId, int groupId, String name, String avatar, String message, String time, String status, String unread, String c1, String c2, bool
+  2338 private void addChat(LinearLayout parent, int chatId, int groupId, String name, String avatar, String message, String time, String status, String unread, String c1, String c2, bool
+  2343 private LinearLayout createChatRow(int chatId, int groupId, String name, String avatar, String message, String time, String status, String unread, String c1, String c2, boolean pin
+  2387 private TextView statusTag(String label, int color) {
+  2397 private void showConversationQuickActions(int chatId, int groupId, String name, String avatar, String status, String c1, String c2, boolean pinned, boolean muted) {
+  2428 private void buildContactsPage() {
+  2572 private void addContactGroupRow(LinearLayout parent, JSONObject group) {
+  2605 private void addContact(LinearLayout parent, String avatarText, String name, String statusText, String status, String c1, String c2) {
+  2609 private void addContact(LinearLayout parent, int userId, String avatarText, String name, String statusText, String status, String c1, String c2, String spxId, String avatarUrl, boo
+  2613 private void addContact(LinearLayout parent, int userId, String avatarText, String name, String statusText, String status, String c1, String c2, String spxId, String avatarUrl, boo
+  2649 private void showContactDetail(int userId, String nickname, String spxId, String avatarUrl, boolean isContact) {
+  2657 private void openFriendProfilePage(JSONObject profile) {
+  2791 private TextView addProfileFact(LinearLayout parent, String label, String value, Runnable action) {
+  2808 private void clearFriendConversationHistory(int peerId) {
+  2822 private void deleteFriend(int peerId) {
+  2842 private void renderContactDetail(JSONObject profileData) {
+  2846 private void buildEcoPage() {
+  2855 private void openAdRewardPage() {
+  2900 private void addEcoCard(LinearLayout parent, String icon, String title, String desc, String badge, int color, Runnable action) {
+  2935 private void buildProfilePage() {
+  2986 private void addProfileMenu(LinearLayout parent, String icon, String title, String desc, Runnable action) {
+  3007 private void openChatWindow(String name, String avatarText, String status, boolean group, String c1, String c2) {
+  3079 private int findChatPeerUserId(int chatId) {
+  3089 private void openChatWindow(int chatId, int groupId, String name, String avatarText, String status, String c1, String c2) {
+  3093 private void openChatWindow(int chatId, int groupId, String name, String avatarText, String status, String c1, String c2, int peerUserId) {
+  3286 public void beforeTextChanged(CharSequence value,int start,int count,int after) {}
+  3287 public void onTextChanged(CharSequence value,int start,int before,int count) {
+  3290 public void afterTextChanged(Editable value) {}
+  3329 private void connectChatSocket(LinearLayout list, ScrollView scroll, String name, String avatarText, String c1, String c2) {
+  3337 private void scheduleChatHistoryRefresh(LinearLayout list,ScrollView scroll,String name,String avatarText,String c1,String c2){
+  3347 private void startRealtimeSocket() {
+  3451 private void markChatRead(int chatId) {
+  3460 private void markConversationRead(int chatId, int groupId) {
+  3487 private String chatSnapshotKey() { return "chat_snapshot_" + currentUserId; }
+  3489 private void invalidateChatSnapshot() {
+  3493 private void removeRealtimeConversation(int chatId, String reason) {
+  3509 private void exitUnavailableGroup() {
+  3518 private void removeRealtimeGroup(int groupId) {
+  3537 private void handleRemoteProfileUpdate(JSONObject event) {
+  3576 private void refreshActiveChatAvatars(View view, int peerId, String avatarUrl) {
+  3596 private JSONArray readChatSnapshot() {
+  3601 private void storeChatSnapshot(JSONArray snapshot) {
+  3614 private void setCachedConversationUnread(int chatId, int groupId, int unread) {
+  3628 private void updateCachedConversation(JSONObject event, JSONObject message, boolean incrementUnread) {
+  3681 private boolean isConversationMuted(int chatId, int groupId) {
+  3692 private void updateRealtimeMessage(JSONObject event) {
+  3707 private void removeRealtimeMessage(JSONObject event) {
+  3724 private void refreshChatListIfVisible() {
+  3728 private void updateChatNavUnread() {
+  3738 private void loadChatHistory(LinearLayout list, ScrollView scroll, String name, String avatarText, String c1, String c2, int generation) {
+  3785 private void renderChatMessage(JSONObject message, LinearLayout list, ScrollView scroll, String name, String avatarText, String c1, String c2) {
+  3789 private void renderChatMessage(JSONObject message, LinearLayout list, ScrollView scroll, String name, String avatarText, String c1, String c2, boolean persist) {
+  3919 private boolean isCurrentUserMentioned(JSONObject message) {
+  3926 private void applyQuoteHighlight(TextView view, String content) {
+  3937 private View addGroupShareCard(LinearLayout parent, boolean mine, String senderName, String senderAvatarUrl, JSONObject group) {
+  3979 private void closeChatSocket() {
+  3992 private boolean isMessageScrollAtBottom() {
+  3999 private void showNewMessagesButton() {
+  4003 private void hideNewMessagesButton() {
+  4007 private void scrollMessagesToBottom() {
+  4017 private void playMessageTone() {
+  4024 private TextView addVoiceMessage(LinearLayout parent, String url, String label, boolean mine, String avatarUrl) {
+  4077 private void downloadVoiceFile(String url, File destination, TextView bubble, String durationLabel, boolean[] playerReady, boolean[] loading) {
+  4122 private void startVoicePlayback(TextView bubble, File file, String durationLabel, boolean[] playerReady) {
+  4167 private void stopActiveVoicePlayback() {
+  4181 private void showMessageActions(JSONObject message, View messageView, boolean mine, boolean media) {
+  4207 private void removeMessageBlock(View messageView) {
+  4215 private void hideLocalMessage(JSONObject message, View messageView) {
+  4229 private void editChatMessage(JSONObject message, View messageView) {
+  4258 private void deleteChatMessage(JSONObject message, View messageView) {
+  4346 private void showEmojiPanel(LinearLayout panel, EmojiAction action) {
+  4365 private void showChatMorePanel(LinearLayout panel) {
+  4384 private void addChatMoreAction(LinearLayout parent, LinearLayout panel, String label, String icon, Runnable action) {
+  4395 private void chooseChatMedia() {
+  4398 private void chooseChatMedia(String mime) {
+  4404 private FrameLayout addMediaMessage(LinearLayout parent, String url, String type, boolean mine, String sender, String avatarText, String c1, String c2, String avatarUrl) {
+  4480 private void showCachedMedia(FrameLayout preview, TextView placeholder, File file, String type, String url) {
+  4578 private Bitmap decodeBitmap(File file, int maxWidth, int maxHeight) {
+  4589 private void sendUploadedMedia(JSONObject upload) {
+  4630 private TextView addMessage(LinearLayout parent, String name, String avatarText, String c1, String c2, String message, boolean mine) {
+  4634 private TextView addMessage(LinearLayout parent, String name, String avatarText, String c1, String c2, String message, boolean mine, String avatarUrl) {
+  4658 private void applyChatBackground(ScrollView messages) {
+  4690 private void closeChatWindow() {
+  4703 private void openAskWindow() {
+  4777 private void addQuestion(LinearLayout parent, String question, String answer, String tag) {
+  4794 private void closeAskWindow() {
+  4800 private LinearLayout subPageRoot(String title, String subtitle) {
+  4824 private void openSubPage(LinearLayout root, int tab) {
+  4839 private void closeSubPage() {
+  4853 private String mallValue(JSONObject obj, String key) {
+  4857 private TextView mallAction(LinearLayout parent, String label, Runnable action) {
+  4869 private LinearLayout merchantCard(String title, String hint) {
+  4884 private void merchantMetric(LinearLayout parent, String label, String value) {
+  4888 private void merchantMetric(LinearLayout parent, String label, String value, Runnable action) {
+  4906 private void merchantShortcut(LinearLayout parent, String icon, String label, Runnable action) {
+  4922 private EditText mallField(LinearLayout parent, String label, String value, boolean multiline) {
+  4936 private LinearLayout mallBody(LinearLayout page) {
+  4945 private void mallPost(String action, JSONObject request, TextView button, Runnable done) {
+  4953 private JSONObject mallRequest(String key, Object value) {
+  4959 private String mallStatus(String status) {
+  4977 private void openMerchantCenter() {
+  5058 private void confirmMerchantDeposit(String level) {
+  5065 private void openMerchantForm(JSONObject shop, boolean application) {
+  5068 LinearLayout mallMerchantPage(String title) {
+  5075 void mallMerchantDone() { merchantForm=null; openMerchantCenter(); }
+  5076 void mallMerchantMap(EditText lat, EditText lon, String[] systems, Runnable done) {
+  5080 private void openShopMapPicker(EditText lat, EditText lon, String[] systems, Runnable done) {
+  5115 private void openShopPage(int id) { openShopPage(id,1); }
+  5116 private void openShopPage(int id,int pageNo) {
+  5150 private void renderShopCard(LinearLayout body, JSONObject shop, boolean link) {
+  5186 private void openShopsPage() {
+  5237 private void openMerchantContact(JSONObject shop) {
+  5248 private void openMerchantProducts() { commerce().merchantProducts(); }
+  5250 private JSONArray mallUrlLines(String text) {
+  5256 private String mallLines(JSONArray list) {
+  5263 private void openMerchantProductForm(JSONObject product) { commerce().editProduct(product); }
+  5268 private void pickMallImage(EditText target) {
+  5273 private void openMerchantOrders() { commerce().merchantOrders(); }
+  5275 private void merchantFulfillDialog(JSONObject order) {
+  5292 private void addBuyerMallActions(LinearLayout body, JSONObject order) {
+  5310 private void openStorePage() {
+  5512 private TextView mallText(String text, int size, int color, boolean bold) {
+  5522 private void addMallShortcut(LinearLayout parent, String title, String subtitle, boolean merchant, Runnable action) {
+  5552 private void styleMallFilter(TextView button, boolean selected) {
+  5561 private LinearLayout mallShopTile(JSONObject shop, boolean compact) {
+  5599 private String mallProductTypeLabel(String type) {
+  5606 private void mallEmptyState(LinearLayout target, String title, String description) {
+  5619 private void mallProductSkeleton(LinearLayout target) {
+  5639 private void loadMallProducts(LinearLayout target, JSONArray[] loaded, String query) {
+  5644 private void loadMallProductPage(LinearLayout target, JSONArray[] loaded, String query,int page) {
+  5668 private void renderMallProductCards(LinearLayout target, JSONArray products, int columns) {
+  5701 private void addProduct(LinearLayout parent, String name, String desc, String price, String actionText, String imageUrl, int columns) {
+  5705 private void addProduct(LinearLayout parent, int productId, String name, String desc, String price, String actionText, String imageUrl, int columns) {
+  5709 private void addMallProduct(LinearLayout parent, JSONObject product, int columns) {
+  5714 private void addProduct(LinearLayout parent, int productId, String name, String desc, String price, String actionText, String imageUrl, int columns, JSONObject product) {
+  5790 private ImageView productImage(String imageUrl) {
+  5794 private void openProductDetail(String name, String desc, String price, String imageUrl) {
+  5798 private void openProductDetail(int productId, String name, String desc, String price, String imageUrl) {
+  5820 private void renderProductDetail(JSONObject product) { commerce().product(product); }
+  5822 private void loadCheckoutAddresses(TextView target, JSONObject[] selectedAddress) {
+  5855 private int addressIndex(ArrayList<JSONObject> addresses, int addressId) {
+  5860 private void updateCheckoutAddressLabel(TextView target, JSONObject address) {
+  5866 private void openStakingPage() {
+  5997 private void addStakePlan(LinearLayout parent, JSONObject plan) {
+  6022 private void addRecord(LinearLayout parent, JSONObject record, String title, String amount, String income) {
+  6041 private void showStakeRecordDetails(JSONObject record) {
+  6053 private void showStakeDialog(JSONObject plan) {
+  6073 private void showStakeDialog(JSONObject plan, String availableStakeable) {
+  6130 private void openWalletPage() {
+  6250 private void openWalletTransactionsPage(String symbol) {
+  6362 private int walletTransactionDirection(String type) {
+  6368 private String displayAssetSymbol(String symbol) {
+  6372 private String walletTransactionLabel(String type) {
+  6392 private String walletTransactionStatusLabel(String status) {
+  6402 private void addWalletAction(LinearLayout parent, String label, int color, Runnable action) {
+  6412 private String walletBindingKey() { return "wallet_bsc_binding_" + currentUserId; }
+  6414 private void showBindBscWalletDialog() {
+  6448 private void addToken(LinearLayout parent, String symbol, String amount, String value, String quote, String stakeableAmount) {
+  6494 private void showExchangeDialog() {
+  6611 private void showTransferDialog(String action) {
+  6615 private void showTransferDialog(String action, String initialAsset) {
+  6631 private void showTransferDialog(String action, String initialAsset, String boundAddress) {
+  6779 private void showWalletTransferSheet(String title, String actionLabel, View form, WalletTransferSubmit submit) {
+  6824 private void showAddressDialog() {
+  6828 private void openOrdersPage() { commerce().orders(); }
+  6830 private void openAddressPage() { commerce().addresses(null); }
+  6832 private EditText formInput(String hint, String value) {
+  6848 private GradientDrawable inputBackground(boolean focused) {
+  6854 private NumberPicker picker(String[] values, String selected) {
+  6870 private void addOrder(LinearLayout parent, String name, String price, String status) {
+  6874 private void addOrder(LinearLayout parent, int orderId, String name, String price, String status) {
+  6902 private void openAddFriendPage() {
+  6944 private void openCreateGroupPage() {
+  7014 private void openScanPage() {
+  7038 private void openBenefitsPage() {
+  7049 private void addBenefit(LinearLayout parent, String title, String desc, String status) {
+  7063 private void openHelpPage() {
+  7102 private void openInvitePage() {
+  7220 private void loadSupportTickets(LinearLayout body) {
+  7249 private void openSecurityPage() {
+  7253 private void openSettingsPage() {
+  7268 private void clearSession() {
+  7288 private void addSettingsSection(LinearLayout parent, String title, String[] items) {
+  7330 private int installedVersionCode() {
+  7340 private void checkAppUpdate(boolean manual) {
+  7370 private void showAppUpdatePrompt(JSONObject release) {
+  7384 private void openAppUpdatePage(JSONObject release) {
+  7432 private void startAppUpdateDownload(JSONObject release, ProgressBar progress, TextView status, TextView button) {
+  7499 private String sha256File(File file) {
+  7513 private void installDownloadedApk(File apk) {
+  7539 private void openUpdateHistoryPage() {
+  7586 private void showAboutDialog() {
+  7595 private void showLanguageDialog() {
+  7610 private void refreshForLanguageChange() {
+  7627 private void showChangePasswordDialog() {
+  7680 private void showAgreementDialog() {
+  7685 private void clearDirectory(java.io.File directory) {
+  7694 private void openSimpleSettingsPage(String title, String[] items) {
+  7705 private void showActionSheet() {
+  7721 private void showRemarkDialog(String defaultValue, TextView target, String remarkKey, int peerId, boolean contactLabel) {
+  7753 private void openConversationDetail(String name, String avatarText, String status, boolean group, String c1, String c2) {
+  7850 private void loadChatSettings(int chatId, Switch mute, Switch pinned) {
+  7855 private void bind() {
+  7874 private void saveChatSetting(int chatId, String key, boolean value) {
+  7892 private int cachedGroupSetting(int groupId, String key) {
+  7901 private void saveGroupSetting(int groupId, String key, boolean value) {
+  7919 private void openMessageSearchPage(int chatId, int groupId, String conversationName) {
+  7978 private void openGroupDetailPage(String name, String avatarText, String c1, String c2) {
+  7982 private String groupDetailCacheKey(int groupId) { return "group_detail_" + currentUserId + "_" + groupId; }
+  7984 private void cacheGroupDetail(JSONObject group) {
+  8016 private void openGroupDetailPage(String name, String avatarText, String c1, String c2, boolean refresh) {
+  8214 private void refreshGroupDetail(String name, String avatarText, String c1, String c2, JSONObject displayed) {
+  8231 private void addGroupMember(ViewGroup parent, int userId, String name, String avatarUrl, String role, boolean canViewDetails) {
+  8261 private void addGroupSwitch(LinearLayout parent, String label, boolean checked, String key) {
+  8287 private void saveGroupPrivacy(String key, boolean value) {
+  8296 private void showGroupQrDialog(String groupCode, String groupName, String avatarUrl, int memberCount) {
+  8335 private void showFindGroupDialog() {
+  8346 private void joinGroupByCode(String value) {
+  8398 private void showFriendPicker(String title, String actionLabel, JSONArray contacts, FriendPickerCallback callback) {
+  8471 private void showGroupShareDialog() {
+  8479 void sharedGroupCardSent(int chatId, int groupId, JSONObject target, JSONObject result) {
+  8506 private void cacheSharedGroupConversation(int chatId, JSONObject contact, JSONObject message) {
+  8537 private void showTransferGroupOwnerDialog() {
+  8570 private void dissolveActiveGroup() {
+  8592 private void clearGroupDetailCache(int groupId) {
+  8596 private void updateActiveGroupTitle() {
+  8617 private void updateGroupMemberCount(int groupId, int count) {
+  8634 private void refreshGroupInfo(int groupId) {
+  8639 public void onSuccess(Object data) { if (userId == currentUserId && data instanceof JSONObject) { cacheGroupDetail((JSONObject)data); refreshVisibleChatList(); } }
+  8640 public void onError(String error) { }
+  8644 private void showGroupAnnouncementOnEntry(int groupId) {
+  8664 private void showGroupMemberInfo(int groupId, int userId) {
+  8701 private void addGroupMenu(LinearLayout parent, String title, String value, Runnable action) {
+  8707 private LinearLayout groupTextRow(String title, String value, boolean arrow) {
+  8719 private void editGroupField(String title, String value) {
+  8753 private void showGroupMembersDialog() {
+  8816 private void showGroupMemberActions(int groupId, JSONObject member) {
+  8848 private boolean isCurrentGroupOwner() {
+  8853 private void showGroupAdminDialog() { showGroupMembersDialog(); }
+  8855 private void showAddGroupMembersDialog() {
+  8899 private void chooseGroupAvatar() {
+  8903 private LinearLayout settingRow(String icon, String label, boolean arrow) {
+  8915 private LinearLayout settingSwitchRow(String label, boolean checked) {
+  8926 private void showChatBackgroundDialog() {
+  8945 private void addDialogAction(LinearLayout box, String icon, String title, String desc, Runnable action) {
+  8963 private void showBottomDialog(LinearLayout box) {
+  8984 private void showTopActionDialog(LinearLayout box) {
+  9009 private LinearLayout dialogBox() {
+  9152 private void line(Canvas canvas, float x1, float y1, float x2, float y2) {
+  9157 private TextView title(String text) { TextView v=bodyText(text, 27, TEXT); v.setTypeface(android.graphics.Typeface.create("sans-serif-medium", 0)); return v; }
+  9158 private LinearLayout headerTitle(String title, String sub) {
+  9167 private EditText search(String hint) {
+  9183 private View avatarWithRemoteImage(String text, String url, String start, String end, int size) {
+  9200 private String groupAvatarInitial(String name) {
+  9207 private String avatarFallbackText(String text) {
+  9213 private TextView avatar(String text, String start, String end, int size) {
+  9223 private TextView circleButton(String text) {
+  9232 private TextView badge(String text) {
+  9239 private TextView note(String text) { return centeredText(text, 12, Color.rgb(154, 166, 181)); }
+  9240 private TextView section(String text) {
+  9246 private LinearLayout roundCard() {
+  9253 private LinearLayout stakingMetric(String label, TextView value) {
+  9263 private String resolveAppLanguage() {
+  9275 private String languageDisplayName() {
+  9283 private String tr(String text) {
+  9292 private String t(String key, Object... args) {
+  9296 private TextView bodyText(String text, int size, int color) {
+  9316 private TextView centeredText(String text, int size, int color) {
+  9322 private LinearLayout row() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.HORIZONTAL); l.setGravity(Gravity.CENTER_VERTICAL); return l; }
+  9323 private LinearLayout column() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL); return l; }
+  9324 private View separator() { View v = new View(this); v.setBackgroundColor(Color.rgb(240, 242, 245)); return v; }
+  9325 private View space(int width) { View v = new View(this); v.setLayoutParams(new LinearLayout.LayoutParams(dp(width), 1)); return v; }
+  9326 private int dp(int value) { return (int) (value * getResources().getDisplayMetrics().density + 0.5f); }
+  9328 private GradientDrawable round(int color, int radius) { GradientDrawable d = new GradientDrawable(); d.setColor(color); d.setCornerRadius(dp(radius)); return d; }
+  9329 private GradientDrawable stroke(int fill, int line, int radius, int width) { GradientDrawable d = round(fill, radius); d.setStroke(dp(width), line); return d; }
+  9330 private GradientDrawable gradient(String start, String end, int radius) { GradientDrawable d = new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{Color.parseColor(s
+  9331 private int statusColor(String status) { return status.equals("online") ? Color.rgb(46, 204, 113) : status.equals("busy") ? Color.rgb(243, 156, 18) : MUTED; }
+  9332 private String statusLabel(String status) { return status.equals("online") ? t("online") : status.equals("busy") ? t("busy") : t("offline"); }
+  9333 private void toast(String message) { Toast.makeText(this, tr(message), Toast.LENGTH_SHORT).show(); }

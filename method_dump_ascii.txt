@@ -1,0 +1,251 @@
+
+=== renderTab ===
+    void mallExit(){currentCommercePage=false;if(restorePreviousPage())return;subPageOpen=false;setBottomNavVisible(true);renderTab(activeTab);}
+    int mallUserId(){return currentUserId;}
+
+=== buildChatPage ===
+            } else buildChatPage();
+        }
+        else if (tab == 1) buildContactsPage();
+        else if (tab == 2) buildEcoPage();
+        else buildProfilePage();
+    }
+
+    private View userAvatarView(int size) {
+        TextView fallback = avatar(userName.substring(0, 1), "#3F5EFB", "#9B5DE5", size);
+        if (!remoteAvatarUrl.isEmpty()) {
+            ImageView image = new ImageView(this);
+            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            image.setBackground(round(Color.WHITE, 50));
+            image.setClipToOutline(true);
+            image.setLayoutParams(new LinearLayout.LayoutParams(dp(size), dp(size)));
+            loadAvatarInto(image, remoteAvatarUrl);
+            return image;
+        }
+        if (userAvatarUri != null) {
+            ImageView image = new ImageView(this);
+            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            GradientDrawable border = new GradientDrawable();
+            border.setColor(Color.WHITE);
+            border.setCornerRadius(dp(50));
+            border.setStroke(dp(3), Color.WHITE);
+            image.setBackground(border);
+            image.setClipToOutline(true);
+            image.setLayoutParams(new LinearLayout.LayoutParams(dp(size), dp(size)));
+            image.post(() -> {
+                java.io.InputStream input = null;
+                try {
+                    input = getContentResolver().openInputStream(userAvatarUri);
+                    android.graphics.drawable.Drawable drawable = android.graphics.drawable.Drawable.createFromStream(input, userAvatarUri.toString());
+                    image.setImageDrawable(drawable);
+                } catch (Exception ignored) {
+                } finally {
+                    if (input != null) {
+                        try {
+                            input.close();
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+            });
+            return image;
+        }
+        return fallback;
+    }
+
+=== buildContactsPage ===
+        else if (tab == 1) buildContactsPage();
+        else if (tab == 2) buildEcoPage();
+        else buildProfilePage();
+    }
+
+    private View userAvatarView(int size) {
+        TextView fallback = avatar(userName.substring(0, 1), "#3F5EFB", "#9B5DE5", size);
+        if (!remoteAvatarUrl.isEmpty()) {
+            ImageView image = new ImageView(this);
+            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            image.setBackground(round(Color.WHITE, 50));
+            image.setClipToOutline(true);
+            image.setLayoutParams(new LinearLayout.LayoutParams(dp(size), dp(size)));
+            loadAvatarInto(image, remoteAvatarUrl);
+            return image;
+        }
+        if (userAvatarUri != null) {
+            ImageView image = new ImageView(this);
+            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            GradientDrawable border = new GradientDrawable();
+            border.setColor(Color.WHITE);
+            border.setCornerRadius(dp(50));
+            border.setStroke(dp(3), Color.WHITE);
+            image.setBackground(border);
+            image.setClipToOutline(true);
+            image.setLayoutParams(new LinearLayout.LayoutParams(dp(size), dp(size)));
+            image.post(() -> {
+                java.io.InputStream input = null;
+                try {
+                    input = getContentResolver().openInputStream(userAvatarUri);
+                    android.graphics.drawable.Drawable drawable = android.graphics.drawable.Drawable.createFromStream(input, userAvatarUri.toString());
+                    image.setImageDrawable(drawable);
+                } catch (Exception ignored) {
+                } finally {
+                    if (input != null) {
+                        try {
+                            input.close();
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+            });
+            return image;
+        }
+        return fallback;
+    }
+
+=== buildEcoPage ===
+        else if (tab == 2) buildEcoPage();
+        else buildProfilePage();
+    }
+
+    private View userAvatarView(int size) {
+        TextView fallback = avatar(userName.substring(0, 1), "#3F5EFB", "#9B5DE5", size);
+        if (!remoteAvatarUrl.isEmpty()) {
+            ImageView image = new ImageView(this);
+            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            image.setBackground(round(Color.WHITE, 50));
+            image.setClipToOutline(true);
+            image.setLayoutParams(new LinearLayout.LayoutParams(dp(size), dp(size)));
+            loadAvatarInto(image, remoteAvatarUrl);
+            return image;
+        }
+        if (userAvatarUri != null) {
+            ImageView image = new ImageView(this);
+            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            GradientDrawable border = new GradientDrawable();
+            border.setColor(Color.WHITE);
+            border.setCornerRadius(dp(50));
+            border.setStroke(dp(3), Color.WHITE);
+            image.setBackground(border);
+            image.setClipToOutline(true);
+            image.setLayoutParams(new LinearLayout.LayoutParams(dp(size), dp(size)));
+            image.post(() -> {
+                java.io.InputStream input = null;
+                try {
+                    input = getContentResolver().openInputStream(userAvatarUri);
+                    android.graphics.drawable.Drawable drawable = android.graphics.drawable.Drawable.createFromStream(input, userAvatarUri.toString());
+                    image.setImageDrawable(drawable);
+                } catch (Exception ignored) {
+                } finally {
+                    if (input != null) {
+                        try {
+                            input.close();
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+            });
+            return image;
+        }
+        return fallback;
+    }
+
+=== buildProfilePage ===
+        else buildProfilePage();
+    }
+
+    private View userAvatarView(int size) {
+        TextView fallback = avatar(userName.substring(0, 1), "#3F5EFB", "#9B5DE5", size);
+        if (!remoteAvatarUrl.isEmpty()) {
+            ImageView image = new ImageView(this);
+            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            image.setBackground(round(Color.WHITE, 50));
+            image.setClipToOutline(true);
+            image.setLayoutParams(new LinearLayout.LayoutParams(dp(size), dp(size)));
+            loadAvatarInto(image, remoteAvatarUrl);
+            return image;
+        }
+        if (userAvatarUri != null) {
+            ImageView image = new ImageView(this);
+            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            GradientDrawable border = new GradientDrawable();
+            border.setColor(Color.WHITE);
+            border.setCornerRadius(dp(50));
+            border.setStroke(dp(3), Color.WHITE);
+            image.setBackground(border);
+            image.setClipToOutline(true);
+            image.setLayoutParams(new LinearLayout.LayoutParams(dp(size), dp(size)));
+            image.post(() -> {
+                java.io.InputStream input = null;
+                try {
+                    input = getContentResolver().openInputStream(userAvatarUri);
+                    android.graphics.drawable.Drawable drawable = android.graphics.drawable.Drawable.createFromStream(input, userAvatarUri.toString());
+                    image.setImageDrawable(drawable);
+                } catch (Exception ignored) {
+                } finally {
+                    if (input != null) {
+                        try {
+                            input.close();
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+            });
+            return image;
+        }
+        return fallback;
+    }
+
+=== openMessageSearchPage ===
+        find.setOnClickListener(v -> openMessageSearchPage(detailChatId, 0, name));
+        body.addView(find);
+        LinearLayout muteRow = settingSwitchRow(t("mute_messages"), false);
+        Switch muteSwitch = (Switch) muteRow.getChildAt(1);
+        body.addView(muteRow);
+        LinearLayout pinRow = settingSwitchRow(t("pin_chat"), false);
+        Switch pinSwitch = (Switch) pinRow.getChildAt(1);
+        body.addView(pinRow);
+        loadChatSettings(detailChatId, muteSwitch, pinSwitch);
+        LinearLayout clear = settingRow("?", t("clear_history"), false);
+        clear.setOnClickListener(v -> new AlertDialog.Builder(this).setMessage(t("clear_chat_confirm", name)).setNegativeButton(t("cancel"), null).setPositiveButton(t("clear_records"), (d, w) -> {
+            if (detailChatId <= 0) { toast(t("conversation_unavailable")); return; }
+            JSONObject request = new JSONObject();
+            try { request.put("chat_id", detailChatId); } catch (Exception ignored) { return; }
+            ApiClient.post(this, "messages.clear", request, new ApiClient.Callback() {
+                @Override public void onSuccess(Object data) {
+                    chatCache.clear("chat", detailChatId);
+                    renderedMessageIds.clear();
+                    renderedMessageViews.clear();
+                    invalidateChatSnapshot();
+                    toast(t("chat_history_cleared"));
+                    closeSubPage();
+                }
+                @Override public void onError(String message) { toast(message); }
+            });
+        }
+
+=== openWalletPage ===
+        addProfileMenu(page, "wallet", t("wallet"), t("wallet_menu_desc"), () -> openWalletPage());
+        addProfileMenu(page, "orders", t("orders"), t("orders_menu_desc"), () -> openOrdersPage());
+        addProfileMenu(page, "orders", "????", "??????????????", () -> openMerchantCenter());
+        String addressSummary = addressName.isEmpty() ? t("address_add_summary") : addressName + " ? " + addressPhone + " ? " + addressProvince + addressCity + addressDistrict;
+        addProfileMenu(page, "address", t("my_address"), addressSummary, () -> openAddressPage());
+        addProfileMenu(page, "stake", t("staking_records"), t("staking_records_desc"), () -> openStakingPage());
+        page.addView(section(t("spx_services")));
+        addProfileMenu(page, "invite", t("invite"), t("invite_menu_desc"), () -> openInvitePage());
+        addProfileMenu(page, "help", t("ask_title"), t("ask_menu_desc"), () -> openAskWindow());
+        addProfileMenu(page, "support", t("support"), t("support_menu_desc"), () -> openHelpPage());
+        page.addView(section(t("general")));
+        addProfileMenu(page, "settings", t("general_settings"), t("settings_menu_desc"), () -> openSettingsPage());
+        try { page.addView(note(t("version_format", getPackageManager().getPackageInfo(getPackageName(), 0).versionName))); }
+
+=== openMerchantCenter ===
+        addProfileMenu(page, "orders", "????", "??????????????", () -> openMerchantCenter());
+        String addressSummary = addressName.isEmpty() ? t("address_add_summary") : addressName + " ? " + addressPhone + " ? " + addressProvince + addressCity + addressDistrict;
+        addProfileMenu(page, "address", t("my_address"), addressSummary, () -> openAddressPage());
+        addProfileMenu(page, "stake", t("staking_records"), t("staking_records_desc"), () -> openStakingPage());
+        page.addView(section(t("spx_services")));
+        addProfileMenu(page, "invite", t("invite"), t("invite_menu_desc"), () -> openInvitePage());
+        addProfileMenu(page, "help", t("ask_title"), t("ask_menu_desc"), () -> openAskWindow());
+        addProfileMenu(page, "support", t("support"), t("support_menu_desc"), () -> openHelpPage());
+        page.addView(section(t("general")));
+        addProfileMenu(page, "settings", t("general_settings"), t("settings_menu_desc"), () -> openSettingsPage());
+        try { page.addView(note(t("version_format", getPackageManager().getPackageInfo(getPackageName(), 0).versionName))); }

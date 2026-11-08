@@ -1,0 +1,56 @@
+const fs=require('fs'),path=require('path');
+const {chromium}=require('playwright');
+let input='';process.stdin.on('data',d=>input+=d);process.stdin.on('end',()=>run(JSON.parse(input)).catch(e=>{console.error(e);process.exitCode=1;}));
+async function run(cfg){
+  const browser=await chromium.launch({headless:true,channel:process.env.SPX_BROWSER_CHANNEL||'msedge'});
+  const page=await browser.newPage({viewport:{width:1440,height:960}}),errors=[];
+  try{
+    page.on('pageerror',e=>errors.push(e.message));
+    await page.route('https://**/*',route=>route.fulfill({status:200,contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j1ioAAAAASUVORK5CYII=','base64')}));
+    await page.goto(cfg.url);
+    await page.locator('[name=username]').fill('seller');await page.locator('[name=password]').fill(cfg.password);await page.getByRole('button',{name:'登录工作台',exact:true}).click();
+    await page.locator('#content').getByRole('heading',{name:/Test Shop/}).waitFor();
+    await page.screenshot({path:path.join(cfg.output,'merchant-overview.png'),fullPage:true});
+    await page.locator('nav').getByRole('button',{name:'商品管理',exact:true}).click();
+    await page.locator('#content table').waitFor();
+    await page.getByRole('button',{name:'发布新商品',exact:true}).click();
+    await page.locator('dialog[open]').waitFor();
+    await page.locator('[name=name]').fill('Browser saved draft');
+    await page.locator('[name=consultation_group_code]').selectOption('ABC123');
+    await page.getByRole('button',{name:'添加规格',exact:true}).click();
+    const sku=page.locator('.sku');await sku.locator('input').nth(0).fill('Red large');await sku.locator('input').nth(1).fill('0.12345678');await sku.locator('input').nth(2).fill('5');await sku.locator('input').nth(3).fill('颜色=红色;尺码=L');
+    if(await page.locator('[name=spx_price]').isEnabled())throw Error('Standard price must be optional with SKUs');
+    if(await page.locator('[name=service_valid_days]').isVisible())throw Error('Local service fields should be hidden for physical goods');
+    await page.getByRole('button',{name:'保存草稿',exact:true}).click();
+    await page.locator('#editor-notice').filter({hasText:'草稿已保存'}).waitFor();
+    await page.screenshot({path:path.join(cfg.output,'merchant-product-editor.png'),fullPage:true});
+    page.once('dialog',d=>d.accept());await page.locator('#close-editor').click();
+    await page.locator('nav').getByRole('button',{name:'商品草稿',exact:true}).click();
+    await page.getByRole('cell',{name:'Browser saved draft',exact:true}).waitFor();
+    await page.getByRole('button',{name:'继续编辑',exact:true}).click();
+    await page.locator('dialog[open]').waitFor();
+    if(await page.locator('[name=name]').inputValue()!=='Browser saved draft')throw Error('Draft did not reload');
+    if(await page.locator('.sku input').nth(1).inputValue()!=='0.12345678')throw Error('SKU precision lost in draft');
+    await page.locator('[name=description]').fill('Complete browser publication');
+    await page.locator('#main-files').setInputFiles({name:'product.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j1ioAAAAASUVORK5CYII=','base64')});
+    await page.locator('#editor-notice').filter({hasText:'图片已上传'}).waitFor();
+    page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'预览并发布商品',exact:true}).click();
+    await page.locator('dialog[open]').waitFor({state:'hidden'});
+    const published=page.locator('#content tr').filter({hasText:'Browser saved draft'});await published.waitFor();
+    page.once('dialog',d=>d.accept());await published.getByRole('button',{name:'下架',exact:true}).click();
+    await page.locator('#notice').filter({hasText:'正在加载'}).waitFor({state:'hidden'});
+    await page.locator('nav').getByRole('button',{name:'商品草稿',exact:true}).click();await page.locator('#content .empty').waitFor();
+    await page.locator('nav').getByRole('button',{name:'商品管理',exact:true}).click();await page.getByRole('button',{name:'发布新商品',exact:true}).click();
+    await page.locator('[name=name]').fill('Browser saved draft');await page.getByRole('button',{name:'保存草稿',exact:true}).click();await page.locator('#editor-notice').filter({hasText:'草稿已保存'}).waitFor();
+    page.once('dialog',d=>d.accept());await page.locator('#close-editor').click();
+    await page.locator('nav').getByRole('button',{name:'商品草稿',exact:true}).click();await page.getByRole('cell',{name:'Browser saved draft',exact:true}).waitFor();
+    page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'删除',exact:true}).click();
+    await page.locator('#content .empty').waitFor();
+    await page.setViewportSize({width:390,height:844});await page.locator('nav').getByRole('button',{name:'店铺与保证金',exact:true}).click();
+    await page.locator('#content').getByRole('heading',{name:'店铺与保证金',exact:true}).waitFor();
+    await page.screenshot({path:path.join(cfg.output,'merchant-mobile.png'),fullPage:true});
+    if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Merchant page overflows mobile viewport');
+    if(errors.length)throw Error(errors.join('\n'));
+    console.log('PASS merchant browser login, image upload, multi-SKU publish/offline, draft save/reload/delete, desktop and mobile layout');
+  }catch(e){await page.screenshot({path:path.join(cfg.output,'merchant-browser-failure.png'),fullPage:true});console.error('Browser page:',page.url(),'notice:',await page.locator('#notice').textContent().catch(()=>''),'errors:',errors);throw e;}finally{await browser.close();}
+}

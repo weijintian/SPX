@@ -1,0 +1,42 @@
+{
+  "passed": true,
+  "checks": [
+    {
+      "name": "offline recipient login preserves unclaimed incoming call",
+      "passed": true
+    },
+    {
+      "name": "caller login ends its previous outgoing call",
+      "passed": true
+    },
+    {
+      "name": "unrelated login cannot inherit a call",
+      "passed": true
+    },
+    {
+      "name": "recipient device replacement ends a claimed call",
+      "passed": true
+    },
+    {
+      "name": "connected call does not migrate across logins",
+      "passed": true
+    },
+    {
+      "name": "canceled call is never revived",
+      "passed": true
+    },
+    {
+      "name": "timed out call is never revived",
+      "passed": true
+    },
+    {
+      "name": "rejected call is never revived",
+      "passed": true
+    },
+    {
+      "name": "login applies the preservation rule before ending old calls",
+      "passed": true
+    }
+  ],
+  "scope": "Local policy execution plus auth entry source assertion; no production account or MySQL transaction test."
+}

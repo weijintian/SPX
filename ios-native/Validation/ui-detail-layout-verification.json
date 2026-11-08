@@ -1,0 +1,312 @@
+{
+  "date": "2026-10-25",
+  "scope": "iOS detail-page UI gaps; Android and backend unchanged",
+  "version": "1.0.6",
+  "build": 7,
+  "changed_view_count": 32,
+  "page_view_count": 31,
+  "views": [
+    {
+      "file": "ios-native/SpxChatIOS/Features/Mall/Orders.swift",
+      "view": "CheckoutView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": true
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Mall/Orders.swift",
+      "view": "OrdersView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": false
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Mall/Orders.swift",
+      "view": "OrderSummary",
+      "cardLayout": false,
+      "remainingList": false,
+      "bottomAction": false
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Mall/Orders.swift",
+      "view": "OrderDetailView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": true
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Mall/Orders.swift",
+      "view": "AfterSaleView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": true
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Mall/Orders.swift",
+      "view": "ReturnShipmentView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": true
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Mall/Orders.swift",
+      "view": "ReviewEditor",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": true
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Mall/Addresses.swift",
+      "view": "AddressView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": true
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Mall/Addresses.swift",
+      "view": "AddressEditor",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": true
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Merchant/MerchantOperations.swift",
+      "view": "MerchantProfileEditor",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": true
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Merchant/MerchantOperations.swift",
+      "view": "InventoryEditor",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": false
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Merchant/MerchantOperations.swift",
+      "view": "MerchantOrdersView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": false
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Merchant/MerchantOperations.swift",
+      "view": "MerchantFulfillmentView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": false
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Profile/Account.swift",
+      "view": "ProfileEditView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": true
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Profile/Account.swift",
+      "view": "SecurityView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": false
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Profile/Account.swift",
+      "view": "ChangePasswordView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": true
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Profile/Account.swift",
+      "view": "SettingsView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": false
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Profile/Account.swift",
+      "view": "PolicyView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": false
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Profile/Account.swift",
+      "view": "BenefitsView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": false
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Profile/Account.swift",
+      "view": "UpdateHistoryView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": false
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Profile/Account.swift",
+      "view": "FavoritesView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": false
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Profile/Account.swift",
+      "view": "RecordsView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": false
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Profile/Support.swift",
+      "view": "SupportView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": false
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Profile/Support.swift",
+      "view": "SupportEditor",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": true
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Profile/Support.swift",
+      "view": "QuestionsView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": false
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Profile/Support.swift",
+      "view": "ReferralsView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": false
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Profile/MessageNotificationSettings.swift",
+      "view": "MessageNotificationSettingsView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": false
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Wallet/Assets.swift",
+      "view": "WalletBindingView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": false
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Wallet/Assets.swift",
+      "view": "WalletTransferView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": true
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Wallet/Assets.swift",
+      "view": "ExchangeView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": false
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Wallet/Assets.swift",
+      "view": "WalletTransactionsView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": false
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Wallet/Assets.swift",
+      "view": "StakingView",
+      "cardLayout": true,
+      "remainingList": false,
+      "bottomAction": false
+    }
+  ],
+  "source_validation": {
+    "swift_files": 67,
+    "lines": 10407,
+    "syntax_errors": [],
+    "literal_api_actions": 97,
+    "actions_not_found_in_local_backend": [],
+    "api_action_validation_source": "local_backend",
+    "policy_resources": [
+      "SpxChatIOS\\Resources\\privacy.txt",
+      "SpxChatIOS\\Resources\\agreement.txt"
+    ],
+    "xcode_compilation": "not_run",
+    "unit_tests": "not_run",
+    "device_testing": "not_run"
+  },
+  "business_preservation": [
+    {
+      "file": "ios-native\\SpxChatIOS\\Features\\Mall\\Addresses.swift",
+      "preserved_methods": true,
+      "changed_methods": [],
+      "preserved_literal_API_calls": true,
+      "apis_before": 1,
+      "apis_after": 1
+    },
+    {
+      "file": "ios-native\\SpxChatIOS\\Features\\Mall\\Orders.swift",
+      "preserved_methods": true,
+      "changed_methods": [],
+      "preserved_literal_API_calls": true,
+      "apis_before": 9,
+      "apis_after": 9
+    },
+    {
+      "file": "ios-native\\SpxChatIOS\\Features\\Merchant\\MerchantOperations.swift",
+      "preserved_methods": true,
+      "changed_methods": [],
+      "preserved_literal_API_calls": true,
+      "apis_before": 4,
+      "apis_after": 4
+    },
+    {
+      "file": "ios-native\\SpxChatIOS\\Features\\Profile\\Account.swift",
+      "preserved_methods": true,
+      "changed_methods": [],
+      "preserved_literal_API_calls": true,
+      "apis_before": 3,
+      "apis_after": 3
+    },
+    {
+      "file": "ios-native\\SpxChatIOS\\Features\\Profile\\Support.swift",
+      "preserved_methods": true,
+      "changed_methods": [],
+      "preserved_literal_API_calls": true,
+      "apis_before": 5,
+      "apis_after": 5
+    },
+    {
+      "file": "ios-native\\SpxChatIOS\\Features\\Wallet\\Assets.swift",
+      "preserved_methods": true,
+      "changed_methods": [],
+      "preserved_literal_API_calls": true,
+      "apis_before": 17,
+      "apis_after": 17
+    }
+  ],
+  "verification": {
+    "tree_sitter": "passed; not Xcode typechecking",
+    "xcode_build": "not_run_windows_host",
+    "xctest": "not_run",
+    "device_visual_review": "not_run",
+    "live_financial_operations": "not_run",
+    "calls_changed": false,
+    "backend_changed": false,
+    "android_changed": false,
+    "git_push": "not_run",
+    "package_build": "not_run",
+    "deployment": "not_run"
+  }
+}

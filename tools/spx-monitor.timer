@@ -1,0 +1,11 @@
+﻿[Unit]
+Description=每 5 分钟执行一次 SPX IM 服务器巡检
+
+[Timer]
+OnBootSec=3min
+OnUnitInactiveSec=5min
+AccuracySec=30s
+Unit=spx-monitor.service
+
+[Install]
+WantedBy=timers.target

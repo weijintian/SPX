@@ -1,0 +1,13 @@
+{
+  "versionName": "1.46",
+  "versionCode": 47,
+  "hashes": {
+    "SPX-IM-1.46-release.apk": "05e3d24808821447ee2f2441e7910a18ba50e9c8dd2bb162062c9458cf188fb7",
+    "SPX-MALL-1.46-server-update.zip": "2fcb31f862761d59f43d38017a421667c14be35ee8586405d0b0a03eb9cddab3"
+  },
+  "serverFilesVerified": 11,
+  "integrationChecksPassed": 79,
+  "originalReleaseCertificateVerified": true,
+  "apkPublished": false,
+  "physicalDeviceTested": false
+}

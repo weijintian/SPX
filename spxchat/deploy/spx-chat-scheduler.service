@@ -1,0 +1,14 @@
+[Unit]
+Description=SPX scheduled chat delivery
+After=network.target mariadb.service
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/html/spxchat
+ExecStart=/usr/bin/php /var/www/html/spxchat/chat-worker.php
+TimeoutStartSec=55
+NoNewPrivileges=true
+PrivateTmp=true
+

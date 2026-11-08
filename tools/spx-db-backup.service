@@ -1,0 +1,12 @@
+[Unit]
+Description=SPX IM 数据库自动备份（每日，本机 14 天 + OSS 异地）
+After=mysql.service mariadb.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/spx-db-backup.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=1800

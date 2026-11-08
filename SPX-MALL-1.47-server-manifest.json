@@ -1,0 +1,33 @@
+{
+  "versionName": "1.47",
+  "versionCode": 48,
+  "type": "existing-server-overlay",
+  "prerequisite": "server 1.46",
+  "apkBuilt": true,
+  "deployed": false,
+  "apkPublished": false,
+  "integrationChecksPassed": 84,
+  "files": [
+    {
+      "path": "spxchat/product-share.php",
+      "sizeBytes": 5690,
+      "sha256": "88c3dfd3366e84c5a6257cabc08fd64806853af2db53a25c17cc1fc5744bf3c3"
+    },
+    {
+      "path": "spxchat/spxchat-systemadmin/admin.php",
+      "sizeBytes": 199313,
+      "sha256": "245acdeaaabfebd56f1a06132e6843ce97a3a172670b1a72ec8ee819271d6ec8"
+    },
+    {
+      "path": "spxchat/spxchat-systemadmin/login.php",
+      "sizeBytes": 7428,
+      "sha256": "3a44162281174dea809eb92fabc62bde24be6abf4d9b1bc3c908a5b8889738ee"
+    },
+    {
+      "path": "spxchat/spxchat-systemadmin/ui-premium.css",
+      "sizeBytes": 3145,
+      "sha256": "7eb1a89467bbbc91911ddf4da44350038236264905c0f9637e6443c8f7440640"
+    }
+  ],
+  "apkVerificationReport": "SPX-IM-1.47-release-verification.json"
+}

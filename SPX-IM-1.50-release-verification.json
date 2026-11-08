@@ -1,0 +1,23 @@
+{
+  "versionName": "1.50",
+  "versionCode": 51,
+  "variant": "release",
+  "package": "com.spx.chat",
+  "debuggable": false,
+  "testOnly": false,
+  "sourceFilesCompared": 33,
+  "compiledClassesVerifiedInApk": 199,
+  "zipAlignmentVerified": true,
+  "sizeBytes": 9644064,
+  "sha256": "442150177dfd2020870e86c9cc5bf33c45383d4adb9d1ac4ab9421ec0c50dba1",
+  "artifact": "C:\\Users\\雷神\\Documents\\HBuilderProjects\\SPX聊天\\SPX-IM-1.50-release.apk",
+  "signingCertificateSha256": "776718a739e05447b4be92a46fb822b8ecc946aee334bc7b81d0eba009f68aa5",
+  "originalReleaseCertificateVerified": true,
+  "appLinkManifestAndCertificateVerified": true,
+  "serverDeployed": true,
+  "releasePublished": true,
+  "standardOutputUpdated": true,
+  "releaseId": 13,
+  "publicationReport": "C:\\Users\\雷神\\Documents\\HBuilderProjects\\SPX聊天\\.spx-release-build\\spx-apk-1.50-publication-report.json",
+  "publishedAt": "2026-10-16T03:31:08.131326+00:00"
+}

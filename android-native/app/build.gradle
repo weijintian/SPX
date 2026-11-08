@@ -1,0 +1,77 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.spx.chat'
+    compileSdk 35
+
+    signingConfigs {
+        release {
+            def signingFile = file('../keys/signing.properties')
+            def signingProperties = new Properties()
+            if (signingFile.exists()) {
+                signingFile.withInputStream { signingProperties.load(it) }
+            }
+            def configuredStore = signingProperties.getProperty('storeFile', 'spx-release.jks')
+            def releaseStore = file(System.getenv('SPX_KEYSTORE_FILE') ?: "../keys/${configuredStore}")
+            def releasePassword = System.getenv('SPX_KEYSTORE_PASSWORD') ?: signingProperties.getProperty('storePassword')
+            def releaseKeyPassword = System.getenv('SPX_KEY_PASSWORD') ?: signingProperties.getProperty('keyPassword', releasePassword)
+            def releaseAlias = System.getenv('SPX_KEY_ALIAS') ?: signingProperties.getProperty('keyAlias', 'spx-release')
+            if (releaseStore.exists() && releasePassword) {
+                storeFile releaseStore
+                storePassword releasePassword
+                keyAlias releaseAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+
+    defaultConfig {
+        applicationId 'com.spx.chat'
+        minSdk 23
+        targetSdk 35
+        versionCode 99
+        versionName '1.98'
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+            // 发布包只打 ARM。x86/x86_64 的原生库只服务模拟器，却给线上包增加了约 70 MB；
+            // 真实设备全部是 ARM：arm64-v8a 覆盖所有 64 位机型，armeabi-v7a 兜住个别 32 位老机。
+            // 这个列表是固定的，不接受环境变量扩大，避免误把 x86 打进发布包。
+            ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' }
+        }
+        debug {
+            // 调试构建保留 x86_64，否则 x86 模拟器装不上；SPX_TARGET_ABIS 可进一步收窄。
+            def debugAbis = System.getenv('SPX_TARGET_ABIS')
+            ndk {
+                if (debugAbis) {
+                    abiFilters.addAll(debugAbis.split(',').collect { it.trim() })
+                } else {
+                    abiFilters.addAll(['arm64-v8a', 'armeabi-v7a', 'x86_64'])
+                }
+            }
+        }
+    }
+
+    lint {
+        checkReleaseBuilds false
+    }
+}
+
+dependencies {
+    implementation 'io.trtc.uikit:rtc_room_engine:3.6.4.104'
+    implementation 'com.tencent.imsdk:imsdk-plus:8.8.7375'
+    implementation 'com.tencent.liteav.tuikit:tuicore:8.7.7202'
+    implementation 'androidx.core:core:1.15.0'
+    implementation 'com.google.zxing:core:3.5.3'
+    implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
+}
+
+configurations.configureEach {
+    exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
+    exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
+}

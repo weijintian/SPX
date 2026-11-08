@@ -1,0 +1,21 @@
+{
+  "versionName": "1.49",
+  "versionCode": 50,
+  "variant": "release",
+  "package": "com.spx.chat",
+  "debuggable": false,
+  "testOnly": false,
+  "sourceFilesCompared": 33,
+  "compiledClassesVerifiedInApk": 199,
+  "zipAlignmentVerified": true,
+  "sizeBytes": 9642728,
+  "sha256": "d5f5698e97db70f04d3a34907f17289ee9f55b6a7c528e69c9728aa093a8b998",
+  "artifact": "C:\\Users\\雷神\\Documents\\HBuilderProjects\\SPX聊天\\SPX-IM-1.49-release.apk",
+  "signingCertificateSha256": "776718a739e05447b4be92a46fb822b8ecc946aee334bc7b81d0eba009f68aa5",
+  "originalReleaseCertificateVerified": true,
+  "appLinkManifestAndCertificateVerified": true,
+  "serverDeployed": true,
+  "releasePublished": false,
+  "standardOutputUpdated": true,
+  "serverDeploymentReport": "C:\\Users\\雷神\\Documents\\HBuilderProjects\\SPX聊天\\.spx-release-build\\spx-chat-1.49-deployment-report.json"
+}

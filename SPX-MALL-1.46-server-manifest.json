@@ -1,0 +1,71 @@
+{
+  "versionName": "1.46",
+  "versionCode": 47,
+  "type": "existing-server-overlay",
+  "generatedDate": "2026-10-13",
+  "apkPublication": "hold-private-only",
+  "files": [
+    {
+      "path": "spxchat/index.php",
+      "sizeBytes": 131069,
+      "sha256": "8fbf3a00d1745b8d64e8cdf474167a35e109b64a0de5c669115c5c56a4806581"
+    },
+    {
+      "path": "spxchat/db.php",
+      "sizeBytes": 41433,
+      "sha256": "924b01ef9317175a3e0e371078dbae604694520aefe8d57bc7689cda08090d40"
+    },
+    {
+      "path": "spxchat/schema.sql",
+      "sizeBytes": 28424,
+      "sha256": "131010dcf8055ff5fc77a0421ef71af13b922278eaa3dbcbd78e94a74cf46d57"
+    },
+    {
+      "path": "spxchat/mall.php",
+      "sizeBytes": 32171,
+      "sha256": "a48710af4f7a10fafe5c40905e8f719f094a1f65d03246f05f7d045b490505d0"
+    },
+    {
+      "path": "spxchat/mall_schema.php",
+      "sizeBytes": 3905,
+      "sha256": "4cd4283b6198fbc91e5c72d3efab53f2e9bd0d0d4351f8a3e0dd77d2d8975e18"
+    },
+    {
+      "path": "spxchat/mall_schema.sql",
+      "sizeBytes": 2049,
+      "sha256": "44ae1d2796f47a612b7ec413fa026236e061a60aa3306cca8b218f86f9a6cd4b"
+    },
+    {
+      "path": "spxchat/mall_commerce.php",
+      "sizeBytes": 24424,
+      "sha256": "01c6ddb2771eea12a72acf8bcf510c9bf5984e02345b5db53a649e392bc6b831"
+    },
+    {
+      "path": "spxchat/mall_merchant_media.php",
+      "sizeBytes": 3750,
+      "sha256": "7bb2bf2aa81c55bdecaa71ece766f9a8aeeb5766875d8891fef24cb5d5faa3d3"
+    },
+    {
+      "path": "spxchat/spxchat-systemadmin/admin.php",
+      "sizeBytes": 199256,
+      "sha256": "4adf37fc43a2aef445e5dd430e5e4f055201631c989cf18e8f1d0c41b791a6ea"
+    },
+    {
+      "path": "spxchat/spxchat-systemadmin/mall_admin.php",
+      "sizeBytes": 18786,
+      "sha256": "89507f9ba8312df8c0afacd518a8feeb9e0ef59eee996644685f3722818099c8"
+    },
+    {
+      "path": "spxchat/MALL-UPGRADE.md",
+      "sizeBytes": 4700,
+      "sha256": "88d8f8340d689b2ccf2d90ac3dc67236e8f4154495a508cdf64640864bf8a079"
+    }
+  ],
+  "preserve": [
+    "config.php",
+    "config.ave.php",
+    "uploads",
+    "private merchant media",
+    "published APK and release records"
+  ]
+}

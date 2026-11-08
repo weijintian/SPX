@@ -1,0 +1,140 @@
+{
+  "date": "2026-10-25",
+  "version": "1.0.6 (7)",
+  "scope": "iOS remaining subpages UI",
+  "status": "static_checks_passed_device_acceptance_pending",
+  "target_count": 19,
+  "targets": [
+    "PasswordResetView",
+    "MemberMentionPicker",
+    "RedPacketHistoryView",
+    "ConversationSettingsView",
+    "GroupMembersView invitation sheet",
+    "MessageSearchView",
+    "AutoReplyRulesView",
+    "AddContactView",
+    "GroupCreateView",
+    "GroupJoinView",
+    "ForwardMessageView",
+    "ScheduledMessageView",
+    "SendLocationView",
+    "ShopsView",
+    "ShopDetailView",
+    "ProductReviewsView",
+    "MerchantProductsView",
+    "MerchantDraftsView",
+    "ShopLocationPicker"
+  ],
+  "source_validation": {
+    "swift_files": 67,
+    "lines": 10621,
+    "syntax_errors": [],
+    "literal_api_actions": 97,
+    "actions_not_found_in_local_backend": [],
+    "api_action_validation_source": "local_backend",
+    "policy_resources": [
+      "SpxChatIOS\\Resources\\privacy.txt",
+      "SpxChatIOS\\Resources\\agreement.txt"
+    ],
+    "xcode_compilation": "not_run",
+    "unit_tests": "not_run",
+    "device_testing": "not_run"
+  },
+  "preservation": [
+    {
+      "file": "ios-native/SpxChatIOS/Features/Auth/AuthenticationView.swift",
+      "removed_methods": [],
+      "changed_methods": [],
+      "added_methods": [],
+      "preserved_literal_API_calls": true,
+      "api_count_before": 3,
+      "api_count_after": 3
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Chat/ChatAccessories.swift",
+      "removed_methods": [],
+      "changed_methods": [],
+      "added_methods": [],
+      "preserved_literal_API_calls": true,
+      "api_count_before": 1,
+      "api_count_after": 1
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Chat/ConversationSettings.swift",
+      "removed_methods": [],
+      "changed_methods": [],
+      "added_methods": [],
+      "preserved_literal_API_calls": true,
+      "api_count_before": 13,
+      "api_count_after": 13
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Chat/RedPacketHistory.swift",
+      "removed_methods": [],
+      "changed_methods": [],
+      "added_methods": [],
+      "preserved_literal_API_calls": true,
+      "api_count_before": 1,
+      "api_count_after": 1
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Chat/SocialViews.swift",
+      "removed_methods": [],
+      "changed_methods": [
+        "ForwardMessageView.target",
+        "ForwardMessageView.load"
+      ],
+      "added_methods": [
+        "GroupCreateView.loadContacts"
+      ],
+      "preserved_literal_API_calls": true,
+      "api_count_before": 21,
+      "api_count_after": 21
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Mall/Catalog.swift",
+      "removed_methods": [],
+      "changed_methods": [],
+      "added_methods": [
+        "ShopDetailView.load",
+        "ProductReviewsView.load"
+      ],
+      "preserved_literal_API_calls": true,
+      "api_count_before": 11,
+      "api_count_after": 11
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Merchant/MerchantDashboard.swift",
+      "removed_methods": [],
+      "changed_methods": [],
+      "added_methods": [],
+      "preserved_literal_API_calls": true,
+      "api_count_before": 7,
+      "api_count_after": 7
+    },
+    {
+      "file": "ios-native/SpxChatIOS/Features/Merchant/ShopLocationPicker.swift",
+      "removed_methods": [],
+      "changed_methods": [],
+      "added_methods": [],
+      "preserved_literal_API_calls": true,
+      "api_count_before": 0,
+      "api_count_after": 0
+    }
+  ],
+  "literal_api_call_occurrences": 57,
+  "manual_source_review": [
+    "forward outbox and accepted receipts",
+    "location enqueue expectedUserID",
+    "group invite permissions and request",
+    "merchant offline confirmation",
+    "draft delete confirmation and request",
+    "shop location selected callback"
+  ],
+  "xcode_compilation": "not_run",
+  "visual_screenshot_comparison": "not_run",
+  "device_testing": "not_run",
+  "ipa_build": "not_run",
+  "git_push": "not_run",
+  "deployment": "not_run"
+}

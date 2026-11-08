@@ -1,0 +1,283 @@
+{
+  "versionName": "1.48",
+  "versionCode": 49,
+  "type": "existing-server-overlay",
+  "generatedAt": "2026-10-14T10:47:39.825492+00:00",
+  "apkPublication": "hold-no-upload-no-publish",
+  "files": [
+    {
+      "path": "spxchat/db.php",
+      "sizeBytes": 41617,
+      "sha256": "370d91476fa1473dedd2a9f23444b8195d288eda17412e572864faf374cf2245",
+      "previousSha256": "924b01ef9317175a3e0e371078dbae604694520aefe8d57bc7689cda08090d40"
+    },
+    {
+      "path": "spxchat/index.php",
+      "sizeBytes": 131454,
+      "sha256": "2739114a19a84598717110c53cd25c122b7f3afe2b1377b2b7b27720390b23c6",
+      "previousSha256": "8fbf3a00d1745b8d64e8cdf474167a35e109b64a0de5c669115c5c56a4806581"
+    },
+    {
+      "path": "spxchat/mall.php",
+      "sizeBytes": 32917,
+      "sha256": "ad42f888fdd57b6051d6debf17623b2365721b05d7390a81b2083d5aee9571d1",
+      "previousSha256": "a48710af4f7a10fafe5c40905e8f719f094a1f65d03246f05f7d045b490505d0"
+    },
+    {
+      "path": "spxchat/mall_commerce.php",
+      "sizeBytes": 24567,
+      "sha256": "5a3f3c0a49c764db3c160f73dc650c9710d432b5664781839fda9c8ff6c8e585",
+      "previousSha256": "01c6ddb2771eea12a72acf8bcf510c9bf5984e02345b5db53a649e392bc6b831"
+    },
+    {
+      "path": "spxchat/mall_workspace.php",
+      "sizeBytes": 17923,
+      "sha256": "e3fc5c40dbe4c839fbea81ef8a723fdfb21fd8c59f4419f2189c7d253dd0f4b2",
+      "previousSha256": null
+    },
+    {
+      "path": "spxchat/merchant-api.php",
+      "sizeBytes": 1271,
+      "sha256": "b2e42484465051c5192d8905a258cfa3499292e82ded7d68037cf585e4cbeb0e",
+      "previousSha256": null
+    },
+    {
+      "path": "spxchat/merchant.css",
+      "sizeBytes": 3735,
+      "sha256": "bba2e953715db75bc59b3deec576f87fda1f8a274f505858d1b033e12fa6e349",
+      "previousSha256": null
+    },
+    {
+      "path": "spxchat/merchant.js",
+      "sizeBytes": 17908,
+      "sha256": "91fff92e7b97499eea67fe8aa87f78c7e0c5775616d11b93700d43591198aac8",
+      "previousSha256": null
+    },
+    {
+      "path": "spxchat/merchant.php",
+      "sizeBytes": 6130,
+      "sha256": "7bccd1f16b6980142ec2801b89e64abd294a2f905953ff248c619c15ae4e4c3b",
+      "previousSha256": null
+    },
+    {
+      "path": "spxchat/merchant_session.php",
+      "sizeBytes": 3918,
+      "sha256": "fb02facba0a13a9d11b3c56c875c3da1fcb987a9fe7bb309de07bda8c23a46d9",
+      "previousSha256": null
+    },
+    {
+      "path": "spxchat/product-share.php",
+      "sizeBytes": 7770,
+      "sha256": "8f0bbe0dd6f6755a17b1718722811813bbd456b6e07da4e82fb5457f0c07a7e4",
+      "previousSha256": null
+    },
+    {
+      "path": "spxchat/spxchat-systemadmin/admin.php",
+      "sizeBytes": 199450,
+      "sha256": "d676e6049e0eef5863d94d81c8341fa8e992bac21840d3fbd4eead5997649693",
+      "previousSha256": "4adf37fc43a2aef445e5dd430e5e4f055201631c989cf18e8f1d0c41b791a6ea"
+    },
+    {
+      "path": "spxchat/spxchat-systemadmin/login.php",
+      "sizeBytes": 7428,
+      "sha256": "3a44162281174dea809eb92fabc62bde24be6abf4d9b1bc3c908a5b8889738ee",
+      "previousSha256": "470d4556cbd67f5cc7a7e58a24126032586f47566466afa53c297f45ae4d1063"
+    },
+    {
+      "path": "spxchat/spxchat-systemadmin/mall_admin.php",
+      "sizeBytes": 18241,
+      "sha256": "3733e5c740223c7f8eb9cb4b7ff992356238fc3b20cb4e0970e0057b0f01a506",
+      "previousSha256": "89507f9ba8312df8c0afacd518a8feeb9e0ef59eee996644685f3722818099c8"
+    },
+    {
+      "path": "spxchat/spxchat-systemadmin/ui-premium.css",
+      "sizeBytes": 3145,
+      "sha256": "7eb1a89467bbbc91911ddf4da44350038236264905c0f9637e6443c8f7440640",
+      "previousSha256": null
+    },
+    {
+      "path": ".well-known/assetlinks.json",
+      "sizeBytes": 256,
+      "sha256": "28678063c7334531f14ef89fd554f8738488cba7d7f51864093b373060c2d3a5",
+      "previousSha256": null
+    }
+  ],
+  "dependencies": {
+    "spxchat/api.php": {
+      "status": "same",
+      "localHash": "e33da0ad4d7c0bc31bf8ecb061dd03a9d5fedaa66b5cf80e54c18a6ce4df506d",
+      "remoteHash": "e33da0ad4d7c0bc31bf8ecb061dd03a9d5fedaa66b5cf80e54c18a6ce4df506d"
+    },
+    "spxchat/auth.php": {
+      "status": "same",
+      "localHash": "fd342e3ce3ddac9feb9e432cda699d3678407c40fa1cbfff070a1167242c2ce4",
+      "remoteHash": "fd342e3ce3ddac9feb9e432cda699d3678407c40fa1cbfff070a1167242c2ce4"
+    },
+    "spxchat/AvePriceService.php": {
+      "status": "same",
+      "localHash": "aad26f382e4f690282dc6ee8ed3d11c8af42e7b7e703feab2d048b1ebedf46fe",
+      "remoteHash": "aad26f382e4f690282dc6ee8ed3d11c8af42e7b7e703feab2d048b1ebedf46fe"
+    },
+    "spxchat/db.php": {
+      "status": "modified",
+      "localHash": "370d91476fa1473dedd2a9f23444b8195d288eda17412e572864faf374cf2245",
+      "remoteHash": "924b01ef9317175a3e0e371078dbae604694520aefe8d57bc7689cda08090d40"
+    },
+    "spxchat/index.php": {
+      "status": "modified",
+      "localHash": "2739114a19a84598717110c53cd25c122b7f3afe2b1377b2b7b27720390b23c6",
+      "remoteHash": "8fbf3a00d1745b8d64e8cdf474167a35e109b64a0de5c669115c5c56a4806581"
+    },
+    "spxchat/mall.php": {
+      "status": "modified",
+      "localHash": "ad42f888fdd57b6051d6debf17623b2365721b05d7390a81b2083d5aee9571d1",
+      "remoteHash": "a48710af4f7a10fafe5c40905e8f719f094a1f65d03246f05f7d045b490505d0"
+    },
+    "spxchat/mall_commerce.php": {
+      "status": "modified",
+      "localHash": "5a3f3c0a49c764db3c160f73dc650c9710d432b5664781839fda9c8ff6c8e585",
+      "remoteHash": "01c6ddb2771eea12a72acf8bcf510c9bf5984e02345b5db53a649e392bc6b831"
+    },
+    "spxchat/mall_merchant_media.php": {
+      "status": "same",
+      "localHash": "7bb2bf2aa81c55bdecaa71ece766f9a8aeeb5766875d8891fef24cb5d5faa3d3",
+      "remoteHash": "7bb2bf2aa81c55bdecaa71ece766f9a8aeeb5766875d8891fef24cb5d5faa3d3"
+    },
+    "spxchat/mall_schema.php": {
+      "status": "same",
+      "localHash": "4cd4283b6198fbc91e5c72d3efab53f2e9bd0d0d4351f8a3e0dd77d2d8975e18",
+      "remoteHash": "4cd4283b6198fbc91e5c72d3efab53f2e9bd0d0d4351f8a3e0dd77d2d8975e18"
+    },
+    "spxchat/mall_workspace.php": {
+      "status": "new",
+      "localHash": "e3fc5c40dbe4c839fbea81ef8a723fdfb21fd8c59f4419f2189c7d253dd0f4b2",
+      "remoteHash": null
+    },
+    "spxchat/merchant-api.php": {
+      "status": "new",
+      "localHash": "b2e42484465051c5192d8905a258cfa3499292e82ded7d68037cf585e4cbeb0e",
+      "remoteHash": null
+    },
+    "spxchat/merchant.css": {
+      "status": "new",
+      "localHash": "bba2e953715db75bc59b3deec576f87fda1f8a274f505858d1b033e12fa6e349",
+      "remoteHash": null
+    },
+    "spxchat/merchant.js": {
+      "status": "new",
+      "localHash": "91fff92e7b97499eea67fe8aa87f78c7e0c5775616d11b93700d43591198aac8",
+      "remoteHash": null
+    },
+    "spxchat/merchant.php": {
+      "status": "new",
+      "localHash": "7bccd1f16b6980142ec2801b89e64abd294a2f905953ff248c619c15ae4e4c3b",
+      "remoteHash": null
+    },
+    "spxchat/merchant_session.php": {
+      "status": "new",
+      "localHash": "fb02facba0a13a9d11b3c56c875c3da1fcb987a9fe7bb309de07bda8c23a46d9",
+      "remoteHash": null
+    },
+    "spxchat/product-share.php": {
+      "status": "new",
+      "localHash": "8f0bbe0dd6f6755a17b1718722811813bbd456b6e07da4e82fb5457f0c07a7e4",
+      "remoteHash": null
+    },
+    "spxchat/response.php": {
+      "status": "same",
+      "localHash": "a8f30343d4e7a4aea09a987df73829572e9c3b56ff2fde56a62357ca5621aaf3",
+      "remoteHash": "a8f30343d4e7a4aea09a987df73829572e9c3b56ff2fde56a62357ca5621aaf3"
+    },
+    "spxchat/smtp.php": {
+      "status": "same",
+      "localHash": "745f2c75c00f634211c146168db377e28e662a8dbddd097ff0348ebdc4100cd3",
+      "remoteHash": "745f2c75c00f634211c146168db377e28e662a8dbddd097ff0348ebdc4100cd3"
+    },
+    "spxchat/staking_settlement.php": {
+      "status": "same",
+      "localHash": "b615cb7c6b84b2cb108963fe328b56cdd1bd26ee2ef71d90956960a75648a9bc",
+      "remoteHash": "b615cb7c6b84b2cb108963fe328b56cdd1bd26ee2ef71d90956960a75648a9bc"
+    },
+    "spxchat/staking_settler.php": {
+      "status": "same",
+      "localHash": "a3b01724c6e844cd9d6dedcfe4d694799703009e2a798e2aad207e708f264206",
+      "remoteHash": "a3b01724c6e844cd9d6dedcfe4d694799703009e2a798e2aad207e708f264206"
+    },
+    "spxchat/ws-event.php": {
+      "status": "same",
+      "localHash": "d3a12324cc387a569f38d13f76071ea92db3783b5b03386449cd24c6e2e15dc0",
+      "remoteHash": "d3a12324cc387a569f38d13f76071ea92db3783b5b03386449cd24c6e2e15dc0"
+    },
+    "spxchat/ws-server.php": {
+      "status": "same",
+      "localHash": "8580ec9c4d5ace0161dbeb48d9b2b98e5ec9fbbbabbefcd3c576325998a4a2ff",
+      "remoteHash": "8580ec9c4d5ace0161dbeb48d9b2b98e5ec9fbbbabbefcd3c576325998a4a2ff"
+    },
+    "spxchat/i18n/Translator.php": {
+      "status": "same",
+      "localHash": "3f4eea53ce27f098b060709b1502389199747c61811c94d7d65acb9bd0df7d34",
+      "remoteHash": "3f4eea53ce27f098b060709b1502389199747c61811c94d7d65acb9bd0df7d34"
+    },
+    "spxchat/spxchat-systemadmin/admin.php": {
+      "status": "modified",
+      "localHash": "d676e6049e0eef5863d94d81c8341fa8e992bac21840d3fbd4eead5997649693",
+      "remoteHash": "4adf37fc43a2aef445e5dd430e5e4f055201631c989cf18e8f1d0c41b791a6ea"
+    },
+    "spxchat/spxchat-systemadmin/login.php": {
+      "status": "modified",
+      "localHash": "3a44162281174dea809eb92fabc62bde24be6abf4d9b1bc3c908a5b8889738ee",
+      "remoteHash": "470d4556cbd67f5cc7a7e58a24126032586f47566466afa53c297f45ae4d1063"
+    },
+    "spxchat/spxchat-systemadmin/logout.php": {
+      "status": "same",
+      "localHash": "203fd46de0060ddcc23fd9d2f31c0d85e16009d8f072658a3bfa94ba588b0546",
+      "remoteHash": "203fd46de0060ddcc23fd9d2f31c0d85e16009d8f072658a3bfa94ba588b0546"
+    },
+    "spxchat/spxchat-systemadmin/mall_admin.php": {
+      "status": "modified",
+      "localHash": "3733e5c740223c7f8eb9cb4b7ff992356238fc3b20cb4e0970e0057b0f01a506",
+      "remoteHash": "89507f9ba8312df8c0afacd518a8feeb9e0ef59eee996644685f3722818099c8"
+    },
+    "spxchat/spxchat-systemadmin/ui-premium.css": {
+      "status": "new",
+      "localHash": "7eb1a89467bbbc91911ddf4da44350038236264905c0f9637e6443c8f7440640",
+      "remoteHash": null
+    },
+    "spxchat/i18n/messages/en.php": {
+      "status": "same",
+      "localHash": "bfa55f3828e02e9cfe64dabdd236a3d2e178c1e1d5a958d6e817319f58b6469c",
+      "remoteHash": "bfa55f3828e02e9cfe64dabdd236a3d2e178c1e1d5a958d6e817319f58b6469c"
+    },
+    "spxchat/i18n/messages/ja.php": {
+      "status": "same",
+      "localHash": "9c820bf11e9da1c823a63d871838c65f4877c6e245baa2d394d28935fbfb88a3",
+      "remoteHash": "9c820bf11e9da1c823a63d871838c65f4877c6e245baa2d394d28935fbfb88a3"
+    },
+    "spxchat/i18n/messages/ko.php": {
+      "status": "same",
+      "localHash": "2488283ea42fe38e4ff3276d20fe1ca47035dfe8a1bad6ed34dd2fe1d24766d4",
+      "remoteHash": "2488283ea42fe38e4ff3276d20fe1ca47035dfe8a1bad6ed34dd2fe1d24766d4"
+    },
+    "spxchat/i18n/messages/zh-CN.php": {
+      "status": "same",
+      "localHash": "13a8cd2e58acd3614c2f5858614b2b3cf1b717f98e5ab42adb24dba710b09326",
+      "remoteHash": "13a8cd2e58acd3614c2f5858614b2b3cf1b717f98e5ab42adb24dba710b09326"
+    },
+    "spxchat/i18n/messages/zh-TW.php": {
+      "status": "same",
+      "localHash": "65438588ad96f2539ce5e1cd46149e8a4a0832119203d9ef639adc17198eacbd",
+      "remoteHash": "65438588ad96f2539ce5e1cd46149e8a4a0832119203d9ef639adc17198eacbd"
+    },
+    ".well-known/assetlinks.json": {
+      "status": "new",
+      "localHash": "28678063c7334531f14ef89fd554f8738488cba7d7f51864093b373060c2d3a5",
+      "remoteHash": null
+    }
+  },
+  "preserve": [
+    "production configuration",
+    "uploads",
+    "private merchant qualifications",
+    "published APK and release records"
+  ]
+}

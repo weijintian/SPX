@@ -1,0 +1,50 @@
+workflows:
+  ios-release:
+    name: SPX iOS signed IPA
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      groups:
+        - spx-ios-signing
+      vars:
+        # manual    = a .p12 + .mobileprovision in ios-native/signing (or SPX_IOS_* secrets)
+        # automatic = Xcode manages signing via an App Store Connect API key; no files needed.
+        # Keep "manual" while the existing CI secrets are known to produce a working IPA;
+        # switch to "automatic" once the SPX_ASC_* key is in the secret group.
+        SPX_SIGNING_MODE: "manual"
+        # Must equal PRODUCT_BUNDLE_IDENTIFIER in ios-native/project.yml and the App ID
+        # registered in the Apple Developer portal (team VX2SVTNSZ3).
+        SPX_BUNDLE_IDENTIFIER: com.spx.chat.ios
+        # Optional: "production" or "development" adds the aps-environment entitlement.
+        # SPX_PUSH_ENVIRONMENT: "production"
+        # Automatic mode only (put these in the spx-ios-signing secret group):
+        #   SPX_ASC_KEY_BASE64 / SPX_ASC_KEY_PATH   the AuthKey_XXX.p8
+        #   SPX_ASC_KEY_ID                          the 10-character Key ID
+        #   SPX_ASC_ISSUER_ID                       the App Store Connect issuer UUID
+        #   SPX_DEVELOPMENT_TEAM                    defaults to DEVELOPMENT_TEAM in project.yml
+        # Flip to "1" once ios-native/signing/ holds a profile issued by the same team,
+        # to make any bundle/team mismatch a hard CI failure.
+        SPX_REQUIRE_SIGNING_MATCH: "0"
+    scripts:
+      - name: Validate iOS sources
+        script: |
+          set -euo pipefail
+          cd ios-native
+          command -v xcodegen >/dev/null || brew install xcodegen
+          command -v pod >/dev/null
+          python3 -m pip install -r scripts/requirements-dev.txt
+          python3 scripts/validate_sources.py
+          python3 scripts/test_signing_configuration.py
+          python3 scripts/test_automatic_signing.py
+          python3 scripts/check_bundle_consistency.py
+      - name: Build and sign IPA
+        script: |
+          set -euo pipefail
+          cd ios-native
+          mkdir -p build
+          bash scripts/build-signed-ipa-macos.sh 2>&1 | tee build/signing.log
+    artifacts:
+      - ios-native/build/export/SPX-*.ipa
+      - ios-native/build/export/SHA256SUMS.txt
+      - ios-native/build/export/signing-report.json
+      - ios-native/build/signing.log

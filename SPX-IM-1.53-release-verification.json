@@ -1,0 +1,32 @@
+{
+  "versionName": "1.53",
+  "versionCode": 54,
+  "package": "com.spx.chat",
+  "variant": "release",
+  "debuggable": false,
+  "testOnly": false,
+  "signingCertificateSha256": "776718a739e05447b4be92a46fb822b8ecc946aee334bc7b81d0eba009f68aa5",
+  "originalReleaseCertificateVerified": true,
+  "zipAlignmentVerified": true,
+  "sha256": "9b778803d6b8cc5420ed2d542793e825a166166d8c1a82ec320346072fd257b6",
+  "sizeBytes": 9664798,
+  "serverVerification": {
+    "health": true,
+    "mall.config": true,
+    "products": true,
+    "shops": true,
+    "app.update.check": true,
+    "merchantEmailLoginPage": true,
+    "filesMatch": true,
+    "services": [
+      "active",
+      "active",
+      "active",
+      "active",
+      "active"
+    ]
+  },
+  "serverDeployed": true,
+  "releasePublished": false,
+  "backupDirectory": "/root/spx-releases/server-1.53-20261017T084850Z/backup"
+}

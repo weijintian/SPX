@@ -1,0 +1,11 @@
+[Unit]
+Description=Check SPX scheduled messages every 10 seconds
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=10s
+AccuracySec=1s
+Unit=spx-chat-scheduler.service
+
+[Install]
+WantedBy=timers.target

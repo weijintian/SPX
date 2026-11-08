@@ -1,0 +1,9 @@
+[Unit]
+Description=SPX IM 服务器巡检（服务/资源/备份/证书/限流）
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/spx-monitor.sh
+Nice=10
+TimeoutStartSec=180

@@ -1,0 +1,85 @@
+import Foundation
+
+/// One ordered list for persisted messages and optimistic attachments.
+struct ChatTimelineEntry: Identifiable {
+    let id: String
+    let date: Date
+    let message: Record?
+    let pending: PendingMessage?
+    static func merge(messages: [Record], pending: [PendingMessage], userID: Int) -> [ChatTimelineEntry] {
+        let local = Dictionary(pending.map { ($0.id, $0.createdAt) }, uniquingKeysWith: { first, _ in first })
+        let acknowledged = Set(messages.filter { $0["sender_id"].int == userID }.map { $0["client_message_id"].string })
+        var result = messages.map { message -> ChatTimelineEntry in
+            let client = message["client_message_id"].string, sender = message["sender_id"].int
+            let date = (sender == userID ? local[client] : nil) ?? MessageTimeline.date(message.text("local_created_at", "created_at")) ?? .distantPast
+            let id = client.isEmpty ? "m-\(message.id)" : "c-\(sender)-\(client)"
+            return ChatTimelineEntry(id: id, date: date, message: message, pending: nil)
+        }
+        result += pending.filter { !acknowledged.contains($0.id) }.map {
+            ChatTimelineEntry(id: "c-\(userID)-\($0.id)", date: $0.createdAt, message: nil, pending: $0)
+        }
+        // Database timestamps have second precision. Lexical IDs put m-10 before m-9
+        // and UUIDs shuffle optimistic messages; neither represents send order.
+        return result.enumerated().sorted { first, second in
+            let a = first.element, b = second.element
+            if a.date != b.date { return a.date < b.date }
+            if let left = a.message, let right = b.message, left.id != right.id { return left.id < right.id }
+            if (a.message != nil) != (b.message != nil) { return a.message != nil }
+            return first.offset < second.offset
+        }.map(\.element)
+    }
+}
+
+/// Owned by a single conversation view. Typing and keyboard animations can reuse
+/// its projection; edits, delivery receipts and upload progress still invalidate it.
+final class ChatTimelineCache {
+    typealias Builder = ([Record], [PendingMessage], Int) -> [ChatTimelineEntry]
+    private let build: Builder
+    private var owner: Int?
+    private var messages: [Record] = []
+    private var pending: [PendingMessage] = []
+    private var projection: [ChatTimelineEntry] = []
+
+    init(build: @escaping Builder = ChatTimelineEntry.merge) { self.build = build }
+
+    private var version = -1
+    private var window: Int?
+    private var pendingVersion = -1
+    private var lastCount = -1
+    private var lastFirst: Int?
+    private var lastLast: Int?
+
+    /// `version` is bumped by the store on every mutation, so the cache can skip the
+    /// deep array comparison that previously ran on every body evaluation.
+    func entries(messages: [Record], pending: [PendingMessage], userID: Int,
+                 version: Int? = nil, oldestDisplayedID: Int? = nil,
+                 pendingVersion: Int? = nil) -> [ChatTimelineEntry] {
+        if let version {
+            let sameWindow = self.version == version
+                && self.window == oldestDisplayedID
+                && self.pendingVersion == (pendingVersion ?? -1)
+                && lastCount == messages.count
+                && lastFirst == messages.first?.id
+                && lastLast == messages.last?.id
+            if sameWindow, owner == userID { return projection }
+            self.version = version
+            self.window = oldestDisplayedID
+            self.pendingVersion = pendingVersion ?? -1
+            lastCount = messages.count
+            lastFirst = messages.first?.id
+            lastLast = messages.last?.id
+            owner = userID
+            self.messages = messages
+            self.pending = pending
+            projection = build(messages, pending, userID)
+            return projection
+        }
+        if owner != userID || self.messages != messages || self.pending != pending {
+            owner = userID
+            self.messages = messages
+            self.pending = pending
+            projection = build(messages, pending, userID)
+        }
+        return projection
+    }
+}

@@ -1,0 +1,64 @@
+{
+  "versionName": "1.45",
+  "versionCode": 46,
+  "type": "existing-server-overlay",
+  "generatedDate": "2026-10-13",
+  "files": [
+    {
+      "path": "spxchat/index.php",
+      "sizeBytes": 130865,
+      "sha256": "1e8cbd9c5cfcca020c0643830d83c7c88312d29b3c38e7c8e6f74dd616d9596e"
+    },
+    {
+      "path": "spxchat/db.php",
+      "sizeBytes": 39975,
+      "sha256": "61e241e7e894494867462abc2337d0485da161fe73bb40bd9c17b6cf06176aed"
+    },
+    {
+      "path": "spxchat/schema.sql",
+      "sizeBytes": 28424,
+      "sha256": "131010dcf8055ff5fc77a0421ef71af13b922278eaa3dbcbd78e94a74cf46d57"
+    },
+    {
+      "path": "spxchat/mall.php",
+      "sizeBytes": 30264,
+      "sha256": "0abb3c3cfac56b33a9895ca551cf5cbb6a4d13f33dd7b261e0a46e4d4b1eb8d7"
+    },
+    {
+      "path": "spxchat/mall_schema.php",
+      "sizeBytes": 3905,
+      "sha256": "4cd4283b6198fbc91e5c72d3efab53f2e9bd0d0d4351f8a3e0dd77d2d8975e18"
+    },
+    {
+      "path": "spxchat/mall_schema.sql",
+      "sizeBytes": 2049,
+      "sha256": "44ae1d2796f47a612b7ec413fa026236e061a60aa3306cca8b218f86f9a6cd4b"
+    },
+    {
+      "path": "spxchat/mall_commerce.php",
+      "sizeBytes": 24424,
+      "sha256": "01c6ddb2771eea12a72acf8bcf510c9bf5984e02345b5db53a649e392bc6b831"
+    },
+    {
+      "path": "spxchat/spxchat-systemadmin/admin.php",
+      "sizeBytes": 198694,
+      "sha256": "d47390552fe02ba280d49a9e0aaa962c1346a16a2e1054ef913f51ec386e631a"
+    },
+    {
+      "path": "spxchat/spxchat-systemadmin/mall_admin.php",
+      "sizeBytes": 18077,
+      "sha256": "f0eea97b06a882049cef9176f29e7f6e671a354b164b14d1e6e9695b57575830"
+    },
+    {
+      "path": "spxchat/MALL-UPGRADE.md",
+      "sizeBytes": 8150,
+      "sha256": "bfcef0e67057ea1fb073cee9de5891adf4d5b8a21bf9c798e5af827c9f42e730"
+    }
+  ],
+  "preserve": [
+    "config.php",
+    "config.ave.php",
+    "uploads",
+    "other server configuration and keys"
+  ]
+}

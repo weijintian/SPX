@@ -1,0 +1,27 @@
+{
+  "versionName": "1.75",
+  "versionCode": 76,
+  "releaseId": 21,
+  "published": true,
+  "publicDownloadVerified": true,
+  "signatureMatchesPrevious": true,
+  "installedMatchesPublished": true,
+  "sourceSnapshotMatchesWorkspace": true,
+  "regressionChecks": {
+    "android175": 33,
+    "reliability": 37,
+    "media": 60,
+    "total": 130
+  },
+  "repeatedTlsCheckPassed": true,
+  "emulatorSmokePassed": true,
+  "sha256": "a2c07868d28fc775300efe9d3ed8ee92890209af14e159e2265297ac3374b579",
+  "bytes": 136304250,
+  "sourceArchive": "C:\\Users\\雷神\\Documents\\HBuilderProjects\\SPX聊天\\output\\release-1.75-20261026\\SPX-IM-1.75-android-source.zip",
+  "metadataBackup": "/root/spx-releases/android-1.75-20261026T025919Z-dd910a13/previous-releases.json",
+  "validationLimits": [
+    "No multi-brand physical-device acceptance",
+    "Remote videos load on demand before playback; no new streaming proxy"
+  ],
+  "downloadUrl": "https://spx001.top/spxchat/api.php?action=app.update.download&id=21"
+}

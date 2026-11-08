@@ -1,0 +1,73 @@
+﻿android-native/keys/signing.properties
+android-native/keys/signing.env.ps1
+
+android-native/keys/tencent-call.env
+spxchat/config.tencent-call.private.php
+
+# iOS signing material and App Store Connect keys are secrets; keep only the notes.
+ios-native/signing/**/*.p12
+ios-native/signing/**/*.mobileprovision
+ios-native/signing/**/*.p8
+*.p12
+*.mobileprovision
+*.p8
+
+
+# ===== 鏈満/鏋勫缓浜х墿 =====
+.spx-release-build/
+.codex-tmp/
+.tmp-swift-parser/
+output/
+unpackage/
+node_modules/
+*.log
+
+# Android 鏋勫缓
+android-native/.gradle/
+android-native/build/
+android-native/app/build/
+android-native/local.properties
+android-native/.idea/
+*.apk
+*.aab
+
+# iOS 鏋勫缓
+ios-native/Pods/
+ios-native/build/
+ios-native/DerivedData/
+ios-native/*.xcworkspace/xcuserdata/
+ios-native/*.xcodeproj/xcuserdata/
+
+# ===== 瀵嗛挜涓庡嚟鎹紙缁濆涓嶆帹锛?====
+*.jks
+*.keystore
+*.p12
+*.mobileprovision
+*.p8
+android-native/keys/
+ios-native/signing/
+zuixinzhengshu/
+spxchat/config.php
+spxchat/config.ave.php
+spxchat/config.tencent-call.private.php
+.env
+*.env
+!*.env.example
+
+# 鐢ㄦ埛涓婁紶鍐呭
+spxchat/uploads/
+
+# 绯荤粺鍨冨溇
+.DS_Store
+Thumbs.db
+desktop.ini
+
+
+# Gradle 缓存目录
+android-native/.release-gradle-home/
+**/.gradle/
+
+
+# 本机备份
+android-native/local.properties.orig
+

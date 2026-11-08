@@ -1,0 +1,17 @@
+# SPX IM 自定义 jail（2026-11-02）
+# 目标：单 IP 触发限流（HTTP 429）过多时自动封禁，替代人工封 IP。
+[DEFAULT]
+# 本机与内网永不封禁
+ignoreip = 127.0.0.1/8 ::1 10.0.0.0/8
+
+[spx-api]
+enabled  = true
+filter   = spx-api
+# 两个日志都看：站点日志 + 兜底 access.log
+logpath  = /var/log/nginx/access.log
+backend  = auto
+# 5 分钟内 30 次 429 → 封 1 小时
+maxretry = 30
+findtime = 300
+bantime  = 3600
+action   = iptables-multiport[name=SPXAPI, port="http,https", protocol=tcp]

@@ -1,0 +1,14 @@
+{
+  "versionName": "1.54",
+  "versionCode": 55,
+  "package": "com.spx.chat",
+  "variant": "release",
+  "debuggable": false,
+  "testOnly": false,
+  "signingCertificateSha256": "776718a739e05447b4be92a46fb822b8ecc946aee334bc7b81d0eba009f68aa5",
+  "originalReleaseCertificateVerified": true,
+  "zipAlignmentVerified": true,
+  "sha256": "fae837f689f974a51f2196514f66ab7950d4f85390ef81ef445af59bbd5f4349",
+  "sizeBytes": 9664868,
+  "releasePublished": false
+}

@@ -1,0 +1,287 @@
+{
+  "versionName": "1.49",
+  "versionCode": 50,
+  "type": "existing-server-overlay",
+  "generatedAt": "2026-10-17T02:37:19.154728+00:00",
+  "apkPublication": "hold-private-archive-only",
+  "files": [
+    {
+      "path": "spxchat/chat-worker.php",
+      "sizeBytes": 401,
+      "sha256": "20f6c030578a53df2678858e8da1f0d03970b90fda8eca6e46441e67ce12dc36",
+      "previousSha256": "20f6c030578a53df2678858e8da1f0d03970b90fda8eca6e46441e67ce12dc36"
+    },
+    {
+      "path": "spxchat/chat_automation.php",
+      "sizeBytes": 11128,
+      "sha256": "7440316cc74206e05b21388d1186faec3e3824b25c304bba42c535b44939bdc3",
+      "previousSha256": "7440316cc74206e05b21388d1186faec3e3824b25c304bba42c535b44939bdc3"
+    },
+    {
+      "path": "spxchat/chat_content.php",
+      "sizeBytes": 1543,
+      "sha256": "19fd979160d79b15f7a72ef7300be26b154ff6946c8900a103a43752d7c7b3ad",
+      "previousSha256": "19fd979160d79b15f7a72ef7300be26b154ff6946c8900a103a43752d7c7b3ad"
+    },
+    {
+      "path": "spxchat/chat_delivery.php",
+      "sizeBytes": 7582,
+      "sha256": "8e2dc6398ffa6002a6de4452cfe2dd25edc0eb6e00b45ec440bf671f0a288644",
+      "previousSha256": "8e2dc6398ffa6002a6de4452cfe2dd25edc0eb6e00b45ec440bf671f0a288644"
+    },
+    {
+      "path": "spxchat/chat_schema.php",
+      "sizeBytes": 2249,
+      "sha256": "3e8f9248d15491e3fe3182a132f0ac0f6395285dbe308c691fb8a4c710e6b554",
+      "previousSha256": "3e8f9248d15491e3fe3182a132f0ac0f6395285dbe308c691fb8a4c710e6b554"
+    },
+    {
+      "path": "spxchat/db.php",
+      "sizeBytes": 42030,
+      "sha256": "dc90525a36f23c22dd982fcef3058f79db5d2d6d44d55960a8896acfc195b035",
+      "previousSha256": "dc90525a36f23c22dd982fcef3058f79db5d2d6d44d55960a8896acfc195b035"
+    },
+    {
+      "path": "spxchat/index.php",
+      "sizeBytes": 121221,
+      "sha256": "3af601def1ae2000c9599351aedfed2526a9fd6ee09ad9519bfacbf90531f246",
+      "previousSha256": "3af601def1ae2000c9599351aedfed2526a9fd6ee09ad9519bfacbf90531f246"
+    },
+    {
+      "path": "spxchat/deploy/spx-chat-scheduler.service",
+      "sizeBytes": 294,
+      "sha256": "e6421272ab010965d4c32c07ac98d14cde84f5c1e452448e074453af33ce8452",
+      "previousSha256": "e6421272ab010965d4c32c07ac98d14cde84f5c1e452448e074453af33ce8452"
+    },
+    {
+      "path": "spxchat/deploy/spx-chat-scheduler.timer",
+      "sizeBytes": 189,
+      "sha256": "b69bd537a714cc342dce61c64c08555d62c9c6f0b2760b816bff8b3ff79f5273",
+      "previousSha256": "b69bd537a714cc342dce61c64c08555d62c9c6f0b2760b816bff8b3ff79f5273"
+    },
+    {
+      "path": "spxchat/CHAT-UPGRADE.md",
+      "sizeBytes": 3033,
+      "sha256": "23e3f576ba5fcd0241afc5ae319eb85ff18c32ded2e56a4e7ca97bc1dc8b6513",
+      "previousSha256": "23e3f576ba5fcd0241afc5ae319eb85ff18c32ded2e56a4e7ca97bc1dc8b6513"
+    }
+  ],
+  "dependencies": {
+    "spxchat/api.php": {
+      "status": "same",
+      "localHash": "e33da0ad4d7c0bc31bf8ecb061dd03a9d5fedaa66b5cf80e54c18a6ce4df506d",
+      "remoteHash": "e33da0ad4d7c0bc31bf8ecb061dd03a9d5fedaa66b5cf80e54c18a6ce4df506d"
+    },
+    "spxchat/auth.php": {
+      "status": "same",
+      "localHash": "fd342e3ce3ddac9feb9e432cda699d3678407c40fa1cbfff070a1167242c2ce4",
+      "remoteHash": "fd342e3ce3ddac9feb9e432cda699d3678407c40fa1cbfff070a1167242c2ce4"
+    },
+    "spxchat/AvePriceService.php": {
+      "status": "same",
+      "localHash": "aad26f382e4f690282dc6ee8ed3d11c8af42e7b7e703feab2d048b1ebedf46fe",
+      "remoteHash": "aad26f382e4f690282dc6ee8ed3d11c8af42e7b7e703feab2d048b1ebedf46fe"
+    },
+    "spxchat/chat-worker.php": {
+      "status": "new",
+      "localHash": "20f6c030578a53df2678858e8da1f0d03970b90fda8eca6e46441e67ce12dc36",
+      "remoteHash": "20f6c030578a53df2678858e8da1f0d03970b90fda8eca6e46441e67ce12dc36"
+    },
+    "spxchat/chat_automation.php": {
+      "status": "new",
+      "localHash": "7440316cc74206e05b21388d1186faec3e3824b25c304bba42c535b44939bdc3",
+      "remoteHash": "7440316cc74206e05b21388d1186faec3e3824b25c304bba42c535b44939bdc3"
+    },
+    "spxchat/chat_content.php": {
+      "status": "new",
+      "localHash": "19fd979160d79b15f7a72ef7300be26b154ff6946c8900a103a43752d7c7b3ad",
+      "remoteHash": "19fd979160d79b15f7a72ef7300be26b154ff6946c8900a103a43752d7c7b3ad"
+    },
+    "spxchat/chat_delivery.php": {
+      "status": "new",
+      "localHash": "8e2dc6398ffa6002a6de4452cfe2dd25edc0eb6e00b45ec440bf671f0a288644",
+      "remoteHash": "8e2dc6398ffa6002a6de4452cfe2dd25edc0eb6e00b45ec440bf671f0a288644"
+    },
+    "spxchat/chat_schema.php": {
+      "status": "new",
+      "localHash": "3e8f9248d15491e3fe3182a132f0ac0f6395285dbe308c691fb8a4c710e6b554",
+      "remoteHash": "3e8f9248d15491e3fe3182a132f0ac0f6395285dbe308c691fb8a4c710e6b554"
+    },
+    "spxchat/db.php": {
+      "status": "modified",
+      "localHash": "dc90525a36f23c22dd982fcef3058f79db5d2d6d44d55960a8896acfc195b035",
+      "remoteHash": "dc90525a36f23c22dd982fcef3058f79db5d2d6d44d55960a8896acfc195b035"
+    },
+    "spxchat/index.php": {
+      "status": "modified",
+      "localHash": "3af601def1ae2000c9599351aedfed2526a9fd6ee09ad9519bfacbf90531f246",
+      "remoteHash": "3af601def1ae2000c9599351aedfed2526a9fd6ee09ad9519bfacbf90531f246"
+    },
+    "spxchat/mall.php": {
+      "status": "same",
+      "localHash": "a20b97c7cbf708dc2743fd5d1a7ba4699cd8131b12abef96fed06ae6fa7a4525",
+      "remoteHash": "a20b97c7cbf708dc2743fd5d1a7ba4699cd8131b12abef96fed06ae6fa7a4525"
+    },
+    "spxchat/mall_commerce.php": {
+      "status": "same",
+      "localHash": "5a3f3c0a49c764db3c160f73dc650c9710d432b5664781839fda9c8ff6c8e585",
+      "remoteHash": "5a3f3c0a49c764db3c160f73dc650c9710d432b5664781839fda9c8ff6c8e585"
+    },
+    "spxchat/mall_merchant_media.php": {
+      "status": "same",
+      "localHash": "7bb2bf2aa81c55bdecaa71ece766f9a8aeeb5766875d8891fef24cb5d5faa3d3",
+      "remoteHash": "7bb2bf2aa81c55bdecaa71ece766f9a8aeeb5766875d8891fef24cb5d5faa3d3"
+    },
+    "spxchat/mall_schema.php": {
+      "status": "same",
+      "localHash": "4cd4283b6198fbc91e5c72d3efab53f2e9bd0d0d4351f8a3e0dd77d2d8975e18",
+      "remoteHash": "4cd4283b6198fbc91e5c72d3efab53f2e9bd0d0d4351f8a3e0dd77d2d8975e18"
+    },
+    "spxchat/mall_workspace.php": {
+      "status": "same",
+      "localHash": "e3fc5c40dbe4c839fbea81ef8a723fdfb21fd8c59f4419f2189c7d253dd0f4b2",
+      "remoteHash": "e3fc5c40dbe4c839fbea81ef8a723fdfb21fd8c59f4419f2189c7d253dd0f4b2"
+    },
+    "spxchat/merchant-api.php": {
+      "status": "same",
+      "localHash": "b2e42484465051c5192d8905a258cfa3499292e82ded7d68037cf585e4cbeb0e",
+      "remoteHash": "b2e42484465051c5192d8905a258cfa3499292e82ded7d68037cf585e4cbeb0e"
+    },
+    "spxchat/merchant.css": {
+      "status": "same",
+      "localHash": "bba2e953715db75bc59b3deec576f87fda1f8a274f505858d1b033e12fa6e349",
+      "remoteHash": "bba2e953715db75bc59b3deec576f87fda1f8a274f505858d1b033e12fa6e349"
+    },
+    "spxchat/merchant.js": {
+      "status": "same",
+      "localHash": "91fff92e7b97499eea67fe8aa87f78c7e0c5775616d11b93700d43591198aac8",
+      "remoteHash": "91fff92e7b97499eea67fe8aa87f78c7e0c5775616d11b93700d43591198aac8"
+    },
+    "spxchat/merchant.php": {
+      "status": "same",
+      "localHash": "7bccd1f16b6980142ec2801b89e64abd294a2f905953ff248c619c15ae4e4c3b",
+      "remoteHash": "7bccd1f16b6980142ec2801b89e64abd294a2f905953ff248c619c15ae4e4c3b"
+    },
+    "spxchat/merchant_session.php": {
+      "status": "same",
+      "localHash": "fb02facba0a13a9d11b3c56c875c3da1fcb987a9fe7bb309de07bda8c23a46d9",
+      "remoteHash": "fb02facba0a13a9d11b3c56c875c3da1fcb987a9fe7bb309de07bda8c23a46d9"
+    },
+    "spxchat/product-share.php": {
+      "status": "same",
+      "localHash": "8f0bbe0dd6f6755a17b1718722811813bbd456b6e07da4e82fb5457f0c07a7e4",
+      "remoteHash": "8f0bbe0dd6f6755a17b1718722811813bbd456b6e07da4e82fb5457f0c07a7e4"
+    },
+    "spxchat/response.php": {
+      "status": "same",
+      "localHash": "a8f30343d4e7a4aea09a987df73829572e9c3b56ff2fde56a62357ca5621aaf3",
+      "remoteHash": "a8f30343d4e7a4aea09a987df73829572e9c3b56ff2fde56a62357ca5621aaf3"
+    },
+    "spxchat/smtp.php": {
+      "status": "same",
+      "localHash": "745f2c75c00f634211c146168db377e28e662a8dbddd097ff0348ebdc4100cd3",
+      "remoteHash": "745f2c75c00f634211c146168db377e28e662a8dbddd097ff0348ebdc4100cd3"
+    },
+    "spxchat/staking_settlement.php": {
+      "status": "same",
+      "localHash": "b615cb7c6b84b2cb108963fe328b56cdd1bd26ee2ef71d90956960a75648a9bc",
+      "remoteHash": "b615cb7c6b84b2cb108963fe328b56cdd1bd26ee2ef71d90956960a75648a9bc"
+    },
+    "spxchat/staking_settler.php": {
+      "status": "same",
+      "localHash": "a3b01724c6e844cd9d6dedcfe4d694799703009e2a798e2aad207e708f264206",
+      "remoteHash": "a3b01724c6e844cd9d6dedcfe4d694799703009e2a798e2aad207e708f264206"
+    },
+    "spxchat/ws-event.php": {
+      "status": "same",
+      "localHash": "d3a12324cc387a569f38d13f76071ea92db3783b5b03386449cd24c6e2e15dc0",
+      "remoteHash": "d3a12324cc387a569f38d13f76071ea92db3783b5b03386449cd24c6e2e15dc0"
+    },
+    "spxchat/ws-server.php": {
+      "status": "same",
+      "localHash": "8580ec9c4d5ace0161dbeb48d9b2b98e5ec9fbbbabbefcd3c576325998a4a2ff",
+      "remoteHash": "8580ec9c4d5ace0161dbeb48d9b2b98e5ec9fbbbabbefcd3c576325998a4a2ff"
+    },
+    "spxchat/i18n/Translator.php": {
+      "status": "same",
+      "localHash": "3f4eea53ce27f098b060709b1502389199747c61811c94d7d65acb9bd0df7d34",
+      "remoteHash": "3f4eea53ce27f098b060709b1502389199747c61811c94d7d65acb9bd0df7d34"
+    },
+    "spxchat/spxchat-systemadmin/admin.php": {
+      "status": "same",
+      "localHash": "74a754ee2b47f52c264c11d7ac73fafb4cb554e3d13ad0c59c0afa43634d8a35",
+      "remoteHash": "74a754ee2b47f52c264c11d7ac73fafb4cb554e3d13ad0c59c0afa43634d8a35"
+    },
+    "spxchat/spxchat-systemadmin/login.php": {
+      "status": "same",
+      "localHash": "3a44162281174dea809eb92fabc62bde24be6abf4d9b1bc3c908a5b8889738ee",
+      "remoteHash": "3a44162281174dea809eb92fabc62bde24be6abf4d9b1bc3c908a5b8889738ee"
+    },
+    "spxchat/spxchat-systemadmin/logout.php": {
+      "status": "same",
+      "localHash": "203fd46de0060ddcc23fd9d2f31c0d85e16009d8f072658a3bfa94ba588b0546",
+      "remoteHash": "203fd46de0060ddcc23fd9d2f31c0d85e16009d8f072658a3bfa94ba588b0546"
+    },
+    "spxchat/spxchat-systemadmin/mall_admin.php": {
+      "status": "same",
+      "localHash": "3733e5c740223c7f8eb9cb4b7ff992356238fc3b20cb4e0970e0057b0f01a506",
+      "remoteHash": "3733e5c740223c7f8eb9cb4b7ff992356238fc3b20cb4e0970e0057b0f01a506"
+    },
+    "spxchat/spxchat-systemadmin/ui-premium.css": {
+      "status": "same",
+      "localHash": "7eb1a89467bbbc91911ddf4da44350038236264905c0f9637e6443c8f7440640",
+      "remoteHash": "7eb1a89467bbbc91911ddf4da44350038236264905c0f9637e6443c8f7440640"
+    },
+    "spxchat/i18n/messages/en.php": {
+      "status": "same",
+      "localHash": "bfa55f3828e02e9cfe64dabdd236a3d2e178c1e1d5a958d6e817319f58b6469c",
+      "remoteHash": "bfa55f3828e02e9cfe64dabdd236a3d2e178c1e1d5a958d6e817319f58b6469c"
+    },
+    "spxchat/i18n/messages/ja.php": {
+      "status": "same",
+      "localHash": "9c820bf11e9da1c823a63d871838c65f4877c6e245baa2d394d28935fbfb88a3",
+      "remoteHash": "9c820bf11e9da1c823a63d871838c65f4877c6e245baa2d394d28935fbfb88a3"
+    },
+    "spxchat/i18n/messages/ko.php": {
+      "status": "same",
+      "localHash": "2488283ea42fe38e4ff3276d20fe1ca47035dfe8a1bad6ed34dd2fe1d24766d4",
+      "remoteHash": "2488283ea42fe38e4ff3276d20fe1ca47035dfe8a1bad6ed34dd2fe1d24766d4"
+    },
+    "spxchat/i18n/messages/zh-CN.php": {
+      "status": "same",
+      "localHash": "13a8cd2e58acd3614c2f5858614b2b3cf1b717f98e5ab42adb24dba710b09326",
+      "remoteHash": "13a8cd2e58acd3614c2f5858614b2b3cf1b717f98e5ab42adb24dba710b09326"
+    },
+    "spxchat/i18n/messages/zh-TW.php": {
+      "status": "same",
+      "localHash": "65438588ad96f2539ce5e1cd46149e8a4a0832119203d9ef639adc17198eacbd",
+      "remoteHash": "65438588ad96f2539ce5e1cd46149e8a4a0832119203d9ef639adc17198eacbd"
+    },
+    "spxchat/deploy/spx-chat-scheduler.service": {
+      "status": "new",
+      "localHash": "e6421272ab010965d4c32c07ac98d14cde84f5c1e452448e074453af33ce8452",
+      "remoteHash": "e6421272ab010965d4c32c07ac98d14cde84f5c1e452448e074453af33ce8452"
+    },
+    "spxchat/deploy/spx-chat-scheduler.timer": {
+      "status": "new",
+      "localHash": "b69bd537a714cc342dce61c64c08555d62c9c6f0b2760b816bff8b3ff79f5273",
+      "remoteHash": "b69bd537a714cc342dce61c64c08555d62c9c6f0b2760b816bff8b3ff79f5273"
+    },
+    "spxchat/CHAT-UPGRADE.md": {
+      "status": "new",
+      "localHash": "23e3f576ba5fcd0241afc5ae319eb85ff18c32ded2e56a4e7ca97bc1dc8b6513",
+      "remoteHash": "23e3f576ba5fcd0241afc5ae319eb85ff18c32ded2e56a4e7ca97bc1dc8b6513"
+    },
+    ".well-known/assetlinks.json": {
+      "status": "same",
+      "localHash": "28678063c7334531f14ef89fd554f8738488cba7d7f51864093b373060c2d3a5",
+      "remoteHash": "28678063c7334531f14ef89fd554f8738488cba7d7f51864093b373060c2d3a5"
+    }
+  },
+  "preserve": [
+    "production configuration",
+    "existing user and commerce data",
+    "uploads",
+    "public APK and release records"
+  ]
+}

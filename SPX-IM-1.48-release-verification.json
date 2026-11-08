@@ -1,0 +1,20 @@
+{
+  "versionName": "1.48",
+  "versionCode": 49,
+  "variant": "release",
+  "package": "com.spx.chat",
+  "debuggable": false,
+  "testOnly": false,
+  "sourceFilesCompared": 29,
+  "compiledClassesVerifiedInApk": 187,
+  "zipAlignmentVerified": true,
+  "sizeBytes": 9625159,
+  "sha256": "8168f0458344c8672671a983443675ef06751cf5f14afdfc52997183f2bbb92e",
+  "artifact": "C:\\Users\\雷神\\Documents\\HBuilderProjects\\SPX聊天\\SPX-IM-1.48-release.apk",
+  "signingCertificateSha256": "776718a739e05447b4be92a46fb822b8ecc946aee334bc7b81d0eba009f68aa5",
+  "originalReleaseCertificateVerified": true,
+  "appLinkManifestAndCertificateVerified": true,
+  "serverDeployed": true,
+  "releasePublished": false,
+  "standardOutputUpdated": true
+}

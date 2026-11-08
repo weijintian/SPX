@@ -1,0 +1,30 @@
+Subject: [PATCH] fix(ios): 1.0.21 build 23 - iPhone only, fixes App Store 90474
+
+TARGETED_DEVICE_FAMILY 1,2 (iPad) + portrait-only Info.plist triggers 90474.
+Switch to iPhone-only and bump build number.
+
+diff --git a/ios-native/project.yml b/ios-native/project.yml
+index 8a1b2c3..9d4e5f6 100644
+--- a/ios-native/project.yml
++++ b/ios-native/project.yml
+@@ -6,7 +6,10 @@
+ settings:
+   base:
+     SWIFT_VERSION: "5.0"
+-    TARGETED_DEVICE_FAMILY: "1,2"
++    # 1 = 仅 iPhone。改成 "1,2"（通用）时，iPad 必须声明全部四个方向
++    # （UIInterfaceOrientationPortrait / PortraitUpsideDown / LandscapeLeft / LandscapeRight），
++    # 否则 App Store 会报 90474：无效的捆绑包（iPad 多任务处理要求）。
++    TARGETED_DEVICE_FAMILY: "1"
+     ENABLE_TESTABILITY: YES
+     # Apple Developer team that owns the App ID com.spx.chat.ios.
+     DEVELOPMENT_TEAM: VX2SVTNSZ3
+@@ -26,7 +29,7 @@
+       base:
+         PRODUCT_BUNDLE_IDENTIFIER: com.spx.chat.ios
+         INFOPLIST_FILE: SpxChatIOS/Info.plist
+-        CURRENT_PROJECT_VERSION: 22
++        CURRENT_PROJECT_VERSION: 23
+         MARKETING_VERSION: 1.0.21
+         SWIFT_OBJC_BRIDGING_HEADER: SpxChatIOS/Support/SpxChatIOS-Bridging-Header.h
+         CLANG_ENABLE_OBJC_ARC: YES

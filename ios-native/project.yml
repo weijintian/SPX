@@ -1,0 +1,59 @@
+name: SpxChatIOS
+options:
+  bundleIdPrefix: com.spx
+  deploymentTarget:
+    iOS: "15.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    ENABLE_TESTABILITY: YES
+    # Apple Developer team that owns the App ID com.spx.chat.ios.
+    DEVELOPMENT_TEAM: VX2SVTNSZ3
+targets:
+  SpxChatIOS:
+    type: application
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: SpxChatIOS
+        excludes:
+          - Resources
+          - Info.plist
+      - path: SpxChatIOS/Resources
+        buildPhase: resources
+    settings:
+      base:
+        # Override XcodeGen's target-level iPhone/iPad preset; project-level settings alone lose.
+        TARGETED_DEVICE_FAMILY: "1"
+        PRODUCT_BUNDLE_IDENTIFIER: com.spx.chat.ios
+        INFOPLIST_FILE: SpxChatIOS/Info.plist
+        CURRENT_PROJECT_VERSION: 24
+        MARKETING_VERSION: 1.0.21
+        SWIFT_OBJC_BRIDGING_HEADER: SpxChatIOS/Support/SpxChatIOS-Bridging-Header.h
+        CLANG_ENABLE_OBJC_ARC: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        GENERATE_INFOPLIST_FILE: YES
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+  SpxChatIOSTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: SpxChatIOSTests
+    dependencies:
+      - target: SpxChatIOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.spx.chat.ios.tests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  SpxChatIOS:
+    build:
+      targets:
+        SpxChatIOS: all
+        SpxChatIOSTests: [test]
+    test:
+      targets:
+        - SpxChatIOSTests
+      gatherCoverageData: true
+      environmentVariables:
+        SPX_RUN_LIVE_TLS_PROBE: "1"

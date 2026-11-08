@@ -1,0 +1,13 @@
+[Unit]
+Description=SPX Chat staking settlement worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=www-data
+WorkingDirectory=/var/www/spxchat
+ExecStart=/usr/bin/php /var/www/spxchat/staking_settler.php
+
+[Install]
+WantedBy=multi-user.target

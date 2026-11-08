@@ -1,0 +1,37 @@
+{
+  "versionName": "1.47",
+  "versionCode": 48,
+  "variant": "release",
+  "package": "com.spx.chat",
+  "debuggable": false,
+  "testOnly": false,
+  "sourceFilesCompared": 29,
+  "compiledClassesVerifiedInApk": 184,
+  "zipAlignmentVerified": true,
+  "sizeBytes": 9618800,
+  "sha256": "f8ae0d07dfaf6a57a476aaa1f55f979fe9cb9304f712b6ba2b85df4db4f207b9",
+  "artifact": "C:\\Users\\雷神\\Documents\\HBuilderProjects\\SPX聊天\\SPX-IM-1.47-release.apk",
+  "signingCertificateSha256": "776718a739e05447b4be92a46fb822b8ecc946aee334bc7b81d0eba009f68aa5",
+  "originalReleaseCertificateVerified": true,
+  "standardOutputUpdated": true,
+  "latestFeatureMarkersVerified": {
+    "MainActivity": [
+      "pending_shared_product_id",
+      "AppNavIcon",
+      "setBottomNavVisible"
+    ],
+    "MallCommerce": [
+      "product-share.php"
+    ],
+    "ChatCache": [
+      "sessionScope",
+      "message_id DESC"
+    ],
+    "ChatWebSocket": [
+      "setSoTimeout"
+    ]
+  },
+  "apkPublished": false,
+  "emulatorValidated": false,
+  "buildLogContainsCompilerAccessWarning": true
+}

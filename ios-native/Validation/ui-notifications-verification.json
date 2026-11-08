@@ -1,0 +1,141 @@
+{
+  "date": "2026-10-24",
+  "ios": {
+    "version": "1.0.6",
+    "build": 7,
+    "xcode": "not_run",
+    "xctest": "not_run",
+    "device": "not_run"
+  },
+  "android": {
+    "version": "1.72",
+    "code": 73,
+    "changed_java_sources": true,
+    "gradle_build": "blocked_missing_cached_tencent_dependencies",
+    "device": "not_run"
+  },
+  "checks": [
+    {
+      "name": "sources",
+      "passed": true,
+      "stdout": "{\r\n  \"swift_files\": 66,\r\n  \"lines\": 10049,\r\n  \"syntax_errors\": [],\r\n  \"literal_api_actions\": 97,\r\n  \"actions_not_found_in_local_backend\": [],\r\n  \"api_action_validation_source\": \"local_backend\",\r\n  \"policy_resources\": [\r\n    \"SpxChatIOS\\\\Resources\\\\privacy.txt\",\r\n    \"SpxChatIOS\\\\Resources\\\\agreement.txt\"\r\n  ],\r\n  \"xcode_compilation\": \"not_run\",\r\n  \"unit_tests\": \"not_run\",\r\n  \"device_testing\": \"not_run\"\r\n}\r\n",
+      "stderr": ""
+    },
+    {
+      "name": "signing",
+      "passed": true,
+      "stdout": "",
+      "stderr": ".........\r\n----------------------------------------------------------------------\r\nRan 9 tests in 0.137s\r\n\r\nOK\r\n"
+    },
+    {
+      "name": "push",
+      "passed": true,
+      "stdout": "{\n    \"passed\": 33,\n    \"checks\": [\n        {\n            \"name\": \"APNs token normalization\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Preferences default on\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Preferences disabled\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Reject invalid provider\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Reject invalid platform\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Reject invalid device_id\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Reject invalid device_token\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Reject invalid bundle_id\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Reject invalid environment\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Reject invalid enabled\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Reject odd APNs token\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Reject structured identity\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Reject null enabled\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Reject null preview\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Reject null badge\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Normal direct message is allowed\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Muted direct message is suppressed\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Direct mention cannot bypass mute\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Blocked direct mention is suppressed\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Block cannot be bypassed by queued mention\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Muted ordinary group message is suppressed\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Group mention can bypass group mute\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Block always takes precedence over mention\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Direct route uses recipient chat\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Group route excludes direct chat\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Self events never notify\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Recipient is required\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Conversation is required\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Calls are not duplicated as chat pushes\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"ES256 DER padding\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Reject truncated DER\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"No credentials means delivery disabled\",\n            \"passed\": true\n        },\n        {\n            \"name\": \"Unconfigured worker does not connect to database or network\",\n            \"passed\": true\n        }\n    ],\n    \"database_integration\": \"not_run\",\n    \"live_delivery\": \"not_run\"\n}\r\n",
+      "stderr": ""
+    },
+    {
+      "name": "calls",
+      "passed": true,
+      "stdout": "PASS: offline recipient login preserves unclaimed incoming call\nPASS: caller login ends its previous outgoing call\nPASS: unrelated login cannot inherit a call\nPASS: recipient device replacement ends a claimed call\nPASS: connected call does not migrate across logins\nPASS: canceled call is never revived\nPASS: timed out call is never revived\nPASS: rejected call is never revived\nPASS: login applies the preservation rule before ending old calls\n",
+      "stderr": ""
+    },
+    {
+      "name": "android_java",
+      "passed": true,
+      "stdout": "WARNING: bootstrap class path is not set in conjunction with -source 8\n  not setting the bootstrap class path may lead to class files that cannot run on JDK 8\n    --release 8 is recommended instead of -source 8 -target 8 because it sets the bootstrap class path automatically\r\nWARNING: source value 8 is obsolete and will be removed in a future release\r\nWARNING: target value 8 is obsolete and will be removed in a future release\r\nWARNING: To suppress warnings about obsolete options, use -Xlint:-options.\r\nWARNING: unknown enum constant androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP_PREFIX\n  reason: class file for androidx.annotation.RestrictTo$Scope not found\r\nWARNING: unknown enum constant androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP_PREFIX\r\nNOTE: Some input files use or override a deprecated API.\r\nNOTE: Recompile with -Xlint:deprecation for details.\r\nchanged_sources_compile=true\r\n",
+      "stderr": ""
+    },
+    {
+      "name": "php_lint_push_notifications.php",
+      "passed": true,
+      "stdout": "No syntax errors detected in spxchat/push_notifications.php\n",
+      "stderr": ""
+    },
+    {
+      "name": "php_lint_push_worker.php",
+      "passed": true,
+      "stdout": "No syntax errors detected in spxchat/push_worker.php\n",
+      "stderr": ""
+    },
+    {
+      "name": "php_lint_index.php",
+      "passed": true,
+      "stdout": "No syntax errors detected in spxchat/index.php\n",
+      "stderr": ""
+    },
+    {
+      "name": "php_lint_db.php",
+      "passed": true,
+      "stdout": "No syntax errors detected in spxchat/db.php\n",
+      "stderr": ""
+    },
+    {
+      "name": "php_lint_ws-event.php",
+      "passed": true,
+      "stdout": "No syntax errors detected in spxchat/ws-event.php\n",
+      "stderr": ""
+    },
+    {
+      "name": "lint:spxchat/push_notifications.php",
+      "passed": true,
+      "stdout": "No syntax errors detected in spxchat/push_notifications.php\n",
+      "stderr": ""
+    },
+    {
+      "name": "lint:spxchat/push_worker.php",
+      "passed": true,
+      "stdout": "No syntax errors detected in spxchat/push_worker.php\n",
+      "stderr": ""
+    },
+    {
+      "name": "lint:server-companion/push_notifications.php",
+      "passed": true,
+      "stdout": "No syntax errors detected in server-companion/push_notifications.php\n",
+      "stderr": ""
+    },
+    {
+      "name": "lint:server-companion/push_worker.php",
+      "passed": true,
+      "stdout": "No syntax errors detected in server-companion/push_worker.php\n",
+      "stderr": ""
+    },
+    {
+      "name": "lint:server-companion/tests/push-policy.php",
+      "passed": true,
+      "stdout": "No syntax errors detected in server-companion/tests/push-policy.php\n",
+      "stderr": ""
+    }
+  ],
+  "media_upload": {
+    "scope": "loopback isolated storage; no production API, account or database used",
+    "passed": true,
+    "checks": 18
+  },
+  "deployment": "not_run",
+  "git_push": "not_run",
+  "artifact_build": "not_run",
+  "apns_credentials": "not_configured",
+  "android_push_provider": "not_configured",
+  "remote_push_delivery": "not_run",
+  "mysql_push_schema_integration": "not_run",
+  "reaudit": {
+    "date": "2026-10-24",
+    "manifest_before_audit": {
+      "files": 40,
+      "drift": []
+    },
+    "fixed": [
+      "Queued notification delivery now checks blocked separately from mute; mentions only bypass group mute",
+      "Explicit null notification preferences are rejected instead of silently enabling notifications"
+    ],
+    "push_policy_checks": 33,
+    "full_ui_android_parity": "not_device_verified",
+    "xcode_typecheck": "not_run",
+    "mysql_push_schema_integration": "not_run",
+    "remote_push_delivery": "not_run",
+    "deployment": "not_run",
+    "git_push": "not_run",
+    "artifact_build": "not_run",
+    "full_android_gradle": "not_rerun; previously blocked by missing cached Tencent dependencies"
+  }
+}

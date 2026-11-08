@@ -1,0 +1,20 @@
+{
+  "versionName": "1.51",
+  "versionCode": 52,
+  "variant": "release",
+  "package": "com.spx.chat",
+  "debuggable": false,
+  "testOnly": false,
+  "sourceFilesCompared": 36,
+  "compiledClassesVerifiedInApk": 205,
+  "zipAlignmentVerified": true,
+  "sizeBytes": 9659729,
+  "sha256": "233a4d19ce12ec105ff05ee958c49aae179066cfd85546b0165c6bb168f2b7b1",
+  "artifact": "C:\\Users\\雷神\\Documents\\HBuilderProjects\\SPX聊天\\SPX-IM-1.51-release.apk",
+  "signingCertificateSha256": "776718a739e05447b4be92a46fb822b8ecc946aee334bc7b81d0eba009f68aa5",
+  "originalReleaseCertificateVerified": true,
+  "appLinkManifestAndCertificateVerified": true,
+  "serverDeployed": true,
+  "releasePublished": false,
+  "standardOutputUpdated": true
+}

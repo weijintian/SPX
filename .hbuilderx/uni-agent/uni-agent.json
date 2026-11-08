@@ -1,0 +1,14 @@
+{
+  "permission": {
+    "external_directory": {
+      "C:\\Users\\雷神\\AppData\\Local\\Android\\Sdk\\*": "allow",
+      "C:\\Users\\雷神\\.gradle\\caches\\modules-2\\files-2.1\\com.android.tools.build\\gradle\\*": "allow",
+      "C:\\Gradle\\*": "allow",
+      "C:\\Users\\雷神\\*": "allow",
+      "C:\\Users\\雷神}\\Documents\\HBuilderProjects\\SPX聊天\\*": "allow",
+      "C:\\Program Files\\Android\\Android Studio\\*": "allow",
+      "C:\\Program Files\\Android\\*": "allow",
+      "C:\\*": "allow"
+    }
+  }
+}

@@ -1,0 +1,279 @@
+import Foundation
+
+struct APIEnvelope: Decodable { let code: JSON; let message: String?; let data: JSON? }
+enum APIError: LocalizedError {
+    case invalidURL, unauthorized, staleSession, server(Int,String), invalidResponse
+    var errorDescription: String? {
+        switch self {
+        case .invalidURL: return "服务器地址无效，请在设置检查"
+        case .unauthorized: return "登录已过期，请重新登录"
+        case .staleSession: return "账号已切换，请重试"
+        case .server(_, let message): return message
+        case .invalidResponse: return "服务器返回结果尚未确认，请检查网络后重试"
+        }
+    }
+    var retryable: Bool { if case .invalidResponse = self { return true }; if case .server(let c,_) = self { return c == 409 || c == 429 || c >= 500 }; return false }
+    var definitiveRejection: Bool {
+        if case .unauthorized = self { return true }
+        if case .server(let status, _) = self { return [400, 403, 404, 409, 422, 429].contains(status) }
+        return false
+    }
+}
+extension Notification.Name { static let spxUnauthorized = Notification.Name("spx.unauthorized") }
+actor APIClient {
+    static let shared = APIClient()
+    private var token: String?
+    private var generation = UUID()
+    /// 容灾地址广播（杭州）：香港连不上时从这里取最新 API 地址
+    static let discoveryURL = URL(string: "https://121.196.246.42:8443/config.json")!
+    private var lastDiscoveryAt = Date.distantPast
+    private let session: URLSession
+    init() {
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 300
+        session = URLSession(configuration:configuration, delegate: ServerTrustDelegate.shared, delegateQueue: nil)
+    }
+    func revokeSession(_ credential: String) async {
+        guard var request = try? URLRequest(url: requestURL("auth.logout")) else { return }
+        request.httpMethod = "POST"; request.timeoutInterval = 8
+        request.setValue("Bearer \(credential)", forHTTPHeaderField: "Authorization")
+        // This is the old credential. Never decode its 401 as a logout of the next account.
+        _ = try? await session.data(for: request)
+    }
+    func setToken(_ value:String?) async {
+        guard token != value else { return }
+        let previousScope = try? readCacheScope()
+        token = value; generation = UUID()
+        if let previousScope { await APIReadCache.shared.invalidate(scope: previousScope) }
+    }
+    func sessionIdentity() -> UUID { generation }
+    func endpoint() throws -> URL {
+        let configured = UserDefaults.standard.string(forKey:"spx.apiURL") ?? "https://70.39.201.191/spxchat/api.php"
+        guard let url = URL(string:configured), url.scheme == "https", url.host != nil else { throw APIError.invalidURL }
+        return url
+    }
+    func requestURL(_ action:String, query:[String:String] = [:]) throws -> URL {
+        var c = URLComponents(url:try endpoint(),resolvingAgainstBaseURL:false)!
+        c.queryItems = [URLQueryItem(name:"action",value:action)] + query.sorted(by:{$0.key < $1.key}).map{URLQueryItem(name:$0.key,value:$0.value)}
+        guard let url = c.url else {throw APIError.invalidURL}; return url
+    }
+    func request(_ action:String, method:String = "GET", query:[String:String] = [:], body:[String:JSON]? = nil, timeout: TimeInterval = 30) async throws -> JSON {
+        do {
+            return try await perform(action, method: method, query: query, body: body, timeout: timeout)
+        } catch let failure as URLError where Self.isNetworkFailure(failure) {
+            // 连接层失败：先向杭州地址广播要一次最新地址，拿到就重试一次
+            if await refreshFromDiscovery() {
+                return try await perform(action, method: method, query: query, body: body, timeout: timeout)
+            }
+            throw failure
+        }
+    }
+
+    private func perform(_ action:String, method:String = "GET", query:[String:String] = [:], body:[String:JSON]? = nil, timeout: TimeInterval = 30) async throws -> JSON {
+        let expectedScope = try readCacheScope()
+        var request = URLRequest(url:try requestURL(action,query:query))
+        // APIReadCache owns display freshness; live reads must not reuse URLSession responses.
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = timeout
+        request.httpMethod = method
+        request.setValue("application/json",forHTTPHeaderField:"Accept")
+        request.setValue(UserDefaults.standard.string(forKey:"spx.language") ?? Locale.preferredLanguages.first ?? "zh-CN",forHTTPHeaderField:"Accept-Language")
+        if let token {request.setValue("Bearer \(token)",forHTTPHeaderField:"Authorization")}
+        if let body {request.httpBody = try JSONEncoder().encode(body);request.setValue("application/json",forHTTPHeaderField:"Content-Type")}
+        let epoch = generation
+        let (data,response) = try await session.data(for:request)
+        try Task.checkCancellation()
+        try validateContext(epoch, scope: expectedScope)
+        return try decode(data,response:response)
+    }
+    func get(_ action:String, _ query:[String:String] = [:]) async throws -> JSON {
+        let expectedSession = generation
+        let expectedScope = try readCacheScope()
+        let result: JSON
+        if let lifetime = APIReadPolicy.lifetime(action) {
+            let key = APIReadCache.digest(try requestURL(action, query: query).absoluteString)
+            result = try await APIReadCache.shared.value(scope: expectedScope, key: key, action: action,
+                                                        lifetime: lifetime, force: APIReadContext.forceRefresh) {
+                try await self.readForSession(action, query: query, expectedSession: expectedSession, expectedScope: expectedScope)
+            }
+        } else { result = try await request(action, query: query) }
+        try Task.checkCancellation()
+        try validateContext(expectedSession, scope: expectedScope)
+        let recoveredFinancialResult = ["financial.request", "orders.request", "redpackets.request"].contains(action) && (result["exists"].flag || result["found"].flag)
+        if recoveredFinancialResult || (action == "redpackets.detail" && !result["my_amount"].string.isEmpty) {
+            await APIReadCache.shared.invalidate(scope: expectedScope, actions: APIReadPolicy.financial)
+            try validateContext(expectedSession, scope: expectedScope)
+            NotificationCenter.default.post(name: .spxWalletChanged, object: AccountMutation(session: expectedSession))
+        }
+        if ["contacts", "contacts.search"].contains(action), case .array(let values) = result {
+            return .array(values.map { .object($0.record.normalizedContact.fields) })
+        }
+        return result
+    }
+    @discardableResult func post(_ action:String, _ body:[String:JSON] = [:]) async throws -> JSON {
+        let expectedSession = generation
+        let expectedScope = try readCacheScope()
+        let result = try await request(action, method: "POST", body: body)
+        try validateContext(expectedSession, scope: expectedScope)
+        let invalidated = APIReadPolicy.invalidatedActions(by: action)
+        if !invalidated.isEmpty { await APIReadCache.shared.invalidate(scope: expectedScope, actions: invalidated) }
+        try validateContext(expectedSession, scope: expectedScope)
+        let event = AccountMutation(session: expectedSession)
+        if AccountMutation.affectsWallet(action) { NotificationCenter.default.post(name: .spxWalletChanged, object: event) }
+        if AccountMutation.affectsOrders(action) { NotificationCenter.default.post(name: .spxOrdersChanged, object: event) }
+        return result
+    }
+    /// 从杭州地址广播拉取最新节点并写入 spx.apiURL；成功返回 true，每分钟最多一次。
+    func refreshFromDiscovery() async -> Bool {
+        let now = Date()
+        guard now.timeIntervalSince(lastDiscoveryAt) > 60 else { return false }
+        lastDiscoveryAt = now
+        var request = URLRequest(url: Self.discoveryURL)
+        request.timeoutInterval = 5
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        guard let (data, response) = try? await session.data(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode == 200,
+              let payload = try? JSONDecoder().decode(JSON.self, from: data) else { return false }
+        for node in payload["nodes"].array {
+            let url = node["url"].string.trimmingCharacters(in: .whitespacesAndNewlines)
+            if url.isEmpty { continue }
+            let enabledValue = node["enabled"]
+            if enabledValue != .null, !enabledValue.flag { continue }
+            let base = Self.normalizedBase(url)
+            if base.isEmpty { continue }
+            UserDefaults.standard.set(base, forKey: "spx.apiURL")
+            return true
+        }
+        return false
+    }
+
+    nonisolated static func defaultBase() -> String { "https://70.39.201.191/spxchat/api.php" }
+
+    /// 把用户/广播给的地址规范化成 .../spxchat/api.php
+    nonisolated static func normalizedBase(_ raw: String) -> String {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        while value.hasSuffix("/") { value.removeLast() }
+        if value.isEmpty { return "" }
+        if value.hasSuffix("/spxchat/api.php") { }
+        else if value.hasSuffix("/spxchat") { value += "/api.php" }
+        else if value.contains("/spxchat/") { }
+        else { value += "/spxchat/api.php" }
+        guard let url = URL(string: value), url.scheme == "https", url.host != nil else { return "" }
+        return value
+    }
+
+    nonisolated static func isNetworkFailure(_ error: URLError) -> Bool {
+        switch error.code {
+        case .timedOut, .cannotFindHost, .cannotConnectToHost, .networkConnectionLost,
+             .dnsLookupFailed, .notConnectedToInternet, .resourceUnavailable, .secureConnectionFailed:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func readCacheScope() throws -> String {
+        APIReadCache.scope(endpoint: try endpoint().absoluteString, credential: token,
+                           language: UserDefaults.standard.string(forKey: "spx.language") ?? Locale.preferredLanguages.first ?? "zh-CN")
+    }
+    private func validateContext(_ expectedSession: UUID, scope: String) throws {
+        guard expectedSession == generation, try readCacheScope() == scope else { throw APIError.staleSession }
+    }
+    private func readForSession(_ action: String, query: [String: String], expectedSession: UUID, expectedScope: String) async throws -> JSON {
+        // The cache loader may resume after endpoint, language or account changes.
+        try validateContext(expectedSession, scope: expectedScope)
+        return try await request(action, query: query)
+    }
+    func invalidateRealtime(_ event: JSON, credential: String) async {
+        guard token == credential, let scope = try? readCacheScope() else { return }
+        let expectedSession = generation
+        let actions = APIReadPolicy.realtimeActions(event["type"].string)
+        if actions?.isEmpty == true { return }
+        await APIReadCache.shared.invalidate(scope: scope, actions: actions)
+        guard token == credential, generation == expectedSession, (try? readCacheScope()) == scope else { return }
+        let mutation = AccountMutation(session: expectedSession)
+        if actions == nil || actions?.contains("wallet") == true {
+            NotificationCenter.default.post(name: .spxWalletChanged, object: mutation)
+        }
+        if actions == nil || actions?.contains("orders") == true {
+            NotificationCenter.default.post(name: .spxOrdersChanged, object: mutation)
+        }
+    }
+    func data(_ action: String, query: [String: String] = [:]) async throws -> Data {
+        let epoch = generation
+        let expectedScope = try readCacheScope()
+        var request = URLRequest(url: try requestURL(action, query: query))
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        let (data, response) = try await session.data(for: request)
+        try Task.checkCancellation()
+        try validateContext(epoch, scope: expectedScope)
+        guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        if http.statusCode == 401 {
+            NotificationCenter.default.post(name: .spxUnauthorized, object: token)
+            throw APIError.unauthorized
+        }
+        guard (200..<300).contains(http.statusCode) else { throw APIError.server(http.statusCode, "图片加载失败（\(http.statusCode)）") }
+        return data
+    }
+    func decode(_ data:Data,response:URLResponse) throws -> JSON {
+        do { return try Self.decodeEnvelope(data, response: response) }
+        catch APIError.unauthorized {
+            let message = (try? JSONDecoder().decode(APIEnvelope.self,from:data))?.message ?? "登录已失效，请重新登录"
+            if let token {
+            NotificationCenter.default.post(name:.spxUnauthorized,object:token,userInfo:["message":message])
+            }
+            throw APIError.unauthorized
+        }
+    }
+    nonisolated static func decodeEnvelope(_ data: Data, response: URLResponse?) throws -> JSON {
+        guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        if http.statusCode == 401 { throw APIError.unauthorized }
+        let bytes = data.starts(with: [0xEF, 0xBB, 0xBF]) ? Data(data.dropFirst(3)) : data
+        guard let envelope = try? JSONDecoder().decode(APIEnvelope.self, from: bytes) else {
+            if (200..<300).contains(http.statusCode) { throw APIError.invalidResponse }
+            throw APIError.server(http.statusCode, "服务器暂时不可用（\(http.statusCode)）")
+        }
+        guard (200..<300).contains(http.statusCode), envelope.code.string == "0" else {throw APIError.server(http.statusCode,envelope.message ?? "操作未完成")}
+        return envelope.data ?? .null
+    }
+    func uploadRequest(_ action:String,boundary:String) throws -> URLRequest {
+        var r = URLRequest(url:try requestURL(action));r.httpMethod = "POST";r.timeoutInterval = 180
+        r.setValue("multipart/form-data; boundary=\(boundary)",forHTTPHeaderField:"Content-Type")
+        r.setValue("application/json", forHTTPHeaderField: "Accept")
+        r.setValue("zh-CN,zh;q=0.9", forHTTPHeaderField: "Accept-Language")
+        if let token {r.setValue("Bearer \(token)",forHTTPHeaderField:"Authorization")};return r
+    }
+    func backgroundUploadRequest(_ action: String, boundary: String, userID: Int) throws -> URLRequest {
+        try requireUploadOwner(userID)
+        return try uploadRequest(action, boundary: boundary)
+    }
+    private func requireUploadOwner(_ userID: Int) throws {
+        guard userID > 0, Int(Keychain.read("lastUserID") ?? "0") == userID else { throw APIError.staleSession }
+        if token == nil { token = Keychain.read("token") }
+        guard let token, token == Keychain.read("token") else { throw APIError.unauthorized }
+    }
+    func uploadStatus(userID: Int, uploadID: String, totalChunks: Int, totalBytes: Int) async throws -> JSON {
+        try requireUploadOwner(userID)
+        let result = try await get("upload.message.status", ["upload_id": uploadID,
+                                                              "total_chunks": String(totalChunks),
+                                                              "total_bytes": String(totalBytes)])
+        try requireUploadOwner(userID)
+        return result
+    }
+    func upload(_ action: String, body: Data, boundary: String, expectedSession: UUID? = nil) async throws -> JSON {
+        if let expectedSession, expectedSession != generation { throw APIError.staleSession }
+        let request = try uploadRequest(action, boundary: boundary)
+        return try await uploadPrepared(request, body: body, expectedSession: expectedSession ?? generation)
+    }
+    func uploadPrepared(_ request: URLRequest, body: Data, expectedSession: UUID) async throws -> JSON {
+        guard expectedSession == generation else { throw APIError.staleSession }
+        let (data, response) = try await session.upload(for: request, from: body)
+        try Task.checkCancellation()
+        guard expectedSession == generation else { throw APIError.staleSession }
+        return try decode(data, response: response)
+    }
+}
+

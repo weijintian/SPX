@@ -1,0 +1,83 @@
+{
+  "versionName": "1.47",
+  "versionCode": 48,
+  "type": "ui-and-product-sharing-source-update",
+  "prerequisite": "server 1.46",
+  "apkBuilt": true,
+  "deployed": false,
+  "apkPublished": false,
+  "integrationChecksPassed": 84,
+  "files": [
+    {
+      "path": "android-native/app/src/main/java/com/spx/chat/MainActivity.java",
+      "sizeBytes": 506906,
+      "sha256": "bae5929efd871c6716804d233d4674a9824a0f19cbf24db9e6bb8cd403fece13"
+    },
+    {
+      "path": "android-native/app/src/main/java/com/spx/chat/AppNavIcon.java",
+      "sizeBytes": 2455,
+      "sha256": "8141fae58c0c277d85e76fa9de20e66b3851daa7cab05b5c2b38562bd9b84b7d"
+    },
+    {
+      "path": "android-native/app/src/main/java/com/spx/chat/MallUi.java",
+      "sizeBytes": 6510,
+      "sha256": "4ae3b195e3f5b8422bca9821b779b4fe6800e4b6cc6bf89d4c4759965343254f"
+    },
+    {
+      "path": "android-native/app/src/main/java/com/spx/chat/MallCommerce.java",
+      "sizeBytes": 49112,
+      "sha256": "d1affe0c1cb20846f4becf6a96c89e1820eaced0e4b8c583458daa49c4ac8fb8"
+    },
+    {
+      "path": "android-native/app/src/main/java/com/spx/chat/MallMerchantForm.java",
+      "sizeBytes": 12704,
+      "sha256": "049f1d68cf1849e541801d2f01ba30e975b668d4b402cd508fbff8d313ec8e63"
+    },
+    {
+      "path": "android-native/app/src/main/java/com/spx/chat/ChatCache.java",
+      "sizeBytes": 4974,
+      "sha256": "5912e742503ea4a2071fa1f0712162d261ab98142bb743ba3be762a32993eedb"
+    },
+    {
+      "path": "android-native/app/src/main/java/com/spx/chat/ChatWebSocket.java",
+      "sizeBytes": 7157,
+      "sha256": "157778e8b5c5d9a515497a7cb88671fac0e1165da273ab4c4136b0f8cf076a52"
+    },
+    {
+      "path": "android-native/app/src/main/res/values/styles.xml",
+      "sizeBytes": 653,
+      "sha256": "5b0a947f1e4876dc990cbc2ccaa0d71c87afe28e60d88860be518b31361b9e48"
+    },
+    {
+      "path": "android-native/app/build.gradle",
+      "sizeBytes": 1313,
+      "sha256": "3c8d5c1ffe5283e87ac1ef0fb0d2311615dee33759572a8a5bc9343f25ff0ac4"
+    },
+    {
+      "path": "android-native/app/src/main/AndroidManifest.xml",
+      "sizeBytes": 2397,
+      "sha256": "2a9048bfb4612d5dfb0ca13ed8ca48de81fb0e25df5e41c4b0f6c3d37aef7129"
+    },
+    {
+      "path": "spxchat/product-share.php",
+      "sizeBytes": 5690,
+      "sha256": "88c3dfd3366e84c5a6257cabc08fd64806853af2db53a25c17cc1fc5744bf3c3"
+    },
+    {
+      "path": "spxchat/spxchat-systemadmin/admin.php",
+      "sizeBytes": 199313,
+      "sha256": "245acdeaaabfebd56f1a06132e6843ce97a3a172670b1a72ec8ee819271d6ec8"
+    },
+    {
+      "path": "spxchat/spxchat-systemadmin/login.php",
+      "sizeBytes": 7428,
+      "sha256": "3a44162281174dea809eb92fabc62bde24be6abf4d9b1bc3c908a5b8889738ee"
+    },
+    {
+      "path": "spxchat/spxchat-systemadmin/ui-premium.css",
+      "sizeBytes": 3145,
+      "sha256": "7eb1a89467bbbc91911ddf4da44350038236264905c0f9637e6443c8f7440640"
+    }
+  ],
+  "apkVerificationReport": "SPX-IM-1.47-release-verification.json"
+}

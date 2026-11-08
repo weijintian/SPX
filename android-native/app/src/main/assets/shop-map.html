@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<style>html,body{margin:0;width:100%;height:100%;font-family:sans-serif;background:#edf1f6;overflow:hidden}#map{position:absolute;inset:0;touch-action:none}#tiles{position:absolute;inset:0;overflow:hidden}#tiles img{position:absolute;width:256px;height:256px;user-select:none;pointer-events:none}#pin{position:absolute;left:50%;top:50%;transform:translate(-50%,-100%);font-size:38px;color:#e44;pointer-events:none}#controls{position:absolute;right:12px;top:12px;display:grid;gap:8px}button{font-size:22px;background:white;border:0;border-radius:8px;padding:6px 15px;box-shadow:0 1px 5px #999}#hint{position:absolute;bottom:30px;left:12px;right:12px;padding:8px;background:#ffffffdf;border-radius:8px;font-size:13px;text-align:center}#credit{position:absolute;bottom:4px;right:4px;font-size:10px;background:#ffffffcc}</style>
+<div id="map"><div id="tiles"></div><div id="pin">📍</div></div><div id="controls"><button onclick="zoom(1)">+</button><button onclick="zoom(-1)">−</button></div><div id="hint">拖动地图，将门店放在中心标记处；地图未加载时请检查网络后重试。</div><div id="credit">© OpenStreetMap contributors</div>
+<script>
+'use strict';let lat=39.9042,lon=116.4074,z=15,start=null,selected=false;const map=document.getElementById('map'),tiles=document.getElementById('tiles');
+function world(a,b){const n=256*Math.pow(2,z),r=Math.max(-85,Math.min(85,a))*Math.PI/180;return [(b+180)/360*n,(1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*n]}
+function from(x,y){const n=256*Math.pow(2,z);return [180/Math.PI*Math.atan(Math.sinh(Math.PI*(1-2*y/n))),((x/n*360)%360+360)%360-180]}
+function render(){const [x,y]=world(lat,lon),w=innerWidth,h=innerHeight,n=Math.pow(2,z),x0=Math.floor((x-w/2)/256),y0=Math.floor((y-h/2)/256);tiles.replaceChildren();for(let i=x0;i<=Math.floor((x+w/2)/256);i++)for(let j=y0;j<=Math.floor((y+h/2)/256);j++){if(j<0||j>=n)continue;const im=document.createElement('img');im.src='https://tile.openstreetmap.org/'+z+'/'+((i%n+n)%n)+'/'+j+'.png';im.style.left=(i*256-x+w/2)+'px';im.style.top=(j*256-y+h/2)+'px';im.draggable=false;tiles.append(im)}}
+function setLocation(a,b){if(Number.isFinite(a)&&Number.isFinite(b)&&Math.abs(a)<=85&&Math.abs(b)<=180){lat=a;lon=b;selected=true;render()}}
+function getLocation(){return selected?{latitude:lat,longitude:lon,coordinate_system:'wgs84'}:null}
+function zoom(d){z=Math.max(3,Math.min(19,z+d));render()}
+map.addEventListener('pointerdown',e=>{map.setPointerCapture(e.pointerId);start={x:e.clientX,y:e.clientY,p:world(lat,lon)}});
+map.addEventListener('pointermove',e=>{if(!start)return;const p=from(start.p[0]-(e.clientX-start.x),start.p[1]-(e.clientY-start.y));lat=Math.max(-85,Math.min(85,p[0]));lon=p[1];selected=true;tiles.style.transform='translate('+(e.clientX-start.x)+'px,'+(e.clientY-start.y)+'px)'});
+function finish(){if(!start)return;start=null;tiles.style.transform='';render()}
+map.addEventListener('pointerup',finish);map.addEventListener('pointercancel',finish);addEventListener('resize',render);render();
+</script></html>

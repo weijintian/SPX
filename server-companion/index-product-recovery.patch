@@ -1,0 +1,5 @@
+--- a/index.php
++++ b/index.php
+@@ -1757 +1757 @@
+-    if (in_array($action,['financial.request','financial.resolve','wallet.withdraw','staking.create'],true) && $exception instanceof DomainException && in_array($exception->getCode(),[409,422],true)) jsonResponse(null,$exception->getMessage(),$exception->getCode());
++    if (in_array($action,['financial.request','financial.resolve','wallet.withdraw','staking.create','merchant.product.save'],true) && $exception instanceof DomainException && in_array($exception->getCode(),[409,422],true)) jsonResponse(null,$exception->getMessage(),$exception->getCode());

@@ -1,0 +1,8 @@
+<?php
+declare(strict_types=1);
+
+return ['messages' => [
+    'api.ok' => 'ok', 'api.success' => '操作成功', 'api.bad_request' => '請求參數錯誤', 'api.unauthorized' => '請先登入', 'api.forbidden' => '無權執行此操作', 'api.not_found' => '找不到請求的資源', 'api.conflict' => '目前無法完成操作', 'api.validation_error' => '請求參數驗證失敗', 'api.rate_limited' => '操作過於頻繁，請稍後再試', 'api.internal_error' => '伺服器錯誤',
+    'auth.login_required' => '請先登入', 'auth.session_expired' => '登入已過期', 'auth.invalid_credentials' => '使用者名稱或密碼錯誤', 'auth.account_disabled' => '帳號已停用，請聯絡客服', 'auth.registered' => '註冊成功', 'auth.code_sent' => '驗證碼已傳送', 'auth.code_sent_check_email' => '驗證碼已傳送，請查看電子郵件', 'auth.code_invalid_or_expired' => '驗證碼錯誤或已過期', 'auth.code_attempts_exceeded' => '驗證碼嘗試次數過多，請重新取得', 'auth.password_updated' => '密碼已修改', 'auth.password_reset' => '密碼重設成功，請使用新密碼登入',
+    'chat.message_sent' => '訊息已傳送', 'chat.message_read' => '訊息已讀', 'chat.message_edited' => '訊息已編輯', 'chat.message_deleted' => '訊息已為所有人刪除', 'chat.created' => '對話已建立', 'chat.deleted' => '對話已刪除', 'chat.history_cleared' => '聊天記錄已清除', 'chat.history_cleared_both' => '雙方聊天記錄已清除', 'group.created' => '群組已建立', 'group.joined' => '已加入群組', 'group.left' => '已離開群組', 'group.dissolved' => '群組已解散', 'group.updated' => '群組資料已更新', 'group.settings_saved' => '群組設定已儲存', 'group.member_role_updated' => '成員角色已更新', 'group.member_removed' => '成員已移出群組', 'group.member_mute_updated' => '成員禁言狀態已更新', 'upload.avatar_uploaded' => '頭像上傳成功', 'upload.media_uploaded' => '媒體上傳成功', 'shop.order_cancelled' => '訂單已取消，SPX 已退回餘額', 'shop.order_created' => '兌換訂單已建立', 'shop.physical_order_created' => '訂單已建立，請等待出貨', 'staking.created' => '質押記錄已建立', 'staking.redeemed' => '質押本金已贖回，分紅已按週期入帳', 'wallet.withdrawal_submitted' => '提現申請已提交',
+]];

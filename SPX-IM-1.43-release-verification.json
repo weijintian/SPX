@@ -1,0 +1,15 @@
+{
+  "versionName": "1.43",
+  "versionCode": 44,
+  "variant": "release",
+  "package": "com.spx.chat",
+  "debuggable": false,
+  "testOnly": false,
+  "sourceFilesCompared": 21,
+  "compiledClassesVerifiedInApk": 162,
+  "zipAlignmentVerified": true,
+  "sizeBytes": 9573419,
+  "sha256": "dd1ffbd153bc7ab9af4a6a72c14c5d6800e13302a0781322c6f230e4904e88ff",
+  "artifact": "C:\\Users\\雷神\\Documents\\HBuilderProjects\\SPX聊天\\SPX-IM-1.43-release.apk",
+  "standardOutputUpdated": true
+}
