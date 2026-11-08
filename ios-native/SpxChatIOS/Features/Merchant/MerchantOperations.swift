@@ -174,11 +174,19 @@ struct MerchantOrdersView: View {
     @State private var busy = false
     @State private var error: String?
     var body: some View {
-        SPXDetailPage { ForEach(rows.filter { !onlyAfterSale || !["none", ""].contains($0["after_sale_status"].string) }) { order in NavigationLink { MerchantFulfillmentView(order: order, sourcePage: (rows.firstIndex(where: { $0.id == order.id }) ?? 0) / 30 + 1) } label: { SPXCard { VStack(alignment: .leading, spacing: 12) { OrderSummary(order: order); MerchantSettlementSummary(order: order) } } }.buttonStyle(.plain) }; if rows.isEmpty && !busy { EmptyState(title: onlyAfterSale ? "暂无售后申请" : "暂无订单", icon: "shippingbox") }; if busy && rows.isEmpty { ProgressView("正在加载订单…").frame(maxWidth: .infinity) }; if more { Button(busy ? "正在加载…" : "加载更多") { Task { await load(reset: false) } }.disabled(busy) } }
+        SPXDetailPage { ForEach(rows.filter { !onlyAfterSale || !["none", ""].contains($0["after_sale_status"].string) }) { order in NavigationLink { MerchantFulfillmentView(order: order, sourcePage: (rows.firstIndex(where: { $0.id == order.id }) ?? 0) / 30 + 1) } label: { SPXCard { VStack(alignment: .leading, spacing: 12) { OrderSummary(order: order, buyerName: Self.buyerName(order)); MerchantSettlementSummary(order: order) } } }.buttonStyle(.plain) }; if rows.isEmpty && !busy { EmptyState(title: onlyAfterSale ? "暂无售后申请" : "暂无订单", icon: "shippingbox") }; if busy && rows.isEmpty { ProgressView("正在加载订单…").frame(maxWidth: .infinity) }; if more { Button(busy ? "正在加载…" : "加载更多") { Task { await load(reset: false) } }.disabled(busy) } }
             .navigationTitle(onlyAfterSale ? "售后管理" : "订单管理").task { await load(reset: true) }.spxRefreshable { await load(reset: true) }.errorAlert($error)
             .onReceive(NotificationCenter.default.publisher(for: .spxOrdersChanged).debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { event in
                 Task { if await AccountMutation.isCurrent(event) { await load(reset: true) } }
             }
+    }
+    /// The merchant must be able to see who placed the order.
+    static func buyerName(_ order: Record) -> String {
+        let nickname = order["buyer_nickname"].string
+        let username = order["buyer_username"].string
+        if nickname.isEmpty { return username }
+        if !username.isEmpty, username != nickname { return "\(nickname)（\(username)）" }
+        return nickname
     }
     private func load(reset: Bool) async {
         if !reset && busy { return }
@@ -225,10 +233,16 @@ struct MerchantFulfillmentView: View {
     @State private var busy = false
     @State private var confirmation: String?
     init(order: Record, sourcePage: Int = 1) { _order = State(initialValue: order); _sourcePage = State(initialValue: sourcePage) }
+    private static func buyerName(_ order: Record) -> String {
+        let nickname = order["buyer_nickname"].string, username = order["buyer_username"].string
+        if nickname.isEmpty { return username }
+        if !username.isEmpty, username != nickname { return "\(nickname)（\(username)）" }
+        return nickname
+    }
     private var activeAfterSale: Bool { ["requested", "return_approved", "return_shipped"].contains(order["after_sale_status"].string) }
     var body: some View {
         SPXDetailPage {
-            SPXPanel("订单信息") { OrderSummary(order: order, showDetail: false); MerchantSettlementSummary(order: order); InfoRow(title: "订单编号", value: order["id"].string); InfoRow(title: "买家备注", value: order["buyer_note"].string) }
+            SPXPanel("订单信息") { OrderSummary(order: order, showDetail: false, buyerName: Self.buyerName(order)); MerchantSettlementSummary(order: order); InfoRow(title: "订单编号", value: order["id"].string); InfoRow(title: "买家备注", value: order["buyer_note"].string) }
             if loading { SPXCard { ProgressView("正在核对订单状态…") } }
             if !OrderPresentation.address(order).fields.isEmpty {
                 SPXPanel("收货信息") {
@@ -310,6 +324,119 @@ struct MerchantFulfillmentView: View {
                 try await APIClient.shared.post(action, body)
                 dismiss()
             } catch { self.error = error.localizedDescription; if !(error is CancellationError) { verified = false } }
+        }
+    }
+}
+
+struct MerchantSettlementsView: View {
+    @State private var rows: [Record] = []
+    @State private var busy = false
+    @State private var error: String?
+    var body: some View {
+        SPXDetailPage {
+            if let error { ErrorBanner(message: error) }
+            if busy && rows.isEmpty { ProgressView().padding() }
+            ForEach(rows) { row in
+                SPXPanel(row["state"].string == "settled" ? "已到账" : "待结算", footer: row["state"].string == "settled" ? "到账时间 \(row["time"].string)" : "预计结算 \(row["time"].string)") {
+                    InfoRow(title: "订单", value: "#\(row["order_id"].int)")
+                    InfoRow(title: "商品金额", value: DisplayLabels.amount(row["gross"].string) + " SPX001")
+                    InfoRow(title: "手续费", value: "-" + DisplayLabels.amount(row["fee"].string) + " SPX001")
+                    InfoRow(title: "净额", value: DisplayLabels.amount(row["net"].string) + " SPX001")
+                    if !row["product_name"].string.isEmpty { InfoRow(title: "商品", value: row["product_name"].string) }
+                }
+            }
+            if !busy && rows.isEmpty && error == nil { Text("还没有结算记录").foregroundStyle(SPXColor.muted) }
+        }
+        .navigationTitle("结算记录")
+        .task { await load() }
+    }
+    private func load() async {
+        busy = true
+        defer { busy = false }
+        do { rows = try await APIClient.shared.get("merchant.settlements").list }
+        catch { self.error = error.localizedDescription }
+    }
+}
+
+struct MerchantRedemptionsView: View {
+    @State private var rows: [Record] = []
+    @State private var busy = false
+    @State private var error: String?
+    var body: some View {
+        SPXDetailPage {
+            if let error { ErrorBanner(message: error) }
+            if busy && rows.isEmpty { ProgressView().padding() }
+            ForEach(rows) { row in
+                SPXPanel(row["product_name"].string.isEmpty ? "核销订单" : row["product_name"].string, footer: row["received_at"].string) {
+                    InfoRow(title: "核销码", value: row["redeem_code"].string)
+                    InfoRow(title: "订单", value: "#\(row["order_id"].int)")
+                    if !row["buyer"].string.isEmpty { InfoRow(title: "买家", value: row["buyer"].string) }
+                    InfoRow(title: "金额", value: DisplayLabels.amount(row["total_spx"].string) + " SPX001")
+                    InfoRow(title: "结算", value: row["settlement_status"].string == "settled" ? "已结算" : "待结算")
+                }
+            }
+            if !busy && rows.isEmpty && error == nil { Text("还没有核销记录").foregroundStyle(SPXColor.muted) }
+        }
+        .navigationTitle("核销记录")
+        .task { await load() }
+    }
+    private func load() async {
+        busy = true
+        defer { busy = false }
+        do { rows = try await APIClient.shared.get("merchant.redemptions").list }
+        catch { self.error = error.localizedDescription }
+    }
+}
+
+struct MerchantScanRedeemView: View {
+    @State private var code = ""
+    @State private var busy = false
+    @State private var error: String?
+    @State private var confirmed = ""
+    var body: some View {
+        SPXDetailPage {
+            if let error { ErrorBanner(message: error) }
+            if confirmed.isEmpty {
+                SPXPanel("扫码核销", footer: "对准买家订单里的二维码，或手动输入 16 位数字。核销后次日自动结算。") {
+                    if #available(iOS 16.0, *) {
+                        QRScanner(onFound: { value in redeem(value) }, onError: { error = $0 })
+                            .frame(height: 240)
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                    } else {
+                        Text("当前系统版本不支持相机扫码，请手动输入核销码。")
+                            .font(.footnote)
+                            .foregroundStyle(SPXColor.muted)
+                            .frame(maxWidth: .infinity, minHeight: 120)
+                    }
+                    TextField("手动输入 16 位核销码", text: $code)
+                        .keyboardType(.numberPad)
+                        .textFieldStyle(.roundedBorder)
+                    Button(busy ? "核销中…" : "确认核销") { redeem(code) }
+                        .frame(maxWidth: .infinity)
+                        .disabled(busy || code.count != 16)
+                }
+            } else {
+                SPXPanel("核销成功", footer: "该笔将在次日自动结算，手续费按平台规则扣除。") {
+                    InfoRow(title: "核销码", value: confirmed)
+                    Label("已完成核销", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    Button("继续核销") { confirmed = "" }.frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .navigationTitle("扫码核销")
+    }
+    private func redeem(_ value: String) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count == 16, trimmed.allSatisfy({ $0.isNumber }) else { error = "这不是有效的 16 位核销码"; return }
+        busy = true
+        error = nil
+        Task {
+            defer { busy = false }
+            do {
+                _ = try await APIClient.shared.post("merchant.order.redeem", ["order_id": .int(0), "redeem_code": .string(trimmed)])
+                confirmed = trimmed
+                code = ""
+            } catch { self.error = error.localizedDescription }
         }
     }
 }

@@ -12,17 +12,17 @@ struct ContactsView: View {
     private var filtered: [Record] { rows.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) || $0["spx_id"].string.localizedCaseInsensitiveContains(search) } }
     var body: some View {
         SPXList(plain: true) {
-            NavigationLink { AddContactView() } label: { HStack(spacing: 14) { SPXIcon("plus").frame(width: 24,height: 24).foregroundStyle(SPXColor.primary).frame(width: 48,height: 48).background(SPXColor.tint,in: RoundedRectangle(cornerRadius: 14)); Text("添加朋友").font(.system(size: 16,weight: .medium)) } }
+            NavigationLink { AddContactView() } label: { HStack(spacing: 14) { SPXIcon("plus").frame(width: 24,height: 24).foregroundStyle(SPXColor.primary).frame(width: 48,height: 48).background(SPXColor.tint,in: RoundedRectangle(cornerRadius: 14)); Text("添加朋友").spxFont(16, weight: .medium) } }
             ForEach(filtered) { item in
                 NavigationLink { UserProfileView(userID: item["contact_user_id"].int > 0 ? item["contact_user_id"].int : item.id) } label: {
-                    HStack(spacing: 14) { Avatar(url: item.avatar,name: item.name,size: 48); VStack(alignment: .leading,spacing: 6) { Text(item.name).font(.system(size: 16,weight: .medium)); Text(item["spx_id"].string).font(.system(size: 12)).foregroundStyle(SPXColor.muted) } }.padding(.vertical,4)
+                    HStack(spacing: 14) { Avatar(url: item.avatar,name: item.name,size: 48); VStack(alignment: .leading,spacing: 6) { Text(item.name).spxFont(16, weight: .medium); Text(item["spx_id"].string).spxFont(12).foregroundStyle(SPXColor.muted) } }.padding(.vertical,4)
                 }
             }
             if loading && rows.isEmpty { ProgressView("正在读取通讯录…").frame(maxWidth: .infinity) }
             if !loading && filtered.isEmpty { EmptyState(title: search.isEmpty ? "还没有好友" : "未找到匹配的好友",description: search.isEmpty ? "通过 SPX ID、邮箱或二维码添加朋友" : "试试搜索备注、昵称或 SPX ID") }
             if let error { ErrorBanner(message: error); Button("重新加载") { Task { await load() } } }
         }.navigationTitle("通讯录").safeAreaInset(edge: .top) {
-            HStack(spacing: 10) { SPXIcon("search").frame(width: 18,height: 18).foregroundStyle(SPXColor.muted); TextField("搜索好友、备注或 SPX ID",text: $search).font(.system(size: 14)); if !search.isEmpty { Button { search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(SPXColor.muted) } } }.padding(12).background(SPXColor.card,in: RoundedRectangle(cornerRadius: 12)).padding(.horizontal,18).padding(.vertical,10).background(SPXColor.surface)
+            HStack(spacing: 10) { SPXIcon("search").frame(width: 18,height: 18).foregroundStyle(SPXColor.muted); TextField("搜索好友、备注或 SPX ID",text: $search).spxFont(14); if !search.isEmpty { Button { search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(SPXColor.muted) } } }.padding(12).background(SPXColor.card,in: RoundedRectangle(cornerRadius: 12)).padding(.horizontal,18).padding(.vertical,10).background(SPXColor.surface)
         }.task { if let cached: [Record] = await LocalStore.shared.read("contacts",userID: session.user?.id ?? 0) { rows = cached }; await load() }.spxRefreshable { await load() }
             .onReceive(NotificationCenter.default.publisher(for: .spxConversationUpdated)) { _ in Task { await load() } }
             .onReceive(NotificationCenter.default.publisher(for: .spxRealtime).receive(on: RunLoop.main)) { notification in
@@ -68,7 +68,7 @@ struct AddContactView: View {
             ForEach(rows) { item in
                 NavigationLink { UserProfileView(userID: item.id) } label: { SPXCard { HStack(spacing: 12) {
                     Avatar(url: item.avatar, name: item.name, size: 48)
-                    VStack(alignment: .leading, spacing: 6) { Text(item.name).font(.system(size: 16, weight: .semibold)).foregroundStyle(SPXColor.ink); Text(item["spx_id"].string).font(.caption).foregroundStyle(SPXColor.muted) }
+                    VStack(alignment: .leading, spacing: 6) { Text(item.name).spxFont(16, weight: .semibold).foregroundStyle(SPXColor.ink); Text(item["spx_id"].string).font(.caption).foregroundStyle(SPXColor.muted) }
                     Spacer(minLength: 8); SPXIcon("chevron").frame(width: 14, height: 14).foregroundStyle(SPXColor.muted)
                 } } }.buttonStyle(.plain)
             }
@@ -95,13 +95,13 @@ struct UserProfileView: View {
             VStack(alignment: .leading, spacing: 14) {
                 if profile.id == 0 { ProgressView("正在读取资料…").frame(maxWidth: .infinity).padding(24) }
                 else {
-                    SPXCard { HStack(spacing: 18) { Avatar(url: profile.avatar, name: profile.name, size: 72); VStack(alignment: .leading, spacing: 8) { Text(profile.name).font(.system(size: 23, weight: .semibold)).lineLimit(2); Text("SPX ID：" + profile["spx_id"].string).font(.system(size: 13)).foregroundStyle(SPXColor.muted); if !profile["remark"].string.isEmpty { Text(profile["remark"].string).font(.system(size: 13)).foregroundStyle(SPXColor.muted) } }; Spacer(minLength: 0) } }
+                    SPXCard { HStack(spacing: 18) { Avatar(url: profile.avatar, name: profile.name, size: 72); VStack(alignment: .leading, spacing: 8) { Text(profile.name).spxFont(23, weight: .semibold).lineLimit(2); Text("SPX ID：" + profile["spx_id"].string).spxFont(13).foregroundStyle(SPXColor.muted); if !profile["remark"].string.isEmpty { Text(profile["remark"].string).spxFont(13).foregroundStyle(SPXColor.muted) } }; Spacer(minLength: 0) } }
                     if profile["is_contact"].flag {
                         NavigationLink { QRCodeView(value: "SPXUSER:\(profile["spx_id"].string)", title: profile.name) } label: { SPXMenuRow(title: "个人二维码", icon: "qrcode") }
                         Button { openChat() } label: { Label("发消息", systemImage: "bubble.left.and.bubble.right").frame(maxWidth: .infinity) }.buttonStyle(SPXPrimaryButtonStyle())
                         HStack(spacing: 12) { callButton("语音通话", "phone", video: false); callButton("视频通话", "video", video: true) }
-                        SPXPanel("备注") { TextField("设置联系人备注", text: $remark); Button("保存备注") { updateRemark() }.font(.system(size: 14, weight: .semibold)) }
-                        Button("删除好友及双方聊天记录", role: .destructive) { delete = true }.font(.system(size: 14)).frame(maxWidth: .infinity).padding(16).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 16))
+                        SPXPanel("备注") { TextField("设置联系人备注", text: $remark); Button("保存备注") { updateRemark() }.spxFont(14, weight: .semibold) }
+                        Button("删除好友及双方聊天记录", role: .destructive) { delete = true }.spxFont(14).frame(maxWidth: .infinity).padding(16).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 16))
                     } else { Button("添加朋友") { addContact() }.frame(maxWidth: .infinity).buttonStyle(SPXPrimaryButtonStyle()).disabled(profile.id == 0) }
                 }
                 if let error { ErrorBanner(message: error); if profile.id == 0 { Button("重新加载") { Task { await loadProfile() } } } }
@@ -172,7 +172,7 @@ struct GroupCreateView: View {
             ForEach(contacts) { item in
                 let id = item["contact_user_id"].int > 0 ? item["contact_user_id"].int : item.id
                 Button { if selected.contains(id) { selected.remove(id) } else { selected.insert(id) } } label: {
-                    SPXCard { HStack(spacing: 12) { Avatar(url: item.avatar, name: item.name, size: 44); Text(item.name).font(.system(size: 15)).foregroundStyle(SPXColor.ink); Spacer(); Image(systemName: selected.contains(id) ? "checkmark.circle.fill" : "circle").font(.title3).foregroundStyle(selected.contains(id) ? SPXColor.primary : SPXColor.muted) }.frame(minHeight: 44) }
+                    SPXCard { HStack(spacing: 12) { Avatar(url: item.avatar, name: item.name, size: 44); Text(item.name).spxFont(15).foregroundStyle(SPXColor.ink); Spacer(); Image(systemName: selected.contains(id) ? "checkmark.circle.fill" : "circle").font(.title3).foregroundStyle(selected.contains(id) ? SPXColor.primary : SPXColor.muted) }.frame(minHeight: 44) }
                 }.buttonStyle(.plain).disabled(busy).accessibilityAddTraits(selected.contains(id) ? .isSelected : [])
             }
         }.navigationTitle("创建群聊").safeAreaInset(edge: .bottom) {
@@ -211,8 +211,8 @@ struct GroupJoinView: View {
             if let result, resultCode == normalizedCode {
                 SPXSectionTitle(title: "群组资料")
                 SPXCard { VStack(alignment: .leading, spacing: 16) {
-                    HStack(spacing: 14) { Avatar(url: result.avatar, name: result.name, size: 60); VStack(alignment: .leading, spacing: 7) { Text(result.name).font(.system(size: 20, weight: .semibold)); Text("群号 " + resultCode).font(.caption).foregroundStyle(SPXColor.muted) } }
-                    if !result["announcement"].string.isEmpty { Divider(); Text(result["announcement"].string).font(.system(size: 14)).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true) }
+                    HStack(spacing: 14) { Avatar(url: result.avatar, name: result.name, size: 60); VStack(alignment: .leading, spacing: 7) { Text(result.name).spxFont(20, weight: .semibold); Text("群号 " + resultCode).font(.caption).foregroundStyle(SPXColor.muted) } }
+                    if !result["announcement"].string.isEmpty { Divider(); Text(result["announcement"].string).spxFont(14).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true) }
                 } }
             }
         }.navigationTitle("加入群组").spxNavigationDestination(item: $chat) { ChatDetailView(item: $0, isGroup: true) }
@@ -291,7 +291,7 @@ struct ForwardMessageView: View {
     private func target(_ item: Record, scope: String) -> some View {
         let key = scope+":"+String(item.id)
         return Button { if selection.contains(key) { selection.remove(key) } else { selection.insert(key) } } label: {
-            SPXCard { HStack(spacing: 12) { Avatar(url: item.avatar, name: item.name, size: 44); Text(item.name).font(.system(size: 15)).foregroundStyle(SPXColor.ink); Spacer(); Image(systemName: selection.contains(key) ? "checkmark.circle.fill" : "circle").font(.title3).foregroundStyle(selection.contains(key) ? SPXColor.primary : SPXColor.muted) }.frame(minHeight: 44) }
+            SPXCard { HStack(spacing: 12) { Avatar(url: item.avatar, name: item.name, size: 44); Text(item.name).spxFont(15).foregroundStyle(SPXColor.ink); Spacer(); Image(systemName: selection.contains(key) ? "checkmark.circle.fill" : "circle").font(.title3).foregroundStyle(selection.contains(key) ? SPXColor.primary : SPXColor.muted) }.frame(minHeight: 44) }
         }.buttonStyle(.plain).accessibilityAddTraits(selection.contains(key) ? .isSelected : [])
     }
     private func load() async {
@@ -358,7 +358,7 @@ struct ScheduledMessageView: View {
                     SPXPhotosPicker(selection: $photo, matching: .images) { SPXSettingsRow(title: mediaURL.isEmpty ? "添加图片" : "更换图片", icon: "photo") }
                     if !mediaURL.isEmpty { CachedImage(source: mediaURL).frame(maxWidth: .infinity).frame(height: 160).clipShape(RoundedRectangle(cornerRadius: 12)); Button("移除图片", role: .destructive) { mediaURL = "" }.frame(minHeight: 44) }
                     Divider()
-                    DatePicker("发送时间", selection: $date, in: Date().addingTimeInterval(30)...Date().addingTimeInterval(90 * 86400)).font(.system(size: 14))
+                    DatePicker("发送时间", selection: $date, in: Date().addingTimeInterval(30)...Date().addingTimeInterval(90 * 86400)).spxFont(14)
                     Text("可安排未来 30 秒至 90 天内发送").font(.caption).foregroundStyle(SPXColor.muted)
                 } }.disabled(busy || pending != nil)
                 if pending != nil { ErrorBanner(message: "上次提交结果待确认。重试会使用相同内容与标识，防止重复创建。") }
@@ -366,8 +366,8 @@ struct ScheduledMessageView: View {
                 SPXSectionTitle(title: "已创建", detail: "\(rows.count) 条")
                 ForEach(rows) { row in
                     SPXCard { VStack(alignment: .leading, spacing: 14) {
-                        HStack(spacing: 10) { Image(systemName: "clock").foregroundStyle(SPXColor.primary); Text(row.text("send_at", "status")).font(.system(size: 13)).foregroundStyle(SPXColor.muted); Spacer(minLength: 0) }
-                        if !row["content"].string.isEmpty { Text(row["content"].string).font(.system(size: 15)).foregroundStyle(SPXColor.ink) }
+                        HStack(spacing: 10) { Image(systemName: "clock").foregroundStyle(SPXColor.primary); Text(row.text("send_at", "status")).spxFont(13).foregroundStyle(SPXColor.muted); Spacer(minLength: 0) }
+                        if !row["content"].string.isEmpty { Text(row["content"].string).spxFont(15).foregroundStyle(SPXColor.ink) }
                         if !row["media_url"].string.isEmpty { CachedImage(source: row["media_url"].string).frame(height: 100).clipShape(RoundedRectangle(cornerRadius: 10)) }
                         if row["status"].string == "pending" { Divider(); Button("取消发送", role: .destructive) { cancel(row) }.frame(maxWidth: .infinity, minHeight: 44).disabled(busy) }
                     } }

@@ -6,6 +6,7 @@ struct RootView: View {
     @ObservedObject private var calls = CallCoordinator.shared
     @AppStorage("spx.appearance") private var appearance = "system"
     @ObservedObject private var presentation = OverlayPresentation.shared
+    @ObservedObject private var connectivity = Connectivity.shared
     @State private var link: AppLink?
     @State private var pendingLink: AppLink?
     var body: some View {
@@ -29,6 +30,8 @@ struct RootView: View {
                 else { AuthView() }
             }
         }
+        .safeAreaInset(edge: .top, spacing: 0) { if !connectivity.online { OfflineBanner() } }
+        .task { connectivity.start() }
         .background(OverlayPresenter(session: session).frame(width: 0, height: 0))
         .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
         .onReceive(NotificationCenter.default.publisher(for: .spxOpenPacket)) { event in
@@ -99,7 +102,7 @@ private struct SessionRecoveryView: View {
     @EnvironmentObject private var session: SessionStore
     var body: some View {
         VStack(spacing: 20) {
-            Image(systemName: "wifi.exclamationmark").font(.system(size: 42)).foregroundStyle(.secondary)
+            Image(systemName: "wifi.exclamationmark").spxFont(42).foregroundStyle(.secondary)
             Text("暂时无法恢复登录").font(.title3.bold())
             Text(session.recoveryError ?? "请检查网络后重试").foregroundStyle(.secondary).multilineTextAlignment(.center)
             if session.recoveringSession { ProgressView("正在重新连接…") }
@@ -189,12 +192,12 @@ private struct SPXBottomBar: View {
                     VStack(spacing: 5) {
                         SPXIcon(icons[index]).frame(width: 23, height: 23).overlay(alignment: .topTrailing) {
                             if index == 0, notifications.unread > 0 {
-                                Text(notifications.unread > 99 ? "99+" : String(notifications.unread)).font(.system(size: 9, weight: .bold))
+                                Text(notifications.unread > 99 ? "99+" : String(notifications.unread)).spxFont(9, weight: .bold)
                                     .foregroundStyle(.white).padding(.horizontal, 4).frame(minWidth: 16, minHeight: 16)
                                     .background(.red, in: Capsule()).offset(x: 12, y: -8)
                             }
                         }
-                        Text(titles[index]).font(.system(size: 11, weight: selected == index ? .semibold : .regular))
+                        Text(titles[index]).spxFont(11, weight: selected == index ? .semibold : .regular)
                     }.foregroundStyle(selected == index ? SPXColor.primary : SPXColor.muted)
                         .frame(maxWidth: .infinity).frame(minHeight: 68).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel(titles[index])

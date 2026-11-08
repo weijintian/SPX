@@ -25,8 +25,8 @@ struct SPXPageHeading: View {
             SPXIcon(icon).frame(width: 25, height: 25).foregroundStyle(color)
                 .frame(width: 48, height: 48).background(color.opacity(0.09), in: RoundedRectangle(cornerRadius: 15))
             VStack(alignment: .leading, spacing: 7) {
-                Text(title).font(.system(size: 23, weight: .bold)).foregroundStyle(SPXColor.ink)
-                if !subtitle.isEmpty { Text(subtitle).font(.system(size: 13)).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true) }
+                Text(title).spxFont(23, weight: .bold).foregroundStyle(SPXColor.ink)
+                if !subtitle.isEmpty { Text(subtitle).spxFont(13).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true) }
             }.frame(maxWidth: .infinity, alignment: .leading)
         }.padding(.vertical, 8)
     }
@@ -38,8 +38,8 @@ struct SPXField<Content: View>: View {
     init(_ title: String, @ViewBuilder content: () -> Content) { self.title = title; self.content = content() }
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
-            Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(SPXColor.muted)
-            content.font(.system(size: 15)).textFieldStyle(SPXInputStyle())
+            Text(title).spxFont(13, weight: .medium).foregroundStyle(SPXColor.muted)
+            content.spxFont(15).textFieldStyle(SPXInputStyle())
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -48,7 +48,7 @@ struct SPXStatusPill: View {
     let title: String
     var color = SPXColor.primary
     var body: some View {
-        Text(title).font(.system(size: 12, weight: .semibold))
+        Text(title).spxFont(12, weight: .semibold)
             .foregroundStyle(color).padding(.horizontal, 10).padding(.vertical, 6)
             .background(color.opacity(0.09), in: Capsule())
     }
@@ -69,7 +69,7 @@ struct SPXBottomAction<Content: View>: View {
 private struct SPXDetailButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var enabled
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.font(.system(size: 15, weight: .semibold))
+        configuration.label.spxFont(15, weight: .semibold)
             .multilineTextAlignment(.center).foregroundStyle(.white)
             .padding(.horizontal, 16).padding(.vertical, 13).frame(maxWidth: .infinity, minHeight: 48)
             .background(SPXColor.hex(0x2D4ECF).opacity(enabled ? (configuration.isPressed ? 0.8 : 1) : 0.4), in: RoundedRectangle(cornerRadius: 14))
@@ -85,9 +85,9 @@ struct SPXSettingsRow: View {
         HStack(spacing: 12) {
             SPXIcon(icon).frame(width: 22, height: 22).foregroundStyle(color)
                 .frame(width: 36, height: 36).background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
-            Text(title).font(.system(size: 15)).foregroundStyle(SPXColor.ink)
+            Text(title).spxFont(15).foregroundStyle(SPXColor.ink)
             Spacer(minLength: 8)
-            if !detail.isEmpty { Text(detail).font(.system(size: 12)).foregroundStyle(SPXColor.muted).multilineTextAlignment(.trailing) }
+            if !detail.isEmpty { Text(detail).spxFont(12).foregroundStyle(SPXColor.muted).multilineTextAlignment(.trailing) }
             SPXIcon("chevron").frame(width: 14, height: 14).foregroundStyle(SPXColor.muted)
         }.frame(minHeight: 44).contentShape(Rectangle())
     }
@@ -101,7 +101,7 @@ struct SPXFilterTabs: View {
             HStack(spacing: 8) {
                 ForEach(options, id: \.0) { option in
                     Button { selection = option.0 } label: {
-                        Text(option.1).font(.system(size: 13, weight: selection == option.0 ? .semibold : .regular))
+                        Text(option.1).spxFont(13, weight: selection == option.0 ? .semibold : .regular)
                             .foregroundStyle(selection == option.0 ? Color.white : SPXColor.muted)
                             .padding(.horizontal, 15).padding(.vertical, 11)
                             .background(selection == option.0 ? SPXColor.hex(0x2D4ECF) : SPXColor.card, in: Capsule())
@@ -119,8 +119,8 @@ struct SPXTimelineRow: View {
         HStack(alignment: .top, spacing: 12) {
             Circle().fill(SPXColor.primary).frame(width: 7, height: 7).padding(.top, 6)
             VStack(alignment: .leading, spacing: 6) {
-                Text(title).font(.system(size: 14)).foregroundStyle(SPXColor.ink)
-                Text(date).font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+                Text(title).spxFont(14).foregroundStyle(SPXColor.ink)
+                Text(date).spxFont(12).foregroundStyle(SPXColor.muted)
             }.frame(maxWidth: .infinity, alignment: .leading)
         }
     }

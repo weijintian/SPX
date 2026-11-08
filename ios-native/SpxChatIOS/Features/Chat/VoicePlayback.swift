@@ -19,6 +19,9 @@ enum VoiceMessageMetadata {
     @Published private(set) var speaker = UserDefaults.standard.object(forKey: "spx.voice.speaker") as? Bool ?? true
     @Published private(set) var durations: [String: Int] = [:]
     @Published private(set) var heard: [Int: Set<String>] = [:]
+    @Published private(set) var progress: Double = 0
+    @Published private(set) var elapsed: Double = 0
+    private var ticker: Timer?
     private var player: AVAudioPlayer?
     private var download: Task<URL, Error>?
     private var generation = UUID()
@@ -90,9 +93,12 @@ enum VoiceMessageMetadata {
             guard next.play() else { throw APIError.server(500, "语音播放启动失败，请重试") }
             if next.duration.isFinite { durations[source] = max(1, Int(ceil(next.duration))) }
             markListened(source, userID: userID); loading = false; playing = true
+            elapsed = 0; progress = 0; startTicker()
         } catch { if epoch == generation { stop() }; if !(error is CancellationError) { throw error } }
     }
     func stop() {
+        ticker?.invalidate(); ticker = nil
+        elapsed = 0; progress = 0
         generation = UUID(); let owned = ownsAudioSession
         ownsAudioSession = false
         download?.cancel(); download = nil
@@ -102,6 +108,28 @@ enum VoiceMessageMetadata {
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
     }
+    private func startTicker() {
+        ticker?.invalidate()
+        ticker = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.tick() }
+        }
+    }
+    private func tick() {
+        guard let player, player.duration > 0 else { return }
+        let current = max(0, min(player.currentTime, player.duration))
+        elapsed = current
+        progress = current / player.duration
+    }
+    /// 拖动进度条时跳转播放位置；0.99 处留一点余量，避免直接触发播放结束。
+    func seek(toFraction value: Double) {
+        guard let player, player.duration > 0 else { return }
+        let fraction = min(max(value, 0), 0.99)
+        let target = fraction * player.duration
+        player.currentTime = target
+        elapsed = target
+        progress = fraction
+    }
+
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) { Task { @MainActor in if self.player === player { stop() } } }
     nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) { Task { @MainActor in if self.player === player { stop() } } }
 }
@@ -114,14 +142,43 @@ struct VoiceMessageLabel: View {
     @ObservedObject private var audio = VoicePlayback.shared
     @State private var routeError: String?
     private var duration: Int? { VoiceMessageMetadata.seconds(in: content) ?? audio.durations[url] }
+    private var active: Bool { audio.source == url }
+    // 自己发的语音是蓝底白字，收到的语音是白底深字。
+    private var barColor: Color { incoming ? SPXColor.primary : .white }
+    private var remaining: String {
+        guard let duration, duration > 0 else { return "" }
+        let left = max(0, Double(duration) - audio.elapsed)
+        return String(format: "%d:%02d", Int(left) / 60, Int(left) % 60)
+    }
     var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
         HStack(spacing: 10) {
-            if audio.source == url, audio.loading { ProgressView().tint(.primary) }
-            else { Image(systemName: audio.source == url && audio.playing ? "stop.circle.fill" : "waveform").font(.title3) }
-            if let duration { Text("\(duration)秒").font(.subheadline.monospacedDigit()) }
-            else { Text(audio.source == url && audio.playing ? "播放中" : "点击播放").font(.subheadline) }
+            if active, audio.loading { ProgressView().tint(.primary) }
+            else { Image(systemName: active && audio.playing ? "stop.circle.fill" : "waveform").font(.title3) }
+            if active, audio.playing { Text(remaining).spxFont(13, monospacedDigit: true) }
+            else if let duration { Text("\(duration)秒").spxFont(13, monospacedDigit: true) }
+            else { Text(active && audio.playing ? "播放中" : "点击播放").spxFont(13) }
             if incoming, !audio.hasListened(url, userID: userID) { Circle().fill(.red).frame(width: 7, height: 7).accessibilityLabel("未听语音") }
-        }.frame(minWidth: 104, minHeight: 30)
+        }
+        if active, audio.playing {
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(barColor.opacity(0.16)).frame(height: 3)
+                    Capsule().fill(barColor.opacity(0.55))
+                        .frame(width: max(3, geometry.size.width * audio.progress), height: 3)
+                }
+                .frame(maxHeight: .infinity, alignment: .center)
+                .contentShape(Rectangle())
+                .gesture(DragGesture(minimumDistance: 0).onChanged { value in
+                    guard geometry.size.width > 0 else { return }
+                    audio.seek(toFraction: Double(value.location.x / geometry.size.width))
+                })
+            }
+            .frame(height: 14)
+            .accessibilityLabel("语音播放进度")
+        }
+        }
+        .frame(minWidth: 104, minHeight: 30)
             .onAppear { audio.prepareHistory(userID: userID) }
             .contextMenu {
                 Button(audio.speaker ? "切换听筒播放" : "切换扬声器播放", systemImage: audio.speaker ? "ear" : "speaker.wave.2") {

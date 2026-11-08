@@ -35,11 +35,12 @@ struct ChatListView: View {
         SPXList(plain: true) {
             ForEach(conversations, id: \.key) { item in row(item, group: item.isGroup) }
             if !loadingList && chats.isEmpty && groups.isEmpty { EmptyState(title: "还没有会话", description: "添加朋友，开始第一段聊天", icon: "bubble.left.and.bubble.right") }
+            else if !loadingList && conversations.isEmpty { EmptyState(title: "没有匹配的会话", description: "换个关键词，或切换上方的筛选条件", icon: "magnifyingglass") }
             if let error { ErrorBanner(message: error); Button("重新加载") { Task { await load() } } }
         }.navigationTitle("聊天").safeAreaInset(edge: .top, spacing: 0) {
                 VStack(spacing: 12) {
-                    HStack(spacing: 10) { SPXIcon("search").frame(width: 18, height: 18).foregroundStyle(SPXColor.muted); TextField("搜索会话", text: $search).font(.system(size: 14)); if !search.isEmpty { Button { search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(SPXColor.muted) } } }.padding(11).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 12))
-                    HStack(spacing: 8) { ForEach(Array(["全部", "未读", "私聊", "群聊"].enumerated()), id: \.offset) { index, title in Button { filter = index } label: { Text(title).font(.system(size: 13, weight: filter == index ? .semibold : .regular)).foregroundStyle(filter == index ? SPXColor.primary : SPXColor.muted).frame(maxWidth: .infinity).padding(.vertical, 8).background(filter == index ? SPXColor.tint : Color.clear, in: Capsule()) }.buttonStyle(.plain) } }
+                    HStack(spacing: 10) { SPXIcon("search").frame(width: 18, height: 18).foregroundStyle(SPXColor.muted); TextField("搜索会话", text: $search).spxFont(14); if !search.isEmpty { Button { search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(SPXColor.muted) } } }.padding(11).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 12))
+                    HStack(spacing: 8) { ForEach(Array(["全部", "未读", "私聊", "群聊"].enumerated()), id: \.offset) { index, title in Button { filter = index } label: { Text(title).spxFont(13, weight: filter == index ? .semibold : .regular).foregroundStyle(filter == index ? SPXColor.primary : SPXColor.muted).frame(maxWidth: .infinity).padding(.vertical, 8).background(filter == index ? SPXColor.tint : Color.clear, in: Capsule()) }.buttonStyle(.plain) } }
                 }.padding(.horizontal, 18).padding(.vertical, 10).background(SPXColor.surface)
             }
             .toolbar {
@@ -65,7 +66,7 @@ struct ChatListView: View {
                     guard let event = notification.object as? JSON else { return false }
                     let type = event["type"].string
                     return type == "ready" || type.hasPrefix("message") || type.hasPrefix("group.") || type.hasPrefix("chat.") || type.hasPrefix("contact.")
-                }.throttle(for: .milliseconds(600), scheduler: RunLoop.main, latest: true)) { _ in
+                }.throttle(for: .milliseconds(1200), scheduler: RunLoop.main, latest: true)) { _ in
                 guard listVisible, phase == .active else { return }
                 Task { await load() }
             }
@@ -82,7 +83,7 @@ struct ChatListView: View {
     }
     private func filtered(_ items: [Record]) -> [Record] { items.filter { (search.isEmpty || $0.name.localizedCaseInsensitiveContains(search)) && (filter != 1 || $0["unread_count"].int > 0) && (filter != 2 || !$0.isGroup) && (filter != 3 || $0.isGroup) } }
     private func row(_ item: Record, group: Bool) -> some View {
-        NavigationLink { ChatDetailView(item: item, isGroup: group) } label: {
+        NavigationLink { ChatDetailView(item: item, isGroup: group, unreadFrom: item["last_read_message_id"].int) } label: {
             HStack(spacing: 12) {
                 Avatar(url: item.avatar, name: item.name)
                 VStack(alignment: .leading, spacing: 5) {
@@ -91,7 +92,7 @@ struct ChatListView: View {
                 }
                 Spacer(minLength: 4)
                 VStack(alignment: .trailing, spacing: 7) {
-                Text(MessageTimeline.conversationLabel(item.text("last_message_at", "updated_at"))).font(.system(size: 11)).foregroundStyle(SPXColor.muted)
+                Text(MessageTimeline.conversationLabel(item.text("last_message_at", "updated_at"))).spxFont(11).foregroundStyle(SPXColor.muted)
                 if item["mute"].flag { Image(systemName: "bell.slash").font(.caption).foregroundStyle(.secondary) }
                 if item["unread_count"].int > 0 { Text(item["unread_count"].int > 99 ? "99+" : item["unread_count"].string).font(.caption2.bold()).padding(6).foregroundStyle(.white).background(.red, in: Capsule()) }
                 }
@@ -161,12 +162,29 @@ struct ChatListView: View {
     private var runID: UUID?
     private var running: Bool { runID != nil }
     private var lastReconciled = Date.distantPast
-    @Published var messages: [Record] = [] { didSet { if oldValue != messages { timeBoundaryIDs = MessageTimeline.boundaries(in: messages) } } }
+    // Deep-comparing every record on each mutation cost more than rebuilding the
+    // boundary set, so compare the cheap identity of the window instead.
+    @Published var messages: [Record] = [] {
+        didSet {
+            messageVersion &+= 1
+            if oldValue.count != messages.count
+                || oldValue.first?.id != messages.first?.id
+                || oldValue.last?.id != messages.last?.id
+                || timeBoundaryIDs.isEmpty != messages.isEmpty {
+                timeBoundaryIDs = MessageTimeline.boundaries(in: messages)
+            }
+        }
+    }
     @Published private(set) var timeBoundaryIDs: Set<Int> = []
+    /// Cheap identity for dependents that only need to know "did the window change".
+    private(set) var messageVersion = 0
+    private(set) var pendingVersion = 0
     private var syncCursor: Int?
     private var restored = false
     private var legacyIDs: Set<Int> = []
     private var persisted: ConversationSnapshot?
+    private var persistenceDirty = false
+    private var lastPersistedAt = Date.distantPast
     private var lastReadID = 0
     private var readingLatest = false
     private var reportingRead = false
@@ -223,6 +241,7 @@ struct ChatListView: View {
                         let upper = fresh.map(\.id).max() ?? 0
                         // Preserve newer realtime inserts while discarding untrusted legacy cache gaps.
                         messages = messages.filter { $0.id > upper && $0.id > clearedThrough && !legacyIDs.contains($0.id) }
+                        persistenceDirty = true
                         legacyIDs = []
                         syncCursor = max(clearedThrough, upper)
                     } else if let last = fresh.map(\.id).max() {
@@ -234,7 +253,8 @@ struct ChatListView: View {
                     await persistIfNeeded()
                 }
                 guard runID == identity, currentRevision == revision, !Task.isCancelled else { throw CancellationError() }
-                if Date().timeIntervalSince(lastReconciled) >= 15, !messages.isEmpty {
+                let realtimeLive = RealtimeClient.shared.connected
+                if Date().timeIntervalSince(lastReconciled) >= (realtimeLive ? 45 : 15), !messages.isEmpty {
                     let ids = messages.suffix(200).map { String($0.id) }.joined(separator: ",")
                     let sync = try await fetch(action + ".reconcile", [key: String(target), "ids": ids])
                     guard runID == identity, currentRevision == revision, !Task.isCancelled else { throw CancellationError() }
@@ -251,7 +271,9 @@ struct ChatListView: View {
                 error = nil
             } catch is CancellationError { if Task.isCancelled { return }; if currentRevision != revision { continue }; return }
             catch { if runID == identity, currentRevision == revision, !Task.isCancelled { initialLoading = false; self.error = error.localizedDescription } }
-            do { try await SPXSleep.seconds(3) } catch { return }
+            // A live socket makes a 3 s REST sweep redundant; keep a slow safety net
+            // and fall back to the fast poll only while the socket is down.
+            do { try await SPXSleep.seconds(RealtimeClient.shared.connected ? 8 : 3) } catch { return }
         }
     }
     func setReadVisibility(_ visible: Bool) {
@@ -276,11 +298,16 @@ struct ChatListView: View {
     }
     private func persistIfNeeded() async {
         guard let cursor = syncCursor else { return }
+        guard persistenceDirty else { return }
+        // Coalesce bursts: one checkpoint per 1.5 s instead of one per message.
+        if Date().timeIntervalSince(lastPersistedAt) < 1.5 { return }
+        lastPersistedAt = Date()
         let snapshot = ConversationSnapshot(messages: Array(messages.suffix(1000)), cursor: cursor, clearedThrough: clearedThrough)
-        guard snapshot != persisted else { return }
+        guard snapshot != persisted else { persistenceDirty = false; return }
         let currentRevision = revision
         do {
             try await LocalStore.shared.save(snapshot, key: cacheKey + "-sync-v2", userID: userID)
+            persistenceDirty = false
             if currentRevision == revision { persisted = snapshot }
         } catch { /* A failed checkpoint is retried; its cursor must never be saved separately. */ }
     }
@@ -294,13 +321,48 @@ struct ChatListView: View {
     func clear() {
         revision = UUID(); clearedThrough = max(clearedThrough, messages.last?.id ?? 0)
         syncCursor = max(syncCursor ?? 0, clearedThrough); messages = []; hasOlder = false; error = nil; restored = true; initialLoading = false
+        persistenceDirty = true
         Task { await persistIfNeeded() }
     }
     func merge(_ rows: [Record]) {
         guard !rows.isEmpty else { return }
+        let fresh = rows.filter { $0.id > clearedThrough && $0.id > 0 }.sorted { $0.id < $1.id }
+        guard !fresh.isEmpty else { return }
+
+        // Real-time arrivals are almost always newer than the window tail. Appending
+        // keeps the array sorted without rebuilding the dictionary or re-sorting.
+        if let lastID = messages.last?.id, fresh[0].id > lastID {
+            var batch: [Record] = []
+            batch.reserveCapacity(fresh.count)
+            var previous = lastID
+            for row in fresh where row.id > previous {
+                batch.append(row)
+                previous = row.id
+            }
+            if !batch.isEmpty {
+                messages.append(contentsOf: batch)
+                persistenceDirty = true
+                return
+            }
+        }
+
+        // A single in-place update (edit, receipt, rename) only needs one slot replaced.
+        if fresh.count == 1, let row = fresh.first, let index = indexOfMessage(row.id) {
+            var value = row
+            if value["local_created_at"].string.isEmpty,
+               !value["client_message_id"].string.isEmpty,
+               !messages[index]["local_created_at"].string.isEmpty,
+               messages[index]["client_message_id"] == value["client_message_id"] {
+                value["local_created_at"] = messages[index]["local_created_at"]
+            }
+            if messages[index] != value { messages[index] = value; persistenceDirty = true }
+            return
+        }
+
+        // History backfill still needs a full rebuild; it is rare and bounded by the API page size.
         var map = Dictionary(uniqueKeysWithValues: messages.map { ($0.id, $0) })
         var changed = false
-        for row in rows where row.id > clearedThrough && row.id > 0 {
+        for row in fresh {
             var value = row
             if value["local_created_at"].string.isEmpty,
                !value["client_message_id"].string.isEmpty,
@@ -310,7 +372,23 @@ struct ChatListView: View {
             }
             if map[row.id] != value { map[row.id] = value; changed = true }
         }
-        if changed { messages = map.values.sorted { $0.id < $1.id } }
+        if changed {
+            messages = map.values.sorted { $0.id < $1.id }
+            persistenceDirty = true
+        }
+    }
+
+    func notePendingVersion(_ value: Int) { if pendingVersion != value { pendingVersion = value } }
+
+    private func indexOfMessage(_ id: Int) -> Int? {
+        var low = 0, high = messages.count - 1
+        while low <= high {
+            let mid = (low + high) / 2
+            let value = messages[mid].id
+            if value == id { return mid }
+            if value < id { low = mid + 1 } else { high = mid - 1 }
+        }
+        return nil
     }
     func receive(_ event: JSON) {
         if event["type"].string == "contact.remark.updated", event["user_id"].int == userID, group {
@@ -320,7 +398,11 @@ struct ChatListView: View {
         }
         guard event[group ? "group_id" : "chat_id"].int == target else { return }
         if ["message", "message.updated", "group.message", "group.message.updated"].contains(event["type"].string), event["message"]["id"].int > 0 { merge([event["message"].record]) }
-        if event["type"].string.hasSuffix("deleted") { messages.removeAll { $0.id == event["message_id"].int } }
+        if event["type"].string.hasSuffix("deleted") {
+            let before = messages.count
+            messages.removeAll { $0.id == event["message_id"].int }
+            if messages.count != before { persistenceDirty = true }
+        }
         Task { await persistIfNeeded() }
     }
     func refreshNames(for peerID: Int) async {
@@ -348,6 +430,7 @@ struct ChatListView: View {
     func delete(_ message: Record) async throws {
         try await post(action + ".delete", [key: .number(Decimal(target)), "message_id": message["id"]])
         messages.removeAll { $0.id == message.id }
+        persistenceDirty = true
         await persistIfNeeded()
     }
     /// 仅本地删除：只影响当前账号，不影响对方或群成员
@@ -359,6 +442,7 @@ struct ChatListView: View {
         ])
         let removed = Set(ids)
         messages.removeAll { removed.contains($0.id) }
+        persistenceDirty = true
         await persistIfNeeded()
     }
 }
@@ -366,9 +450,11 @@ struct ChatListView: View {
 struct ChatDetailView: View {
     let item: Record
     let isGroup: Bool
+    /// 上次已读到的消息 id；用于在聊天里画「以下是新消息」分割线。
+    var unreadFrom: Int = 0
     @EnvironmentObject private var session: SessionStore
     var body: some View {
-        ConversationView(item: item, isGroup: isGroup, userID: session.user?.id ?? 0)
+        ConversationView(item: item, isGroup: isGroup, userID: session.user?.id ?? 0, unreadFrom: unreadFrom)
             
     }
 }
@@ -391,6 +477,7 @@ struct ConversationView: View {
     let item: Record
     let isGroup: Bool
     let userID: Int
+    let unreadFrom: Int
     @StateObject private var model: ConversationStore
     @ObservedObject private var outbox = Outbox.shared
     @StateObject private var recorder = VoiceRecorder()
@@ -417,6 +504,8 @@ struct ConversationView: View {
     @State private var atBottom = true
     @State private var lastViewportHeight: CGFloat = 0
     @State private var followLatestAfterKeyboard = false
+    @State private var keyboardScrollToken = 0
+    @State private var unreadDividerID: Int?
     @State private var deletingSelected = false
     @State private var confirmDeleteSelected = false
     @State private var timelineCache = ChatTimelineCache()
@@ -478,8 +567,8 @@ struct ConversationView: View {
         let current = groupInfo.id > 0 ? groupInfo : item
         return isGroup ? "\(current.name) (\(current["member_count"].int))" : current.name
     }
-    init(item: Record, isGroup: Bool, userID: Int) {
-        self.item = item; self.isGroup = isGroup; self.userID = userID
+    init(item: Record, isGroup: Bool, userID: Int, unreadFrom: Int = 0) {
+        self.item = item; self.isGroup = isGroup; self.userID = userID; self.unreadFrom = unreadFrom
         _model = StateObject(wrappedValue: ConversationStore.cached(target: item.id, group: isGroup, userID: userID))
     }
     private var pending: [PendingMessage] { outbox.items.filter { $0.targetID == item.id && $0.scope == (isGroup ? "group" : "chat") } }
@@ -488,13 +577,33 @@ struct ConversationView: View {
         guard let oldestDisplayedID else { return Array(model.messages.suffix(100)) }
         return model.messages.filter { $0.id >= oldestDisplayedID }
     }
-    private var timeline: [ChatTimelineEntry] { timelineCache.entries(messages: displayedMessages, pending: pending, userID: userID) }
+    private var timeline: [ChatTimelineEntry] {
+        timelineCache.entries(messages: displayedMessages,
+                              pending: pending,
+                              userID: userID,
+                              version: model.messageVersion,
+                              oldestDisplayedID: oldestDisplayedID,
+                              pendingVersion: outbox.version)
+    }
     private var firstDisplayedID: Int? {
         guard let oldestDisplayedID else { return model.messages.dropFirst(max(0, model.messages.count - 100)).first?.id }
         return model.messages.first { $0.id >= oldestDisplayedID }?.id
     }
     private var media: [Record] { model.messages.filter { ["image", "video"].contains($0["message_type"].string) } }
-    private var newMessageCount: Int { model.messages.filter { $0.id > latestSeenID && $0["sender_id"].int != userID }.count }
+    private var newMessageCount: Int {
+        let rows = model.messages
+        guard !rows.isEmpty else { return 0 }
+        // Messages are sorted by id; only the tail after latestSeenID can be new.
+        var low = 0, high = rows.count
+        while low < high {
+            let mid = (low + high) / 2
+            if rows[mid].id <= latestSeenID { low = mid + 1 } else { high = mid }
+        }
+        guard low < rows.count else { return 0 }
+        var count = 0
+        for index in low..<rows.count where rows[index]["sender_id"].int != userID { count += 1 }
+        return count
+    }
     private var conversationContent: some View {
         VStack(spacing: 0) {
             if let value = model.error { ErrorBanner(message: value).padding(.horizontal).padding(.vertical, 5) }
@@ -512,6 +621,7 @@ struct ConversationView: View {
                         if model.timeBoundaryIDs.contains(message.id) || message.id == firstDisplayedID {
                             Text(MessageTimeline.label(message["created_at"].string)).font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 4)
                         }
+                        if message.id == unreadDividerID { UnreadDividerLine() }
                         if MessageContent.isSystem(message) {
                             SystemMessageNotice(message: message).id(entry.id)
                         } else {
@@ -581,6 +691,7 @@ struct ConversationView: View {
                 }
                 .onChange(of: model.messages.count) { _ in
                     if !didInitialScroll, !model.messages.isEmpty { scrollToLatest(proxy, animated: false) }
+                    resolveUnreadDivider()
                 }
                 .onChange(of: pendingScrollToBottom) { requested in
                     guard requested else { return }
@@ -588,6 +699,7 @@ struct ConversationView: View {
                     pendingScrollToBottom = false
                 }
                 .onAppear {
+                    resolveUnreadDivider()
                     guard !didInitialScroll, !model.messages.isEmpty else { return }
                     scrollToLatest(proxy, animated: false)
                 }
@@ -622,7 +734,7 @@ struct ConversationView: View {
                 }.font(.subheadline).padding(16).background(.bar)
             } else {
             HStack(alignment: .bottom, spacing: 10) {
-                Button { voiceMode.toggle(); plus = false; emoji = false; composerFocused = !voiceMode; if !voiceMode { stopRecording(cancel: true) } } label: { Image(systemName: voiceMode ? "keyboard" : "waveform.circle").font(.system(size: 25, weight: .regular)).frame(width: 32, height: 40) }.accessibilityLabel(voiceMode ? "切换文字输入" : "切换语音输入")
+                Button { voiceMode.toggle(); plus = false; emoji = false; composerFocused = !voiceMode; if !voiceMode { stopRecording(cancel: true) } } label: { Image(systemName: voiceMode ? "keyboard" : "waveform.circle").spxFont(25, weight: .regular).frame(width: 32, height: 40) }.accessibilityLabel(voiceMode ? "切换文字输入" : "切换语音输入")
                 if voiceMode {
                     Text(recordingGesture ? (cancelRecording ? "松开取消" : "松开发送，上滑取消") : "按住说话")
                         .font(.subheadline.weight(.medium))
@@ -638,11 +750,11 @@ struct ConversationView: View {
                 } else {
                     messageInput
                 }
-                Button { emoji.toggle(); plus = false; composerFocused = false } label: { Image(systemName: "face.smiling").font(.system(size: 25, weight: .regular)).frame(width: 32, height: 40) }.accessibilityLabel("表情")
+                Button { emoji.toggle(); plus = false; composerFocused = false } label: { Image(systemName: "face.smiling").spxFont(25, weight: .regular).frame(width: 32, height: 40) }.accessibilityLabel("表情")
                 if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Button { composerFocused = false; emoji = false; withAnimation(.easeInOut(duration: 0.18)) { plus.toggle() } } label: { Image(systemName: "plus.circle").font(.system(size: 25, weight: .regular)).frame(width: 32, height: 40) }.accessibilityLabel("更多功能")
+                    Button { composerFocused = false; emoji = false; withAnimation(.easeInOut(duration: 0.18)) { plus.toggle() } } label: { Image(systemName: "plus.circle").spxFont(25, weight: .regular).frame(width: 32, height: 40) }.accessibilityLabel("更多功能")
                 } else {
-                    Button { sendText() } label: { Text("发送").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white).padding(.horizontal, 12).frame(height: 36).background(SPXColor.primary, in: RoundedRectangle(cornerRadius: 8)) }.accessibilityLabel("发送")
+                    Button { sendText() } label: { Text("发送").spxFont(14, weight: .semibold).foregroundStyle(.white).padding(.horizontal, 12).frame(height: 36).background(SPXColor.primary, in: RoundedRectangle(cornerRadius: 8)) }.accessibilityLabel("发送")
                 }
             }
             .frame(maxWidth: .infinity, alignment: .bottom)
@@ -658,7 +770,7 @@ struct ConversationView: View {
         // Measure at most four lines instead of letting TextEditor fill the
         // available height. The zero-width space also measures a trailing newline.
         Text(text.isEmpty ? " " : text + "\u{200B}")
-            .font(.system(size: 16))
+            .spxFont(16)
             .lineLimit(4)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 13)
@@ -668,7 +780,7 @@ struct ConversationView: View {
             .accessibilityHidden(true)
             .overlay {
                 TextEditor(text: $text)
-                    .font(.system(size: 16))
+                    .spxFont(16)
                     .foregroundStyle(SPXColor.ink)
                     .tint(SPXColor.primary)
                     .focused($composerFocused)
@@ -691,7 +803,17 @@ struct ConversationView: View {
         conversationContent.navigationTitle(title).navigationBarTitleDisplayMode(.inline)
             
             
-            .toolbar { ToolbarItem(placement: .navigationBarTrailing) { NavigationLink { ConversationSettingsView(item: item, isGroup: isGroup) } label: { Image(systemName: "ellipsis") } } }
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    NavigationLink { ConversationSettingsView(item: item, isGroup: isGroup) } label: { Image(systemName: "ellipsis") }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(selecting ? "取消" : "选择") {
+                        selecting.toggle()
+                        if !selecting { selectedMessages = [] }
+                    }.font(.subheadline)
+                }
+            }
             
             .spxPage().errorAlert($error)
             .overlay { if recorder.recording { VoiceRecordingOverlay(level: recorder.level, elapsed: recorder.elapsed, cancelled: cancelRecording).transition(.opacity) } }
@@ -951,12 +1073,19 @@ struct ConversationView: View {
         }
     }
 
+    /// 只在打开会话时计算一次，之后随着滚动看过的消息不会让分割线移动。
+    private func resolveUnreadDivider() {
+        guard unreadDividerID == nil, unreadFrom > 0, !model.messages.isEmpty else { return }
+        unreadDividerID = model.messages.first { $0.id > unreadFrom }?.id
+    }
     private func scheduleKeyboardScroll(_ proxy: ScrollViewProxy) {
-        for delay in [0.05, 0.25, 0.45] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                guard composerFocused, followLatestAfterKeyboard else { return }
-                scrollToLatest(proxy, animated: false)
-            }
+        // Keyboard callbacks fire more than once per transition; three chained
+        // jumps per callback produced the visible double hop.
+        keyboardScrollToken &+= 1
+        let token = keyboardScrollToken
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            guard token == keyboardScrollToken, composerFocused, followLatestAfterKeyboard else { return }
+            scrollToLatest(proxy, animated: false)
         }
     }
     private func queue(file: URL, kind: String, name: String) async throws {
@@ -1046,6 +1175,19 @@ struct SystemMessageNotice: View {
     }
 }
 
+/// 进入会话时把「这次之前没看过的消息」标出来。
+struct UnreadDividerLine: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            Rectangle().fill(SPXColor.primary.opacity(0.25)).frame(height: 0.5)
+            Text("以下是新消息").spxFont(11, weight: .medium).foregroundStyle(SPXColor.primary).fixedSize()
+            Rectangle().fill(SPXColor.primary.opacity(0.25)).frame(height: 0.5)
+        }
+        .padding(.vertical, 6)
+        .accessibilityLabel("以下是新消息")
+    }
+}
+
 struct MessageBubble: View {
     let message: Record
     let currentUserID: Int
@@ -1066,9 +1208,9 @@ struct MessageBubble: View {
             SystemMessageNotice(message: message)
         } else {
         HStack(alignment: .top, spacing: 10) {
-            if mine { Spacer(minLength: 52) } else { Avatar(url: message.avatar, name: message.name, size: 36).onLongPressGesture { mention?() }.accessibilityAction(named: "提醒这位成员") { mention?() } }
+            if mine { Spacer(minLength: 40) } else { Avatar(url: message.avatar, name: message.name, size: 36).onLongPressGesture { mention?() }.accessibilityAction(named: "提醒这位成员") { mention?() } }
             VStack(alignment: mine ? .trailing : .leading, spacing: 5) {
-            if !mine, isGroup { Text(message.name).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1) }
+            if !mine, isGroup { Text(message.name).spxFont(11).foregroundStyle(.secondary).lineLimit(1) }
             Button(action: open) {
                 VStack(alignment: .leading, spacing: 6) {
                     if message["reply"]["id"].int > 0 { Text("\(message["reply"]["nickname"].string)：\(message["reply"]["preview"].string)").font(.caption).lineLimit(2).padding(8).background(.black.opacity(0.07), in: RoundedRectangle(cornerRadius: 6)).onTapGesture { reply?() }.accessibilityAddTraits(.isButton).accessibilityLabel("查看引用消息") }
@@ -1081,15 +1223,15 @@ struct MessageBubble: View {
                         VStack(alignment: .leading, spacing: 5) {
                             HStack(spacing: 10) {
                                 Image(systemName: "gift.fill")
-                                    .font(.system(size: 22, weight: .semibold))
+                                    .spxFont(22, weight: .semibold)
                                     .foregroundStyle(Color(red: 1, green: 0.82, blue: 0.52))
                                     .frame(width: 34, height: 34)
-                                Text(greeting).font(.system(size: 16, weight: .semibold)).lineLimit(2)
+                                Text(greeting).spxFont(16, weight: .semibold).lineLimit(2)
                             }
                             Text("轻触打开红包").font(.caption).foregroundStyle(.white.opacity(0.86))
                             Rectangle().fill(.white.opacity(0.22)).frame(height: 1)
                             Text((packetMode == "random" ? "拼手气红包" : "普通红包") + " · \(packetSymbol)")
-                                .font(.system(size: 11)).foregroundStyle(.white.opacity(0.86))
+                                .spxFont(11).foregroundStyle(.white.opacity(0.86))
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 12)
@@ -1097,13 +1239,13 @@ struct MessageBubble: View {
                     case "call": Label(message["content"].string, systemImage: "phone.fill")
                     default: MessageText(content: message["content"].string, mine: mine)
                     } }
-                }.font(.system(size: 16)).padding(isMedia ? 0 : 12).foregroundStyle(mine ? .white : SPXColor.ink)
+                }.spxFont(16).padding(isMedia ? 0 : 12).foregroundStyle(mine ? .white : SPXColor.ink)
                     .contentShape(Rectangle())
                     .background(isMedia ? Color.clear : (type == "red_packet" ? Color(red: 0.82, green: 0.19, blue: 0.14) : (mine ? SPXColor.primary : SPXColor.card)), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay { if !mine, !isMedia { RoundedRectangle(cornerRadius: 12).stroke(SPXColor.line, lineWidth: 0.5) } }
             }.buttonStyle(.plain)
             }
-            if !mine { Spacer(minLength: 44) }
+            if !mine { Spacer(minLength: 32) }
         }
         }
     }
@@ -1187,13 +1329,13 @@ private struct CallRecordMessageBubble: View {
                 HStack(spacing: 12) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 14).fill(mine ? Color.white.opacity(0.12) : SPXColor.hex(0xEEF2FF))
-                        Image(systemName: iconName).font(.system(size: 18, weight: .semibold)).foregroundStyle(mine ? .white : Color(red: 0.38, green: 0.45, blue: 0.79))
+                        Image(systemName: iconName).spxFont(18, weight: .semibold).foregroundStyle(mine ? .white : Color(red: 0.38, green: 0.45, blue: 0.79))
                     }.frame(width: 41, height: 41)
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(call.title).font(.system(size: 16, weight: .medium)).foregroundStyle(ink).lineLimit(2).truncationMode(.tail)
-                        Text(call.subtitle).font(.system(size: 11)).foregroundStyle(muted).lineLimit(2).truncationMode(.tail)
+                        Text(call.title).spxFont(16, weight: .medium).foregroundStyle(ink).lineLimit(2).truncationMode(.tail)
+                        Text(call.subtitle).spxFont(11).foregroundStyle(muted).lineLimit(2).truncationMode(.tail)
                     }.frame(maxWidth: .infinity, alignment: .leading)
-                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(mine ? .white.opacity(0.62) : Color(red: 0.69, green: 0.72, blue: 0.79))
+                    Image(systemName: "chevron.right").spxFont(10, weight: .semibold).foregroundStyle(mine ? .white.opacity(0.62) : Color(red: 0.69, green: 0.72, blue: 0.79))
                 }
                 .padding(.horizontal, 15).padding(.vertical, 14).frame(minWidth: 248, maxWidth: 248, minHeight: 74)
                 .background(mine ? blue : .white, in: CallRecordBubbleShape(mine: mine))
@@ -1231,10 +1373,10 @@ struct PendingMessageBubble: View {
             VStack(alignment: .trailing, spacing: 6) {
                 Group {
                     if isMedia, let local = entry.localURL { LocalAttachmentPreview(url: local, kind: kind) }
-                    else { Label(entry.body["content"]?.string ?? "附件", systemImage: kind == "file" ? "doc.fill" : (kind == "voice" ? "waveform" : "bubble.right")).font(.system(size: 16)).padding(12).foregroundStyle(.white).background(SPXColor.primary, in: RoundedRectangle(cornerRadius: 12)) }
+                    else { Label(entry.body["content"]?.string ?? "附件", systemImage: kind == "file" ? "doc.fill" : (kind == "voice" ? "waveform" : "bubble.right")).spxFont(16).padding(12).foregroundStyle(.white).background(SPXColor.primary, in: RoundedRectangle(cornerRadius: 12)) }
                 }
                 if entry.state == .uploading { ProgressView(value: entry.progress).frame(width: 180).tint(SPXColor.primary) }
-                Text(status).font(.system(size: 11)).foregroundStyle(entry.state == .failed ? Color.red : .secondary).lineLimit(3).frame(maxWidth: ChatMediaLayout.width, alignment: .trailing)
+                Text(status).spxFont(11).foregroundStyle(entry.state == .failed ? Color.red : .secondary).lineLimit(3).frame(maxWidth: ChatMediaLayout.width, alignment: .trailing)
                 if entry.state == .failed {
                     HStack(spacing: 16) {
                         Button("重试", systemImage: "arrow.clockwise", action: retry)
@@ -1254,7 +1396,7 @@ struct PlusAction: View {
             SPXIcon(icon).frame(width: 25, height: 25).frame(width: 48, height: 48)
                 .background(SPXColor.card, in: RoundedRectangle(cornerRadius: 14))
                 .overlay(RoundedRectangle(cornerRadius: 14).stroke(SPXColor.line, lineWidth: 0.7))
-            Text(title).font(.system(size: 12)).lineLimit(1).minimumScaleFactor(0.85)
+            Text(title).spxFont(12).lineLimit(1).minimumScaleFactor(0.85)
         }.foregroundStyle(SPXColor.ink).frame(maxWidth: .infinity, minHeight: 82).contentShape(Rectangle())
     }
 }

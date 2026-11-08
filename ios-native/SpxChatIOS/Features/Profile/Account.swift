@@ -12,17 +12,17 @@ struct ProfileView: View {
                 HStack(spacing: 16) {
                     NavigationLink { ProfileEditView() } label: { Avatar(url: session.user?.avatar ?? "", name: session.user?.name ?? "我", size: 80) }
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(session.user?.name ?? "我的账号").font(.system(size: 23, weight: .semibold)).foregroundStyle(.white).lineLimit(2)
+                        Text(session.user?.name ?? "我的账号").spxFont(23, weight: .semibold).foregroundStyle(.white).lineLimit(2)
                         Button { guard !spxID.isEmpty else { return }; UIPasteboard.general.string = spxID; notice = "SPX ID 已复制" } label: {
                             Label(spxID.isEmpty ? "SPX ID 读取中…" : spxID, systemImage: "square.on.square")
-                                .font(.system(size: 12, weight: .medium)).foregroundStyle(SPXColor.primary)
+                                .spxFont(12, weight: .medium).foregroundStyle(SPXColor.primary)
                                 .padding(.horizontal, 10).padding(.vertical, 6).background(SPXColor.hex(0xEDF3FF), in: Capsule())
                         }.disabled(spxID.isEmpty)
                         NavigationLink { QRCodeView(value: "SPXUSER:\(spxID)", title: session.user?.name ?? "我的二维码") } label: {
-                            Label("我的二维码", systemImage: "qrcode").font(.system(size: 12)).foregroundStyle(.white.opacity(0.8))
+                            Label("我的二维码", systemImage: "qrcode").spxFont(12).foregroundStyle(.white.opacity(0.8))
                         }.disabled(spxID.isEmpty)
                     }.frame(maxWidth: .infinity, alignment: .leading)
-                    NavigationLink { ProfileEditView() } label: { Text("编辑").font(.system(size: 14, weight: .medium)).foregroundStyle(.white).frame(minWidth: 54, minHeight: 44).background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 12)) }
+                    NavigationLink { ProfileEditView() } label: { Text("编辑").spxFont(14, weight: .medium).foregroundStyle(.white).frame(minWidth: 54, minHeight: 44).background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 12)) }
                 }.padding(20).background(LinearGradient(colors: [SPXColor.hex(0x182647), SPXColor.hex(0x324D82)], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 24))
                 SPXSectionTitle(title: "账号资产")
                 NavigationLink { WalletView() } label: { SPXMenuRow(title: "我的资产", subtitle: "资产余额、充值与提现", icon: "wallet") }
@@ -37,7 +37,7 @@ struct ProfileView: View {
                 SPXSectionTitle(title: "通用")
                 NavigationLink { SettingsView() } label: { SPXMenuRow(title: "设置", subtitle: "账号安全、通知、显示与隐私", icon: "settings") }
                 Text("版本 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")")
-                    .font(.system(size: 12)).foregroundStyle(SPXColor.muted).frame(maxWidth: .infinity).padding(.vertical, 12)
+                    .spxFont(12).foregroundStyle(SPXColor.muted).frame(maxWidth: .infinity).padding(.vertical, 12)
             }.buttonStyle(.plain).padding(16)
         }.navigationTitle("我的").spxPage().successToast($notice)
             .spxRefreshable { do { try await session.refreshProfile() } catch { notice = "资料暂时无法刷新，请稍后再试" } }
@@ -230,7 +230,7 @@ struct SettingsView: View {
                 NavigationLink { PolicyView(kind: "privacy") } label: { SPXSettingsRow(title: "隐私政策", icon: "hand.raised") }
                 InfoRow(title: "连接安全", value: "系统公信 HTTPS")
             }
-            Button { logout = true } label: { Text("退出登录").font(.system(size: 15, weight: .semibold)).foregroundStyle(.red).frame(maxWidth: .infinity).padding(17).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 16)) }.buttonStyle(.plain)
+            Button { logout = true } label: { Text("退出登录").spxFont(15, weight: .semibold).foregroundStyle(.red).frame(maxWidth: .infinity).padding(17).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 16)) }.buttonStyle(.plain)
         }.buttonStyle(.plain).navigationTitle("设置").spxPage().errorAlert($error).successToast($notice)
             .alert("发现新版本 \(updateVersion)", isPresented: $updateAlert) {
                 Button("去更新") { if let url = URL(string: updateURL) { UIApplication.shared.open(url) } }
@@ -263,7 +263,7 @@ struct PolicyView: View {
     let kind: String
     @State private var text = ""
     @State private var error: String?
-    var body: some View { SPXDetailPage { SPXCard { VStack(alignment: .leading, spacing: 16) { if text.isEmpty, error == nil { ProgressView() } else { Text(text).textSelection(.enabled) }; if let error { ErrorBanner(message: error) } }.font(.system(size: 15)).lineSpacing(7).frame(maxWidth: .infinity, alignment: .leading) } }.navigationTitle(kind == "privacy" ? "隐私政策" : "服务协议").task { do { let url = Bundle.main.url(forResource: kind, withExtension: "txt"); if let url { text = try String(contentsOf: url, encoding: .utf8) } else { error = "协议暂时无法加载，请稍后重试。" } } catch { self.error = error.localizedDescription } } }
+    var body: some View { SPXDetailPage { SPXCard { VStack(alignment: .leading, spacing: 16) { if text.isEmpty, error == nil { ProgressView() } else { Text(text).textSelection(.enabled) }; if let error { ErrorBanner(message: error) } }.spxFont(15).lineSpacing(7).frame(maxWidth: .infinity, alignment: .leading) } }.navigationTitle(kind == "privacy" ? "隐私政策" : "服务协议").task { do { let url = Bundle.main.url(forResource: kind, withExtension: "txt"); if let url { text = try String(contentsOf: url, encoding: .utf8) } else { error = "协议暂时无法加载，请稍后重试。" } } catch { self.error = error.localizedDescription } } }
 }
 
 struct BenefitsView: View {
@@ -343,7 +343,7 @@ struct RecordsView: View {
     /// 记录里带的币种优先，缺省回落到 SPX001（历史数据）
     private func recordSymbol(_ row: Record) -> String {
         let value = row["symbol"].string
-        return ["SPX001", "USDT", "FISS"].contains(value) ? value : "SPX001"
+        return ["SPX001", "USDT", "XKRS"].contains(value) ? value : "SPX001"
     }
     var body: some View {
         SPXDetailPage {

@@ -26,8 +26,8 @@ struct ConversationSettingsView: View {
                     HStack(spacing: 14) {
                         Avatar(url: info.avatar, name: info.name, size: 64)
                         VStack(alignment: .leading, spacing: 7) {
-                            Text(info.name.isEmpty ? item.name : info.name).font(.system(size: 21, weight: .bold)).foregroundStyle(SPXColor.ink)
-                            Text("群聊资料与管理").font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+                            Text(info.name.isEmpty ? item.name : info.name).spxFont(21, weight: .bold).foregroundStyle(SPXColor.ink)
+                            Text("群聊资料与管理").spxFont(12).foregroundStyle(SPXColor.muted)
                         }
                     }
                     Divider()
@@ -49,14 +49,14 @@ struct ConversationSettingsView: View {
                         SPXField("群公告") { TextField("填写群公告", text: $announcement).lineLimit(10) }
                         SPXButton(title: busy ? "保存中…" : "保存群资料") { updateInfo() }
                     } else {
-                        Text(info["announcement"].string.isEmpty ? "暂无群公告" : info["announcement"].string).font(.system(size: 14)).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
+                        Text(info["announcement"].string.isEmpty ? "暂无群公告" : info["announcement"].string).spxFont(14).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
                     }
                 } }
             } else {
                 NavigationLink { UserProfileView(userID: item["peer_user_id"].int) } label: {
                     SPXCard { HStack(spacing: 14) {
                         Avatar(url: item.avatar, name: item.name, size: 60)
-                        VStack(alignment: .leading, spacing: 7) { Text(item.name).font(.system(size: 20, weight: .semibold)).foregroundStyle(SPXColor.ink); Text("查看朋友资料").font(.system(size: 12)).foregroundStyle(SPXColor.muted) }
+                        VStack(alignment: .leading, spacing: 7) { Text(item.name).spxFont(20, weight: .semibold).foregroundStyle(SPXColor.ink); Text("查看朋友资料").spxFont(12).foregroundStyle(SPXColor.muted) }
                         Spacer()
                         Image(systemName: "chevron.right").font(.caption).foregroundStyle(SPXColor.muted)
                     } }
@@ -171,7 +171,7 @@ private struct GroupMemberRoleBadge: View {
     private var title: String { role == "owner" ? "群主" : role == "admin" ? "管理员" : "成员" }
     private var color: Color { role == "owner" ? Color(red: 0.61, green: 0.38, blue: 0.09) : role == "admin" ? SPXColor.primary : SPXColor.muted }
     var body: some View {
-        Text(title).font(.system(size: 10, weight: .semibold))
+        Text(title).spxFont(10, weight: .semibold)
             .foregroundStyle(color).padding(.horizontal, 7).padding(.vertical, 4)
             .background(color.opacity(0.09), in: RoundedRectangle(cornerRadius: 5))
             .accessibilityLabel("群身份：\(title)")
@@ -211,7 +211,7 @@ struct GroupMembersView: View {
                     ForEach(filteredMembers, id: \.fields) { member in
                         VStack(spacing: 7) {
                             NavigationLink { UserProfileView(userID: userID(member)) } label: {
-                                VStack(spacing: 7) { Avatar(url: member.avatar, name: member.name, size: 48); Text(member.name).font(.system(size: 12)).foregroundStyle(SPXColor.ink).lineLimit(1); GroupMemberRoleBadge(role: role(member)) }
+                                VStack(spacing: 7) { Avatar(url: member.avatar, name: member.name, size: 48); Text(member.name).spxFont(12).foregroundStyle(SPXColor.ink).lineLimit(1); GroupMemberRoleBadge(role: role(member)) }
                             }.buttonStyle(.plain)
                             if canManageMember(member) {
                                 Menu {
@@ -221,12 +221,12 @@ struct GroupMembersView: View {
                                     }
                                     Button(member["mute"].flag ? "解除禁言" : "禁言") { act("groups.members.mute", member: member, extra: ["mute": .bool(!member["mute"].flag)]) }
                                     Button("移出群聊", role: .destructive) { remove = member }
-                                } label: { Label("管理", systemImage: "ellipsis").font(.system(size: 11)).foregroundStyle(SPXColor.primary).frame(minHeight: 36) }
+                                } label: { Label("管理", systemImage: "ellipsis").spxFont(11).foregroundStyle(SPXColor.primary).frame(minHeight: 36) }
                             }
                         }.frame(maxWidth: .infinity).accessibilityElement(children: .contain)
                     }
                     if current["permissions"]["invite_members"].flag {
-                        Button { adding = true } label: { VStack(spacing: 7) { SPXIcon("plus").frame(width: 23,height: 23).frame(width: 48,height: 48).background(SPXColor.surface,in: RoundedRectangle(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14).stroke(SPXColor.line)); Text("邀请好友").font(.system(size: 12)); Text(" ").font(.system(size: 10)) }.foregroundStyle(SPXColor.primary).frame(maxWidth: .infinity) }
+                        Button { adding = true } label: { VStack(spacing: 7) { SPXIcon("plus").frame(width: 23,height: 23).frame(width: 48,height: 48).background(SPXColor.surface,in: RoundedRectangle(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14).stroke(SPXColor.line)); Text("邀请好友").spxFont(12); Text(" ").spxFont(10) }.foregroundStyle(SPXColor.primary).frame(maxWidth: .infinity) }
                     }
                 }.padding(16).background(SPXColor.card,in: RoundedRectangle(cornerRadius: 20))
                 if !loading && rows.isEmpty { EmptyState(title: "暂未读取到成员", description: "请下拉刷新或稍后重试") }
@@ -295,10 +295,10 @@ struct MessageSearchView: View {
             ForEach(rows) { row in
                 NavigationLink { MessageContextView(targetID: targetID, group: group, messageID: row.id) } label: {
                     SPXCard { HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: "text.bubble").font(.system(size: 20)).foregroundStyle(SPXColor.primary).frame(width: 40, height: 40).background(SPXColor.tint, in: RoundedRectangle(cornerRadius: 12))
+                        Image(systemName: "text.bubble").spxFont(20).foregroundStyle(SPXColor.primary).frame(width: 40, height: 40).background(SPXColor.tint, in: RoundedRectangle(cornerRadius: 12))
                         VStack(alignment: .leading, spacing: 9) {
-                            Text(MessageContent.preview(row)).font(.system(size: 15)).foregroundStyle(SPXColor.ink).lineLimit(3)
-                            Text(MessageTimeline.label(row["created_at"].string)).font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+                            Text(MessageContent.preview(row)).spxFont(15).foregroundStyle(SPXColor.ink).lineLimit(3)
+                            Text(MessageTimeline.label(row["created_at"].string)).spxFont(12).foregroundStyle(SPXColor.muted)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                         Image(systemName: "chevron.right").font(.caption).foregroundStyle(SPXColor.muted).padding(.top, 12)
                     } }

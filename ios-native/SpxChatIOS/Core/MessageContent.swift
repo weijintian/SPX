@@ -49,7 +49,7 @@ enum MessageContent {
         guard let data = raw.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let symbol = object["symbol"] as? String,
-              ["SPX001", "FISS"].contains(symbol) else { return "SPX001" }
+              ["SPX001", "XKRS"].contains(symbol) else { return "SPX001" }
         return symbol
     }
 

@@ -42,7 +42,38 @@ final class ChatTimelineCache {
 
     init(build: @escaping Builder = ChatTimelineEntry.merge) { self.build = build }
 
-    func entries(messages: [Record], pending: [PendingMessage], userID: Int) -> [ChatTimelineEntry] {
+    private var version = -1
+    private var window: Int?
+    private var pendingVersion = -1
+    private var lastCount = -1
+    private var lastFirst: Int?
+    private var lastLast: Int?
+
+    /// `version` is bumped by the store on every mutation, so the cache can skip the
+    /// deep array comparison that previously ran on every body evaluation.
+    func entries(messages: [Record], pending: [PendingMessage], userID: Int,
+                 version: Int? = nil, oldestDisplayedID: Int? = nil,
+                 pendingVersion: Int? = nil) -> [ChatTimelineEntry] {
+        if let version {
+            let sameWindow = self.version == version
+                && self.window == oldestDisplayedID
+                && self.pendingVersion == (pendingVersion ?? -1)
+                && lastCount == messages.count
+                && lastFirst == messages.first?.id
+                && lastLast == messages.last?.id
+            if sameWindow, owner == userID { return projection }
+            self.version = version
+            self.window = oldestDisplayedID
+            self.pendingVersion = pendingVersion ?? -1
+            lastCount = messages.count
+            lastFirst = messages.first?.id
+            lastLast = messages.last?.id
+            owner = userID
+            self.messages = messages
+            self.pending = pending
+            projection = build(messages, pending, userID)
+            return projection
+        }
         if owner != userID || self.messages != messages || self.pending != pending {
             owner = userID
             self.messages = messages

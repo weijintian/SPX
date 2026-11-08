@@ -12,6 +12,9 @@ extension Notification.Name { static let spxRealtime = Notification.Name("spx.re
     private var socket: URLSessionWebSocketTask?
     private var epoch = UUID()
     private var currentToken: String?
+    /// One decoder reused for every frame; a fresh instance per message allocated
+    /// on the main actor for each incoming event.
+    private let decoder = JSONDecoder()
     func start(token: String) {
         if currentToken == token, runner != nil { return }
         stop(); currentToken = token
@@ -38,7 +41,7 @@ extension Notification.Name { static let spxRealtime = Notification.Name("spx.re
                         let event = try await connection.receive()
                         let bytes: Data
                         switch event { case .data(let value): bytes = value; case .string(let value): bytes = Data(value.utf8); @unknown default: continue }
-                        let payload = try JSONDecoder().decode(JSON.self, from: bytes)
+                        let payload = try self.decoder.decode(JSON.self, from: bytes)
                         guard generation == epoch else { return }
                         if payload["type"].string == "auth.revoked" {
                             NotificationCenter.default.post(name: .spxUnauthorized, object: token, userInfo: ["message": payload["message"].string])

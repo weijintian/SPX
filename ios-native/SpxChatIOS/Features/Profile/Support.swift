@@ -19,7 +19,7 @@ struct SupportView: View {
             SPXSectionTitle(title: "我的工单")
             ForEach(tickets) { ticket in SPXCard { DisclosureGroup {
                 VStack(alignment: .leading, spacing: 12) { Text(ticket["content"].string); InfoRow(title: "状态", value: ticket["status"].string); if !ticket["admin_reply"].string.isEmpty { Text(ticket["admin_reply"].string).padding(12).background(SPXColor.tint, in: RoundedRectangle(cornerRadius: 12)) } }.padding(.top, 12)
-            } label: { VStack(alignment: .leading, spacing: 6) { Text(ticket["subject"].string).font(.system(size: 15, weight: .semibold)); Text(ticket["created_at"].string).font(.caption).foregroundStyle(SPXColor.muted) } } } }
+            } label: { VStack(alignment: .leading, spacing: 6) { Text(ticket["subject"].string).spxFont(15, weight: .semibold); Text(ticket["created_at"].string).font(.caption).foregroundStyle(SPXColor.muted) } } } }
             if tickets.isEmpty { EmptyState(title: "暂无客服工单", description: "提交后可在这里查看回复", icon: "bubble.left") }
         }.navigationTitle("帮助与反馈").task { await load() }.spxRefreshable { await load() }.errorAlert($error)
     }
@@ -67,7 +67,7 @@ struct ReferralsView: View {
         SPXDetailPage {
             SPXPageHeading(title: "邀请朋友", subtitle: "分享邀请链接，查看邀请与奖励记录", icon: "person.2")
             SPXPanel("我的邀请码") {
-                Text(data["invite_code"].string.isEmpty ? "—" : data["invite_code"].string).font(.system(size: 32, weight: .bold, design: .monospaced)).foregroundStyle(SPXColor.primary).textSelection(.enabled).frame(maxWidth: .infinity).padding(.vertical, 12)
+                Text(data["invite_code"].string.isEmpty ? "—" : data["invite_code"].string).spxFont(32, weight: .bold, design: .monospaced).foregroundStyle(SPXColor.primary).textSelection(.enabled).frame(maxWidth: .infinity).padding(.vertical, 12)
                 if let url = URL(string: data["invite_url"].string), !data["invite_url"].string.isEmpty { SPXShareLink(item: url) { Label("分享邀请链接", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity) }.buttonStyle(.borderedProminent) }
             }
             SPXPanel("邀请数据") {

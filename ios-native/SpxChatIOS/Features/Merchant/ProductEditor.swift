@@ -216,16 +216,16 @@ struct PublishProductView: View {
                 SPXCard {
                     DisclosureGroup(isExpanded: $variantsExpanded) { variantSection.padding(.top, 12) } label: {
                         VStack(alignment: .leading, spacing: 5) {
-                            Text("多规格商品").font(.system(size: 16, weight: .semibold))
-                            Text(variants.isEmpty ? "选填 · 颜色、尺码或套餐" : "已添加 \(variants.count) 个规格").font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+                            Text("多规格商品").spxFont(16, weight: .semibold)
+                            Text(variants.isEmpty ? "选填 · 颜色、尺码或套餐" : "已添加 \(variants.count) 个规格").spxFont(12).foregroundStyle(SPXColor.muted)
                         }
                     }.tint(SPXColor.primary)
                 }
                 SPXCard {
                     DisclosureGroup(isExpanded: $detailsExpanded) { detailSection.padding(.top, 12) } label: {
                         VStack(alignment: .leading, spacing: 5) {
-                            Text("详情与交付").font(.system(size: 16, weight: .semibold))
-                            Text("图文详情、视频、运费与服务说明").font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+                            Text("详情与交付").spxFont(16, weight: .semibold)
+                            Text("图文详情、视频、运费与服务说明").spxFont(12).foregroundStyle(SPXColor.muted)
                         }
                     }.tint(SPXColor.primary)
                 }
@@ -301,7 +301,7 @@ struct PublishProductView: View {
     }
     private var saveSection: some View {
         HStack(spacing: 14) {
-            Button("保存草稿") { save(publishing: false) }.font(.system(size: 14, weight: .medium)).frame(minWidth: 86, minHeight: 48)
+            Button("保存草稿") { save(publishing: false) }.spxFont(14, weight: .medium).frame(minWidth: 86, minHeight: 48)
             Button(editing ? "保存商品修改" : "提交发布") { publish = true }.frame(maxWidth: .infinity).buttonStyle(SPXPrimaryButtonStyle())
         }.padding(.horizontal, 16).padding(.vertical, 12).background(SPXColor.card)
             .overlay(alignment: .top) { Rectangle().fill(SPXColor.line).frame(height: 0.7) }
@@ -309,7 +309,7 @@ struct PublishProductView: View {
     }
 
     private func bind(_ key: String) -> Binding<String> { Binding(get: { values[key] ?? "" }, set: { values[key] = $0 }) }
-    private func field(_ key: String, _ title: String, keyboard: UIKeyboardType = .default, multiline: Bool = false) -> some View { VStack(alignment: .leading, spacing: 8) { Text(title).font(.system(size: 13)).foregroundStyle(SPXColor.muted); TextField(title, text: bind(key)).lineLimit(multiline ? 10 : 1).keyboardType(keyboard) } }
+    private func field(_ key: String, _ title: String, keyboard: UIKeyboardType = .default, multiline: Bool = false) -> some View { VStack(alignment: .leading, spacing: 8) { Text(title).spxFont(13).foregroundStyle(SPXColor.muted); TextField(title, text: bind(key)).lineLimit(multiline ? 10 : 1).keyboardType(keyboard) } }
     private func imageStrip(_ urls: Binding<[String]>) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {

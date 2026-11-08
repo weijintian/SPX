@@ -6,6 +6,21 @@ import UIKit
 import ImageIO
 import UniformTypeIdentifiers
 
+/// Remembers a decoded image's display size so scrolling back to a cell renders at the
+/// final size instead of re-flowing from the placeholder.
+final class ChatImageSizeStore: @unchecked Sendable {
+    static let shared = ChatImageSizeStore()
+    private let lock = NSLock()
+    private var sizes: [String: CGSize] = [:]
+    func size(for key: String) -> CGSize? { lock.lock(); defer { lock.unlock() }; return sizes[key] }
+    func store(_ size: CGSize, for key: String) {
+        guard size.width > 0, size.height > 0 else { return }
+        lock.lock(); defer { lock.unlock() }
+        if sizes.count > 800 { sizes.removeAll(keepingCapacity: true) }
+        sizes[key] = size
+    }
+}
+
 enum ChatMediaLayout {
     static let width: CGFloat = 210
     static let height: CGFloat = 160
@@ -20,9 +35,15 @@ enum ChatMediaLayout {
 /// Android uses a bounded, aspect-preserving bubble after the image is decoded.
 private struct ChatImageLayout<Content: View>: View {
     let imageSize: CGSize?
+    var remembered: CGSize? = nil
     let content: Content
-    init(imageSize: CGSize?, @ViewBuilder content: () -> Content) { self.imageSize = imageSize; self.content = content() }
-    var body: some View { content.frame(width: ChatMediaLayout.imageSize(imageSize ?? .zero).width, height: ChatMediaLayout.imageSize(imageSize ?? .zero).height) }
+    init(imageSize: CGSize?, remembered: CGSize? = nil, @ViewBuilder content: () -> Content) {
+        self.imageSize = imageSize; self.remembered = remembered; self.content = content()
+    }
+    var body: some View {
+        let target = ChatMediaLayout.imageSize(imageSize ?? remembered ?? .zero)
+        return content.frame(width: target.width, height: target.height)
+    }
 }
 
 struct LocalAttachmentPreview: View {
@@ -37,7 +58,7 @@ struct LocalAttachmentPreview: View {
                     Color.black.opacity(0.06)
                     if let thumbnail { Image(uiImage: thumbnail).resizable().scaledToFit() }
                     else { ProgressView() }
-                    if kind == "video" { Image(systemName: "play.circle.fill").font(.system(size: 40)).foregroundStyle(.white).shadow(radius: 3) }
+                    if kind == "video" { Image(systemName: "play.circle.fill").spxFont(40).foregroundStyle(.white).shadow(radius: 3) }
                 }
                 if kind == "image" { ChatImageLayout(imageSize: thumbnail?.size) { preview }.clipShape(RoundedRectangle(cornerRadius: 12)) }
                 else { preview.frame(width: ChatMediaLayout.width, height: ChatMediaLayout.height).clipShape(RoundedRectangle(cornerRadius: 12)) }
@@ -64,9 +85,10 @@ struct CachedImage: View {
     @State private var image: UIImage?
     @State private var failed = false
     @State private var retry = 0
+    private var sizeKey: String { "\(session.user?.id ?? 0):\(source)" }
     var body: some View {
         Group {
-            if messagePreview { ChatImageLayout(imageSize: image?.size) { content } }
+            if messagePreview { ChatImageLayout(imageSize: image?.size, remembered: ChatImageSizeStore.shared.size(for: sizeKey)) { content } }
             else { content }
         }.task(id: "\(session.user?.id ?? 0):\(maximumPixelSize):\(source):\(retry)") {
             let requestedSource = source
@@ -78,6 +100,7 @@ struct CachedImage: View {
                 try Task.checkCancellation()
                 guard source == requestedSource, session.user?.id == owner else { return }
                 image = decoded; failed = false
+                ChatImageSizeStore.shared.store(decoded.size, for: "\(owner):\(requestedSource)")
             }
             catch is CancellationError { }
             catch { if !Task.isCancelled, session.user?.id == owner { failed = true } }
@@ -168,7 +191,7 @@ struct VideoMessagePreview: View {
             }
             LinearGradient(colors: [.clear, .black.opacity(0.42)], startPoint: .center, endPoint: .bottom)
             Image(systemName: "play.circle.fill")
-                .font(.system(size: 42))
+                .spxFont(42)
                 .symbolRenderingMode(.palette)
                 .foregroundStyle(.white, .black.opacity(0.35))
         }
@@ -549,13 +572,13 @@ struct VoiceRecordingOverlay: View {
     var body: some View {
         VStack(spacing: 12) {
             Image(systemName: "mic.fill")
-                .font(.system(size: 28, weight: .semibold))
+                .spxFont(28, weight: .semibold)
                 .foregroundStyle(cancelled ? Color.red : Color.white)
             VoiceWaveBars(level: level, cancelled: cancelled)
             Text(cancelled ? "松开手指，取消发送" : "松开发送 · 上滑取消")
-                .font(.system(size: 13)).foregroundStyle(cancelled ? Color.red : Color.white)
+                .spxFont(13).foregroundStyle(cancelled ? Color.red : Color.white)
             Text(String(format: "%02d:%02d", Int(elapsed) / 60, Int(elapsed) % 60))
-                .font(.system(size: 12).monospacedDigit())
+                .spxFont(12, monospacedDigit: true)
                 .foregroundStyle(.white.opacity(0.8))
         }
         .padding(.horizontal, 28)

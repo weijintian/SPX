@@ -91,10 +91,10 @@ struct EmptyState: View {
     var icon: String = "tray"
     var body: some View {
         VStack(spacing: 12) {
-            Image(systemName: icon).font(.system(size: 32, weight: .light)).foregroundStyle(SPXColor.muted)
+            Image(systemName: icon).spxFont(32, weight: .light).foregroundStyle(SPXColor.muted)
                 .frame(width: 72, height: 72).background(SPXColor.tint, in: RoundedRectangle(cornerRadius: 22))
-            Text(title).font(.system(size: 17, weight: .semibold)).foregroundStyle(SPXColor.ink)
-            if !description.isEmpty { Text(description).font(.system(size: 13)).foregroundStyle(SPXColor.muted).multilineTextAlignment(.center) }
+            Text(title).spxFont(17, weight: .semibold).foregroundStyle(SPXColor.ink)
+            if !description.isEmpty { Text(description).spxFont(13).foregroundStyle(SPXColor.muted).multilineTextAlignment(.center) }
         }.frame(maxWidth: .infinity).padding(.horizontal, 24).padding(.vertical, 36)
     }
 }
@@ -128,7 +128,7 @@ private struct SPXToastModifier: ViewModifier {
     func body(content: Content) -> some View {
         content.overlay {
             if let message {
-                Text(message).font(.system(size: 14, weight: .medium)).multilineTextAlignment(.center)
+                Text(message).spxFont(14, weight: .medium).multilineTextAlignment(.center)
                     .foregroundStyle(.white).padding(.horizontal, 22).padding(.vertical, 16)
                     .background(Color.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 14))
                     .padding(32).allowsHitTesting(false).transition(.opacity)
@@ -139,5 +139,50 @@ private struct SPXToastModifier: ViewModifier {
             UIAccessibility.post(notification: .announcement, argument: message)
             do { try await SPXSleep.seconds(2); self.message = nil } catch { }
         }.animation(.easeOut(duration: 0.15), value: message)
+    }
+}
+
+// MARK: - 动态字体
+
+/// 项目里的字号都是设计稿固定值。这里按系统「文字大小」设置做等比放大，
+/// 并设上限，避免放大后把固定高度的行压垮。
+enum SPXFontMetrics {
+    static func size(_ base: CGFloat, category: ContentSizeCategory) -> CGFloat {
+        let scale: CGFloat
+        switch category {
+        case .extraSmall: scale = 0.92
+        case .small: scale = 0.96
+        case .medium, .large: scale = 1
+        case .extraLarge: scale = 1.08
+        case .extraExtraLarge: scale = 1.16
+        case .extraExtraExtraLarge: scale = 1.24
+        case .accessibilityMedium: scale = 1.34
+        case .accessibilityLarge: scale = 1.44
+        case .accessibilityExtraLarge: scale = 1.54
+        case .accessibilityExtraExtraLarge: scale = 1.64
+        case .accessibilityExtraExtraExtraLarge: scale = 1.74
+        @unknown default: scale = 1
+        }
+        return (base * scale).rounded()
+    }
+}
+
+private struct SPXScaledFont: ViewModifier {
+    let size: CGFloat
+    let weight: Font.Weight
+    let design: Font.Design
+    let monospacedDigit: Bool
+    @Environment(\.sizeCategory) private var category
+    func body(content: Content) -> some View {
+        let font = Font.system(size: SPXFontMetrics.size(size, category: category), weight: weight, design: design)
+        return content.font(monospacedDigit ? font.monospacedDigit() : font)
+    }
+}
+
+extension View {
+    /// 随系统字体大小缩放的文本样式，替代固定 `.font(.system(size:))`。
+    func spxFont(_ size: CGFloat, weight: Font.Weight = .regular, design: Font.Design = .default,
+                 monospacedDigit: Bool = false) -> some View {
+        modifier(SPXScaledFont(size: size, weight: weight, design: design, monospacedDigit: monospacedDigit))
     }
 }

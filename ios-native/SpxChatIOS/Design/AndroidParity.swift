@@ -14,7 +14,7 @@ struct SPXList<Content: View>: View {
     }
     var body: some View {
         Group { if plain { list.listStyle(.plain) } else { list.listStyle(.insetGrouped) } }
-            .environment(\.defaultMinListRowHeight, 52).font(.system(size: 15))
+            .environment(\.defaultMinListRowHeight, 52).spxFont(15)
             .spxDismissKeyboardOnTap().spxPage()
     }
 }
@@ -22,7 +22,7 @@ struct SPXList<Content: View>: View {
 struct SPXForm<Content: View>: View {
     private let content: Content
     init(@ViewBuilder content: () -> Content) { self.content = content() }
-    var body: some View { SPXList { content }.font(.system(size: 15)).foregroundStyle(SPXColor.ink).textFieldStyle(SPXInputStyle()) }
+    var body: some View { SPXList { content }.spxFont(15).foregroundStyle(SPXColor.ink).textFieldStyle(SPXInputStyle()) }
 }
 
 struct SPXInputStyle: TextFieldStyle {
@@ -40,9 +40,9 @@ struct SPXPanel<Content: View>: View {
     init(_ title: String, footer: String = "", @ViewBuilder content: () -> Content) { self.title = title; self.footer = footer; self.content = content() }
     var body: some View {
         SPXCard { VStack(alignment: .leading, spacing: 16) {
-            Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(SPXColor.ink)
+            Text(title).spxFont(16, weight: .semibold).foregroundStyle(SPXColor.ink)
             content
-            if !footer.isEmpty { Text(footer).font(.system(size: 12)).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true) }
+            if !footer.isEmpty { Text(footer).spxFont(12).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true) }
         } }.textFieldStyle(SPXInputStyle())
     }
 }
@@ -50,7 +50,7 @@ struct SPXPanel<Content: View>: View {
 struct SPXPrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var enabled
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.font(.system(size: 15, weight: .semibold))
+        configuration.label.spxFont(15, weight: .semibold)
             .foregroundStyle(.white).frame(minHeight: 48)
             .background(SPXColor.hex(0x2869EA).opacity(enabled ? (configuration.isPressed ? 0.8 : 1) : 0.4), in: RoundedRectangle(cornerRadius: 14))
             .contentShape(RoundedRectangle(cornerRadius: 14))
@@ -67,8 +67,8 @@ struct SPXMenuRow: View {
             SPXIcon(icon).foregroundStyle(color).frame(width: 25, height: 25)
                 .frame(width: 40, height: 40).background(color.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
             VStack(alignment: .leading, spacing: 5) {
-                Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(SPXColor.ink)
-                if !subtitle.isEmpty { Text(subtitle).font(.system(size: 12)).foregroundStyle(SPXColor.muted).lineLimit(2) }
+                Text(title).spxFont(16, weight: .semibold).foregroundStyle(SPXColor.ink)
+                if !subtitle.isEmpty { Text(subtitle).spxFont(12).foregroundStyle(SPXColor.muted).lineLimit(2) }
             }
             Spacer(minLength: 8)
             SPXIcon("chevron").foregroundStyle(SPXColor.muted.opacity(0.6)).frame(width: 17, height: 17)
@@ -83,7 +83,7 @@ struct SPXSectionTitle: View {
     let title: String
     var detail = ""
     var body: some View {
-        HStack { Text(title).font(.system(size: 16, weight: .semibold)); Spacer(); if !detail.isEmpty { Text(detail).font(.system(size: 12)).foregroundStyle(SPXColor.muted) } }
+        HStack { Text(title).spxFont(16, weight: .semibold); Spacer(); if !detail.isEmpty { Text(detail).spxFont(12).foregroundStyle(SPXColor.muted) } }
             .foregroundStyle(SPXColor.ink).padding(.top, 8).padding(.bottom, 3)
     }
 }

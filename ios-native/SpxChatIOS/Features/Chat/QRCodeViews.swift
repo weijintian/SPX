@@ -18,7 +18,7 @@ struct QRCodeView: View {
     }
     var body: some View {
         VStack(spacing: 26) {
-            Image(systemName: "qrcode").font(.system(size: 35)).foregroundStyle(SPXColor.primary)
+            Image(systemName: "qrcode").spxFont(35).foregroundStyle(SPXColor.primary)
             Text(title).font(.title2.bold())
             if let image { Image(uiImage: image).interpolation(.none).resizable().scaledToFit().frame(width: 250, height: 250).padding(22).background(.white, in: RoundedRectangle(cornerRadius: 22)); SPXImageShareLink(image: image, title: title) }
             Text("使用 SPX Chat 扫一扫").font(.subheadline).foregroundStyle(.secondary)
@@ -117,7 +117,7 @@ struct ScanCodeView: View {
 }
 
 @available(iOS 16.0, *)
-private struct QRScanner: UIViewControllerRepresentable {
+struct QRScanner: UIViewControllerRepresentable {
     let onFound: (String) -> Void
     let onError: (String) -> Void
     func makeCoordinator() -> Coordinator { Coordinator(onFound, onError) }

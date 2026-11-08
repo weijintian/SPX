@@ -23,7 +23,7 @@ struct ShopLocationPicker: View {
                     VStack(alignment: .leading, spacing: 16) {
                         SPXField("详细地址") { TextField("输入城市、街道和门牌号", text: $address).lineLimit(4) }
                         if let coordinate { Divider(); InfoRow(title: "经纬度", value: String(format: "%.6f, %.6f", coordinate.latitude, coordinate.longitude)) }
-                        Text("地图选点后请核对详细地址，方便用户准确找到门店。").font(.system(size: 12)).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
+                        Text("地图选点后请核对详细地址，方便用户准确找到门店。").spxFont(12).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 if searching { ProgressView("正在搜索地址…").frame(maxWidth: .infinity).padding(16) }
@@ -36,8 +36,8 @@ struct ShopLocationPicker: View {
                                 HStack(spacing: 12) {
                                     SPXIcon("location").frame(width: 22, height: 22).foregroundStyle(SPXColor.commerce)
                                     VStack(alignment: .leading, spacing: 6) {
-                                        Text(item.name ?? "地点").font(.system(size: 15, weight: .medium)).foregroundStyle(SPXColor.ink)
-                                        Text(item.placemark.title ?? "").font(.system(size: 12)).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
+                                        Text(item.name ?? "地点").spxFont(15, weight: .medium).foregroundStyle(SPXColor.ink)
+                                        Text(item.placemark.title ?? "").spxFont(12).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
                                     }.frame(maxWidth: .infinity, alignment: .leading)
                                     SPXIcon("chevron").frame(width: 14, height: 14).foregroundStyle(SPXColor.muted)
                                 }.frame(minHeight: 44)

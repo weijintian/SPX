@@ -19,7 +19,7 @@ struct MallHomeView: View {
     @Environment(\.scenePhase) private var phase
     private var catalogHeader: some View {
         VStack(alignment: .leading, spacing: 18) {
-        HStack(spacing: 12) { SPXIcon("search").frame(width: 20, height: 20).foregroundStyle(SPXColor.muted); TextField("搜索商品", text: $search).font(.system(size: 14)); if !search.isEmpty { Button { search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(SPXColor.muted) } } }.padding(13).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 14))
+        HStack(spacing: 12) { SPXIcon("search").frame(width: 20, height: 20).foregroundStyle(SPXColor.muted); TextField("搜索商品", text: $search).spxFont(14); if !search.isEmpty { Button { search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(SPXColor.muted) } } }.padding(13).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 14))
         Picker("商品类型", selection: $kind) { Text("全部").tag("all"); Text("实物").tag("physical"); Text("数字").tag("digital"); Text("本地").tag("local") }.pickerStyle(.segmented)
         ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 10) { categoryButton("全部", value: ""); ForEach(categories, id: \.self) { categoryButton($0, value: $0) } } }
         }
@@ -165,7 +165,7 @@ struct ProductDetailView: View {
         }.aspectRatio(1, contentMode: .fit).background(.white)
             .clipShape(RoundedRectangle(cornerRadius: 18))
             .overlay(alignment: .bottomTrailing) {
-                Text("\(min(selectedImage + 1, images.count)) / \(images.count)").font(.system(size: 11, weight: .medium))
+                Text("\(min(selectedImage + 1, images.count)) / \(images.count)").spxFont(11, weight: .medium)
                     .foregroundStyle(.white).padding(.horizontal, 10).padding(.vertical, 5)
                     .background(.black.opacity(0.45), in: Capsule()).padding(12).allowsHitTesting(false)
             }
@@ -173,14 +173,14 @@ struct ProductDetailView: View {
     private var summaryCard: some View {
         SPXCard { VStack(alignment: .leading, spacing: 14) {
             PriceLabel(cny: current["cny_price"].string, estimate: Money.estimate(cny: current["cny_price"].string, usd: usd), legacy: current["spx_price"].string)
-            Text(current.name).font(.system(size: 21, weight: .bold)).foregroundStyle(SPXColor.ink)
-            Text(current["description"].string).font(.system(size: 14)).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
+            Text(current.name).spxFont(21, weight: .bold).foregroundStyle(SPXColor.ink)
+            Text(current["description"].string).spxFont(14).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
             Divider()
             HStack(spacing: 8) {
                 Text(fulfillment).frame(maxWidth: .infinity)
                 Text(deliveryFee).frame(maxWidth: .infinity)
                 Text("库存 \(current["stock"].int) 件").frame(maxWidth: .infinity)
-            }.font(.system(size: 11)).foregroundStyle(SPXColor.muted)
+            }.spxFont(11).foregroundStyle(SPXColor.muted)
         } }
     }
     private var consultationCard: some View {
@@ -190,11 +190,11 @@ struct ProductDetailView: View {
                     HStack(spacing: 12) {
                         SPXIcon("chat").frame(width: 28, height: 28).foregroundStyle(SPXColor.commerce)
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("加入商品群").font(.system(size: 15, weight: .semibold)).foregroundStyle(SPXColor.ink)
-                            Text(group["name"].string + " · 购买前问一问").font(.system(size: 12)).foregroundStyle(SPXColor.muted).lineLimit(2)
-                            Text("群号 " + group["group_code"].string).font(.system(size: 11)).foregroundStyle(SPXColor.muted)
+                            Text("加入商品群").spxFont(15, weight: .semibold).foregroundStyle(SPXColor.ink)
+                            Text(group["name"].string + " · 购买前问一问").spxFont(12).foregroundStyle(SPXColor.muted).lineLimit(2)
+                            Text("群号 " + group["group_code"].string).spxFont(11).foregroundStyle(SPXColor.muted)
                         }.frame(maxWidth: .infinity, alignment: .leading)
-                        Text("加入").font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
+                        Text("加入").spxFont(13, weight: .semibold).foregroundStyle(.white)
                             .padding(.horizontal, 16).frame(minHeight: 36).background(SPXColor.commerce, in: RoundedRectangle(cornerRadius: 10))
                     }.padding(16).background(SPXColor.tint, in: RoundedRectangle(cornerRadius: 16))
                 }.buttonStyle(.plain).accessibilityLabel("商品咨询群，\(group["name"].string)，点击加入")
@@ -202,8 +202,8 @@ struct ProductDetailView: View {
                 HStack(spacing: 12) {
                     SPXIcon("chat").frame(width: 24, height: 24).foregroundStyle(SPXColor.muted)
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("商品咨询群").font(.system(size: 14, weight: .medium)).foregroundStyle(SPXColor.ink)
-                        Text(loading ? "正在读取咨询群…" : "商家暂未设置可用咨询群，可联系商家咨询").font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+                        Text("商品咨询群").spxFont(14, weight: .medium).foregroundStyle(SPXColor.ink)
+                        Text(loading ? "正在读取咨询群…" : "商家暂未设置可用咨询群，可联系商家咨询").spxFont(12).foregroundStyle(SPXColor.muted)
                     }
                     Spacer(minLength: 0)
                 }.padding(16).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 16))
@@ -216,19 +216,19 @@ struct ProductDetailView: View {
                 HStack(spacing: 12) {
                     Avatar(url: shop["logo_url"].string, name: shop["name"].string, size: 44)
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(shop["name"].string).font(.system(size: 16, weight: .semibold)).foregroundStyle(SPXColor.ink)
-                        if !shop["business_hours"].string.isEmpty { Text("服务时间 " + shop["business_hours"].string).font(.system(size: 11)).foregroundStyle(SPXColor.muted) }
+                        Text(shop["name"].string).spxFont(16, weight: .semibold).foregroundStyle(SPXColor.ink)
+                        if !shop["business_hours"].string.isEmpty { Text("服务时间 " + shop["business_hours"].string).spxFont(11).foregroundStyle(SPXColor.muted) }
                     }.frame(maxWidth: .infinity, alignment: .leading)
-                    Text(shop["level"].string == "gold" ? "黄金店铺" : "初级店铺").font(.system(size: 10, weight: .medium)).foregroundStyle(SPXColor.commerce)
+                    Text(shop["level"].string == "gold" ? "黄金店铺" : "初级店铺").spxFont(10, weight: .medium).foregroundStyle(SPXColor.commerce)
                     Image(systemName: "chevron.right").font(.caption).foregroundStyle(SPXColor.muted)
                 }
-                if !shop["address"].string.isEmpty { Text(shop["address"].string).font(.system(size: 12)).foregroundStyle(SPXColor.muted) }
+                if !shop["address"].string.isEmpty { Text(shop["address"].string).spxFont(12).foregroundStyle(SPXColor.muted) }
             } }
         }.buttonStyle(.plain)
     }
     @ViewBuilder private var sectionContent: some View {
         if selectedSection == "details" {
-            SPXCard { Text(current.text("detail_text", "description")).font(.system(size: 14)).foregroundStyle(SPXColor.ink).textSelection(.enabled).fixedSize(horizontal: false, vertical: true) }
+            SPXCard { Text(current.text("detail_text", "description")).spxFont(14).foregroundStyle(SPXColor.ink).textSelection(.enabled).fixedSize(horizontal: false, vertical: true) }
             ForEach(current["detail_images"].array.indices, id: \.self) { index in
                 let image = current["detail_images"].array[index]
                 CachedImage(source: image.string, fit: true, maximumPixelSize: 1200).frame(maxWidth: .infinity).background(.white).clipShape(RoundedRectangle(cornerRadius: 12))
@@ -238,18 +238,18 @@ struct ProductDetailView: View {
         } else if selectedSection == "parameters" {
             SPXCard { VStack(alignment: .leading, spacing: 12) {
                 SPXSectionTitle(title: "规格参数")
-                Text(current["parameters"].string.isEmpty ? "商家暂未填写更多参数，可查看商品规格或加入商品群咨询。" : current["parameters"].string).font(.system(size: 14)).foregroundStyle(SPXColor.muted).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                Text(current["parameters"].string.isEmpty ? "商家暂未填写更多参数，可查看商品规格或加入商品群咨询。" : current["parameters"].string).spxFont(14).foregroundStyle(SPXColor.muted).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
             } }
         } else {
             SPXCard { VStack(alignment: .leading, spacing: 14) {
                 SPXSectionTitle(title: "配送与使用")
-                Text(fulfillment + " · " + deliveryFee).font(.system(size: 14)).foregroundStyle(SPXColor.ink)
-                if local { Text("到店接受服务时出示订单核销码").font(.system(size: 13)).foregroundStyle(SPXColor.muted) }
-                if !current["delivery_note"].string.isEmpty { Text(current["delivery_note"].string).font(.system(size: 13)).foregroundStyle(SPXColor.muted) }
+                Text(fulfillment + " · " + deliveryFee).spxFont(14).foregroundStyle(SPXColor.ink)
+                if local { Text("到店接受服务时出示订单核销码").spxFont(13).foregroundStyle(SPXColor.muted) }
+                if !current["delivery_note"].string.isEmpty { Text(current["delivery_note"].string).spxFont(13).foregroundStyle(SPXColor.muted) }
                 Divider()
                 SPXSectionTitle(title: "售后与服务")
-                Text(current["service_terms"].string.isEmpty ? "购买前请核对规格和服务说明，售后可在订单详情中申请。" : current["service_terms"].string).font(.system(size: 14)).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
-                Text("SPX001 为实时估算，1 USD 按 6.7 CNY 换算，最终支付以确认订单的锁定报价为准。").font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+                Text(current["service_terms"].string.isEmpty ? "购买前请核对规格和服务说明，售后可在订单详情中申请。" : current["service_terms"].string).spxFont(14).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
+                Text("SPX001 为实时估算，1 USD 按 6.7 CNY 换算，最终支付以确认订单的锁定报价为准。").spxFont(12).foregroundStyle(SPXColor.muted)
             } }
         }
     }
@@ -261,14 +261,14 @@ struct ProductDetailView: View {
             }
             Button { toggleFavorite() } label: { footerLabel("收藏", icon: favorite ? "heart.fill" : "heart") }.disabled(favoriteBusy)
             NavigationLink { CheckoutView(product: current) } label: {
-                Text(current["stock"].int > 0 ? "选择规格 · 立即购买" : "暂时缺货").font(.system(size: 15, weight: .semibold))
+                Text(current["stock"].int > 0 ? "选择规格 · 立即购买" : "暂时缺货").spxFont(15, weight: .semibold)
                     .frame(maxWidth: .infinity, minHeight: 48).foregroundStyle(.white)
                     .background(SPXColor.commerce.opacity(current["stock"].int > 0 ? 1 : 0.5), in: RoundedRectangle(cornerRadius: 14))
             }.disabled(loading || detail.id == 0 || current["stock"].int < 1)
         }.buttonStyle(.plain).padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 8).background(SPXColor.card)
     }
     private func footerLabel(_ title: String, icon: String) -> some View {
-        VStack(spacing: 4) { SPXIcon(icon).frame(width: 21, height: 21); Text(title).font(.system(size: 10)) }
+        VStack(spacing: 4) { SPXIcon(icon).frame(width: 21, height: 21); Text(title).spxFont(10) }
             .foregroundStyle(SPXColor.muted).frame(minWidth: 32, minHeight: 48)
     }
     var body: some View {
@@ -346,7 +346,7 @@ struct ShopsView: View {
                 NavigationLink { ShopDetailView(id: shop.id) } label: {
                     SPXCard { HStack(spacing: 14) {
                         Avatar(url: shop.avatar, name: shop.name, size: 56)
-                        VStack(alignment: .leading, spacing: 7) { Text(shop.name).font(.system(size: 17, weight: .semibold)).foregroundStyle(SPXColor.ink); if !shop["category"].string.isEmpty { Text(shop["category"].string).font(.system(size: 12)).foregroundStyle(SPXColor.muted) } }
+                        VStack(alignment: .leading, spacing: 7) { Text(shop.name).spxFont(17, weight: .semibold).foregroundStyle(SPXColor.ink); if !shop["category"].string.isEmpty { Text(shop["category"].string).spxFont(12).foregroundStyle(SPXColor.muted) } }
                         Spacer(minLength: 8); SPXIcon("chevron").frame(width: 14, height: 14).foregroundStyle(SPXColor.muted)
                     } }
                 }.buttonStyle(.plain)
@@ -382,8 +382,8 @@ struct ShopDetailView: View {
         SPXDetailPage {
             if shop.id > 0 {
                 SPXCard { VStack(alignment: .leading, spacing: 18) {
-                    HStack(spacing: 16) { Avatar(url: shop.avatar, name: shop.name, size: 72); VStack(alignment: .leading, spacing: 8) { Text(shop.name).font(.system(size: 23, weight: .bold)).foregroundStyle(SPXColor.ink); if !shop["category"].string.isEmpty { SPXStatusPill(title: shop["category"].string, color: SPXColor.commerce) } } }
-                    if !shop["description"].string.isEmpty { Divider(); Text(shop["description"].string).font(.system(size: 14)).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true) }
+                    HStack(spacing: 16) { Avatar(url: shop.avatar, name: shop.name, size: 72); VStack(alignment: .leading, spacing: 8) { Text(shop.name).spxFont(23, weight: .bold).foregroundStyle(SPXColor.ink); if !shop["category"].string.isEmpty { SPXStatusPill(title: shop["category"].string, color: SPXColor.commerce) } } }
+                    if !shop["description"].string.isEmpty { Divider(); Text(shop["description"].string).spxFont(14).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true) }
                 } }
                 SPXSectionTitle(title: "门店信息")
                 SPXCard { VStack(alignment: .leading, spacing: 16) { InfoRow(title: "营业时间", value: shop["business_hours"].string); Divider(); InfoRow(title: "门店地址", value: shop["address"].string); ShopNavigationButton(shop: shop) } }
@@ -415,9 +415,9 @@ struct ProductReviewsView: View {
             ForEach(rows.indices, id: \.self) { index in
                 let review = rows[index]
                 SPXCard { VStack(alignment: .leading, spacing: 14) {
-                    HStack(spacing: 12) { Avatar(url: review.avatar, name: review["nickname"].string, size: 40); VStack(alignment: .leading, spacing: 6) { Text(review["nickname"].string).font(.system(size: 14, weight: .semibold)); HStack(spacing: 3) { ForEach(0..<5, id: \.self) { star in Image(systemName: star < min(5, max(0, review["rating"].int)) ? "star.fill" : "star").font(.system(size: 11)).foregroundStyle(.orange) } }.accessibilityLabel("\(min(5, max(0, review["rating"].int))) 星评价") }; Spacer(minLength: 0) }
-                    Text(review["content"].string).font(.system(size: 15)).foregroundStyle(SPXColor.ink).fixedSize(horizontal: false, vertical: true)
-                    Text(review["created_at"].string).font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+                    HStack(spacing: 12) { Avatar(url: review.avatar, name: review["nickname"].string, size: 40); VStack(alignment: .leading, spacing: 6) { Text(review["nickname"].string).spxFont(14, weight: .semibold); HStack(spacing: 3) { ForEach(0..<5, id: \.self) { star in Image(systemName: star < min(5, max(0, review["rating"].int)) ? "star.fill" : "star").spxFont(11).foregroundStyle(.orange) } }.accessibilityLabel("\(min(5, max(0, review["rating"].int))) 星评价") }; Spacer(minLength: 0) }
+                    Text(review["content"].string).spxFont(15).foregroundStyle(SPXColor.ink).fixedSize(horizontal: false, vertical: true)
+                    Text(review["created_at"].string).spxFont(12).foregroundStyle(SPXColor.muted)
                 } }
             }
             if loading { ProgressView("正在读取评价…").frame(maxWidth: .infinity).padding(24) }

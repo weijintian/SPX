@@ -16,7 +16,7 @@ struct FileAttachmentView: View {
                 if let file { DocumentPreview(url: file) }
                 else {
                     VStack(spacing: 20) {
-                        Image(systemName: "doc.richtext").font(.system(size: 54, weight: .light)).foregroundStyle(SPXColor.primary)
+                        Image(systemName: "doc.richtext").spxFont(54, weight: .light).foregroundStyle(SPXColor.primary)
                         Text(message["content"].string.isEmpty ? "文件附件" : message["content"].string).font(.headline).multilineTextAlignment(.center)
                         if loading {
                             if progress >= 0 { ProgressView(value: progress); Text("正在下载 \(Int(progress * 100))%").font(.subheadline.monospacedDigit()) }

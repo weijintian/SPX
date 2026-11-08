@@ -40,12 +40,12 @@ struct RedPacketSendView: View {
                 VStack(spacing: 16) {
                     VStack(spacing: 10) {
                         Image(systemName: "gift.fill")
-                            .font(.system(size: 25, weight: .semibold))
+                            .spxFont(25, weight: .semibold)
                             .foregroundStyle(SPXColor.hex(0xD34B3F))
                             .frame(width: 58, height: 58)
                             .background(SPXColor.hex(0xFBE5DC), in: RoundedRectangle(cornerRadius: 18))
-                        Text("把心意装进红包").font(.system(size: 23, weight: .bold))
-                        Text("\(symbol) · 领取后自动存入钱包").font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+                        Text("把心意装进红包").spxFont(23, weight: .bold)
+                        Text("\(symbol) · 领取后自动存入钱包").spxFont(12).foregroundStyle(SPXColor.muted)
                     }
                     HStack(spacing: 4) {
                         Button { mode = "ordinary" } label: { Text("普通红包").frame(maxWidth: .infinity).frame(height: 42).foregroundStyle(mode == "ordinary" ? SPXColor.hex(0xC34438) : SPXColor.muted).background(mode == "ordinary" ? Color.white : Color.clear, in: RoundedRectangle(cornerRadius: 9)) }
@@ -55,12 +55,12 @@ struct RedPacketSendView: View {
                     .background(SPXColor.hex(0xEBE7E1), in: RoundedRectangle(cornerRadius: 12))
                     Picker("红包币种", selection: $symbol) {
                         Text("SPX001").tag("SPX001")
-                        Text("FISS").tag("FISS")
+                        Text("XKRS").tag("XKRS")
                     }.pickerStyle(.segmented).onChange(of: symbol) { _ in loadBalance() }
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("总金额 · \(symbol)").font(.system(size: 13)).foregroundStyle(SPXColor.muted)
+                        Text("总金额 · \(symbol)").spxFont(13).foregroundStyle(SPXColor.muted)
                         TextField("0.00", text: $amount)
-                            .font(.system(size: 34, weight: .semibold))
+                            .spxFont(34, weight: .semibold)
                             .foregroundStyle(Color.black)
                             .tint(SPXColor.hex(0xC34438))
                             .keyboardType(.decimalPad)
@@ -70,7 +70,7 @@ struct RedPacketSendView: View {
                             .background(Color.white, in: RoundedRectangle(cornerRadius: 14))
                         if scope == "group" {
                             HStack {
-                                Text("红包个数").font(.system(size: 15))
+                                Text("红包个数").spxFont(15)
                                 Spacer()
                                 TextField("1–100 个", text: $countText)
                                     .foregroundStyle(SPXColor.ink)
@@ -81,16 +81,16 @@ struct RedPacketSendView: View {
                                     .focused($inputFocus, equals: .count)
                                     .accessibilityLabel("红包个数，1 至 100 个")
                                     .onChange(of: countText, perform: sanitizeCountText)
-                                Text("个").font(.system(size: 13)).foregroundStyle(SPXColor.muted)
+                                Text("个").spxFont(13).foregroundStyle(SPXColor.muted)
                             }.frame(minHeight: 44)
-                            Text(validCount ? "每次可发送 1–100 个红包" : "请输入 1–100 之间的整数").font(.system(size: 12)).foregroundStyle(validCount ? SPXColor.muted : Color.red)
+                            Text(validCount ? "每次可发送 1–100 个红包" : "请输入 1–100 之间的整数").spxFont(12).foregroundStyle(validCount ? SPXColor.muted : Color.red)
                         }
-                        Text(allocationText).font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+                        Text(allocationText).spxFont(12).foregroundStyle(SPXColor.muted)
                     }
                     .padding(16)
                     .background(SPXColor.card, in: RoundedRectangle(cornerRadius: 14))
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("祝福语").font(.system(size: 13)).foregroundStyle(SPXColor.muted)
+                        Text("祝福语").spxFont(13).foregroundStyle(SPXColor.muted)
                         TextField("恭喜发财，大吉大利", text: $greeting)
                             .foregroundStyle(Color.black)
                             .tint(SPXColor.hex(0xC34438))
@@ -108,19 +108,19 @@ struct RedPacketSendView: View {
                             Text(balanceText)
                             Spacer()
                         }
-                        .font(.system(size: 12, weight: .medium))
+                        .spxFont(12, weight: .medium)
                         .foregroundStyle(SPXColor.primary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }.buttonStyle(.plain).disabled(balanceLoading)
                     Text("24 小时未领完自动退回。\(scope == "group" ? "仅发送时的群成员可以领取。" : "")")
-                        .font(.system(size: 12)).foregroundStyle(SPXColor.muted).frame(maxWidth: .infinity, alignment: .leading)
+                        .spxFont(12).foregroundStyle(SPXColor.muted).frame(maxWidth: .infinity, alignment: .leading)
                     if uncertain { ErrorBanner(message: "上次发送结果待确认，请先核对，避免重复扣款。") }
                 }.padding(24).disabled(!restored || uncertain || busy)
         }.spxDismissKeyboardOnTap()
                 .safeAreaInset(edge: .bottom) {
                     Button { inputFocus = nil; if uncertain { resolve() } else { checkPaymentPassword() } } label: {
                         HStack { Spacer(); if busy { ProgressView().tint(.white) }; Text(uncertain ? "核对上次发送结果" : "塞钱进红包"); Spacer() }
-                            .font(.system(size: 16,weight: .semibold)).foregroundStyle(.white).frame(minHeight: 50).background(SPXColor.hex(0xD34B3F).opacity(busy ? 0.5 : 1),in: RoundedRectangle(cornerRadius: 14))
+                            .spxFont(16, weight: .semibold).foregroundStyle(.white).frame(minHeight: 50).background(SPXColor.hex(0xD34B3F).opacity(busy ? 0.5 : 1),in: RoundedRectangle(cornerRadius: 14))
                     }.disabled(!restored || busy || (!uncertain && (!validCount || !Money.positive(amount,scale: 6)))).padding(16).background(SPXColor.card)
                 }
                 .navigationTitle("发红包").spxPage()
@@ -226,7 +226,7 @@ struct RedPacketPopup: View {
     @State private var showingClaims = false
     @State private var coinRotation = 0.0
     @State private var error: String?
-    private var packetSymbol: String { ["SPX001", "FISS"].contains(packet["symbol"].string) ? packet["symbol"].string : "SPX001" }
+    private var packetSymbol: String { ["SPX001", "XKRS"].contains(packet["symbol"].string) ? packet["symbol"].string : "SPX001" }
     var body: some View {
         ZStack {
             Color.black.opacity(0.55).ignoresSafeArea().onTapGesture { if !busy { close() } }
@@ -273,11 +273,11 @@ struct RedPacketPopup: View {
     private var envelopeHeader: some View {
         VStack(spacing: 10) {
             Text(packet["sender_name"].string.isEmpty ? "SPX 红包" : packet["sender_name"].string + "的红包")
-                .font(.system(size: 16, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
+                .spxFont(16, weight: .semibold).lineLimit(1).minimumScaleFactor(0.8)
             Text(packet["greeting"].string.isEmpty ? "恭喜发财，大吉大利" : packet["greeting"].string)
-                .font(.system(size: 14)).multilineTextAlignment(.center).lineLimit(2)
+                .spxFont(14).multilineTextAlignment(.center).lineLimit(2)
             Text("\(packetSymbol) · 领取后自动存入钱包")
-                .font(.system(size: 11)).foregroundStyle(.white.opacity(0.76))
+                .spxFont(11).foregroundStyle(.white.opacity(0.76))
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 22).padding(.top, 26).padding(.bottom, 24)
@@ -287,7 +287,7 @@ struct RedPacketPopup: View {
     @ViewBuilder private var claimAction: some View {
         if let amount = confirmedAmount {
             VStack(spacing: 5) {
-                Text(DisplayLabels.amount(amount)).font(.system(size: 30, weight: .bold, design: .rounded)).monospacedDigit().foregroundStyle(Color(red: 0.78, green: 0.19, blue: 0.13))
+                Text(DisplayLabels.amount(amount)).spxFont(30, weight: .bold, design: .rounded).monospacedDigit().foregroundStyle(Color(red: 0.78, green: 0.19, blue: 0.13))
                 Text("\(packetSymbol) · 已存入钱包可用余额").font(.footnote).foregroundStyle(SPXColor.muted)
             }.padding(.vertical, 5)
         } else if claimCompleted {
@@ -300,7 +300,7 @@ struct RedPacketPopup: View {
                     Circle().stroke(Color(red: 0.66, green: 0.40, blue: 0.17).opacity(0.75), lineWidth: 1).padding(5)
                     Circle().stroke(Color.white.opacity(0.65), lineWidth: 1).padding(9)
                     if busy { ProgressView().tint(Color(red: 0.48, green: 0.29, blue: 0.12)) }
-                    else { Text("拆").font(.system(size: 34, weight: .medium, design: .serif)).foregroundStyle(Color(red: 0.48, green: 0.29, blue: 0.12)) }
+                    else { Text("拆").spxFont(34, weight: .medium, design: .serif).foregroundStyle(Color(red: 0.48, green: 0.29, blue: 0.12)) }
                 }
                 .frame(width: 100, height: 100)
                 .rotation3DEffect(.degrees(coinRotation), axis: (x: 0, y: 1, z: 0), perspective: 0.45)

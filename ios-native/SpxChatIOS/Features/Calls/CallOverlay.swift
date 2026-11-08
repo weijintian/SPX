@@ -69,7 +69,7 @@ struct CallOverlay: View {
         else { Text(model.answering ? "正在接通…" : call.outgoing ? "正在等待对方接听…" : "邀请你进行\(call.video ? "视频" : "语音")通话") }
     }
     private func control(_ title: String, icon: String, active: Bool = false, color: Color? = nil, action: @escaping () -> Void) -> some View {
-        Button(action: action) { VStack(spacing: 10) { Image(systemName: icon).font(.system(size: 25)).frame(width: 64, height: 64).background(color ?? (active ? Color.white.opacity(0.35) : Color.white.opacity(0.14)), in: Circle()); Text(title).font(.caption) } }.buttonStyle(.plain).accessibilityLabel(title)
+        Button(action: action) { VStack(spacing: 10) { Image(systemName: icon).spxFont(25).frame(width: 64, height: 64).background(color ?? (active ? Color.white.opacity(0.35) : Color.white.opacity(0.14)), in: Circle()); Text(title).font(.caption) } }.buttonStyle(.plain).accessibilityLabel(title)
     }
 }
 

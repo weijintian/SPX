@@ -28,10 +28,10 @@ struct MerchantOverviewView: View {
                 } else {
                     SPXCard {
                         VStack(alignment: .leading, spacing: 14) {
-                            HStack { Text(merchant.name).font(.system(size: 20, weight: .semibold)); Spacer(); Text(DisplayLabels.merchant(merchant["status"].string)).font(.system(size: 12, weight: .medium)).foregroundStyle(SPXColor.primary).padding(7).background(SPXColor.tint, in: Capsule()) }
-                            HStack { Text(merchant["level"].string == "gold" ? "黄金店铺" : "初级店铺"); Spacer(); Text("冻结保证金 " + DisplayLabels.amount(merchant["deposit_frozen"].string) + " SPX001").foregroundStyle(SPXColor.primary) }.font(.system(size: 12))
+                            HStack { Text(merchant.name).spxFont(20, weight: .semibold); Spacer(); Text(DisplayLabels.merchant(merchant["status"].string)).spxFont(12, weight: .medium).foregroundStyle(SPXColor.primary).padding(7).background(SPXColor.tint, in: Capsule()) }
+                            HStack { Text(merchant["level"].string == "gold" ? "黄金店铺" : "初级店铺"); Spacer(); Text("冻结保证金 " + DisplayLabels.amount(merchant["deposit_frozen"].string) + " SPX001").foregroundStyle(SPXColor.primary) }.spxFont(12)
                             MerchantProductCapacity(capacity: capacity)
-                            if !merchant["review_reason"].string.isEmpty { Text("审核说明 " + merchant["review_reason"].string).font(.system(size: 12)).foregroundStyle(SPXColor.muted) }
+                            if !merchant["review_reason"].string.isEmpty { Text("审核说明 " + merchant["review_reason"].string).spxFont(12).foregroundStyle(SPXColor.muted) }
                         }
                     }
                     SPXCard {
@@ -53,6 +53,22 @@ struct MerchantOverviewView: View {
                     }
                     SPXCard {
                         VStack(alignment: .leading, spacing: 4) {
+                            SPXSectionTitle(title: "结算与核销", detail: "自动到账")
+                            NavigationLink { MerchantScanRedeemView() } label: {
+                                HStack { Label("扫码核销", systemImage: "qrcode.viewfinder"); Spacer(); Image(systemName: "chevron.right").font(.caption) }.frame(minHeight: 48)
+                            }
+                            Divider()
+                            NavigationLink { MerchantSettlementsView() } label: {
+                                HStack { Label("结算记录", systemImage: "yensign.circle"); Spacer(); Image(systemName: "chevron.right").font(.caption) }.frame(minHeight: 48)
+                            }
+                            Divider()
+                            NavigationLink { MerchantRedemptionsView() } label: {
+                                HStack { Label("核销记录", systemImage: "list.bullet.rectangle"); Spacer(); Image(systemName: "chevron.right").font(.caption) }.frame(minHeight: 48)
+                            }
+                        }
+                    }
+                    SPXCard {
+                        VStack(alignment: .leading, spacing: 4) {
                             SPXSectionTitle(title: "订单与售后", detail: "及时处理")
                             NavigationLink { MerchantOrdersView() } label: {
                                 HStack { Label("查看订单与发货", systemImage: "shippingbox"); Spacer(); Image(systemName: "chevron.right").font(.caption) }.frame(minHeight: 48)
@@ -61,7 +77,7 @@ struct MerchantOverviewView: View {
                             NavigationLink { MerchantOrdersView(onlyAfterSale: true) } label: {
                                 HStack { Label("处理售后申请", systemImage: "arrow.triangle.2.circlepath"); Spacer(); Image(systemName: "chevron.right").font(.caption) }.frame(minHeight: 48)
                             }
-                        }.font(.system(size: 14)).foregroundStyle(SPXColor.ink)
+                        }.spxFont(14).foregroundStyle(SPXColor.ink)
                     }
                     NavigationLink { MerchantDraftsView() } label: { SPXMenuRow(title: "商品草稿", subtitle: "继续编辑尚未提交的商品", icon: "doc.text") }
                     if ["rejected", "closed"].contains(merchant["status"].string) { NavigationLink { MerchantProfileEditor(merchant: merchant, application: true) } label: { SPXMenuRow(title: "修改资料并重新申请", icon: "square.and.pencil") } }
@@ -85,10 +101,10 @@ struct MerchantOverviewView: View {
     }
     private func metric(_ title: String, _ value: String, actionable: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+            Text(title).spxFont(12).foregroundStyle(SPXColor.muted)
             HStack(spacing: 6) {
-                Text(value.isEmpty ? "—" : value).font(.system(size: 18, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.75)
-                if actionable { Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)) }
+                Text(value.isEmpty ? "—" : value).spxFont(18, weight: .semibold).lineLimit(1).minimumScaleFactor(0.75)
+                if actionable { Image(systemName: "chevron.right").spxFont(11, weight: .semibold) }
             }.foregroundStyle(SPXColor.primary)
         }
         .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
@@ -99,7 +115,7 @@ struct MerchantOverviewView: View {
     private func shortcut(_ title: String, _ icon: String) -> some View {
         VStack(spacing: 6) {
             SPXIcon(icon).frame(width: 22, height: 22).foregroundStyle(SPXColor.primary)
-            Text(title).font(.system(size: 12)).foregroundStyle(SPXColor.ink).lineLimit(1).minimumScaleFactor(0.85)
+            Text(title).spxFont(12).foregroundStyle(SPXColor.ink).lineLimit(1).minimumScaleFactor(0.85)
         }
         .frame(maxWidth: .infinity).frame(height: 76)
         .background(SPXColor.surface, in: RoundedRectangle(cornerRadius: 12))
@@ -135,6 +151,7 @@ struct MerchantProductsView: View {
     @State private var busy = false
     @State private var error: String?
     @State private var offline: Record?
+    @State private var online: Record?
     @State private var deleting: Record?
     @State private var selecting = false
     @State private var selected = Set<Int>()
@@ -149,10 +166,10 @@ struct MerchantProductsView: View {
                     if selecting { Button { toggle(product.id) } label: { HStack { Label(selected.contains(product.id) ? "已选择" : "选择商品", systemImage: selected.contains(product.id) ? "checkmark.circle.fill" : "circle"); Spacer() }.frame(minHeight: 44).contentShape(Rectangle()) }.buttonStyle(.plain).foregroundStyle(SPXColor.primary).disabled(submitting) }
                     HStack(alignment: .top, spacing: 14) {
                         CachedImage(source: product.image).frame(width: 82, height: 82).background(.white, in: RoundedRectangle(cornerRadius: 12)).clipShape(RoundedRectangle(cornerRadius: 12))
-                        VStack(alignment: .leading, spacing: 9) { Text(product.name).font(.system(size: 16, weight: .semibold)).foregroundStyle(SPXColor.ink).lineLimit(2); PriceLabel(cny: product["cny_price"].string, estimate: nil, legacy: product["spx_price"].string); Text("库存 \(product["stock"].string)").font(.system(size: 12)).foregroundStyle(SPXColor.muted) }.frame(maxWidth: .infinity, alignment: .leading)
+                        VStack(alignment: .leading, spacing: 9) { Text(product.name).spxFont(16, weight: .semibold).foregroundStyle(SPXColor.ink).lineLimit(2); PriceLabel(cny: product["cny_price"].string, estimate: nil, legacy: product["spx_price"].string); Text("库存 \(product["stock"].string)").spxFont(12).foregroundStyle(SPXColor.muted) }.frame(maxWidth: .infinity, alignment: .leading)
                     }
                     SPXStatusPill(title: product["status"].int == 1 ? DisplayLabels.review(product["review_status"].string) : "已下架", color: SPXColor.commerce)
-                    if !product["review_reason"].string.isEmpty { Text(product["review_reason"].string).font(.system(size: 12)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
+                    if !product["review_reason"].string.isEmpty { Text(product["review_reason"].string).spxFont(12).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
                     if !selecting {
                         Divider()
                         HStack(spacing: 12) {
@@ -165,7 +182,7 @@ struct MerchantProductsView: View {
                             } label: {
                                 Image(systemName: "ellipsis").frame(width: 48, height: 44).background(SPXColor.surface, in: RoundedRectangle(cornerRadius: 12))
                             }.accessibilityLabel("更多商品操作")
-                        }.font(.system(size: 14, weight: .medium)).foregroundStyle(SPXColor.primary).buttonStyle(.plain).disabled(submitting)
+                        }.spxFont(14, weight: .medium).foregroundStyle(SPXColor.primary).buttonStyle(.plain).disabled(submitting)
                     }
                 } }
             }
@@ -177,10 +194,13 @@ struct MerchantProductsView: View {
             ToolbarItem(placement: .navigationBarTrailing) { Button(selecting ? "完成" : "批量管理") { selecting.toggle(); selected = [] }.disabled(submitting) }
             ToolbarItem(placement: .navigationBarTrailing) { NavigationLink { PublishProductView() } label: { Image(systemName: "plus") }.accessibilityLabel("发布商品") }
         }.safeAreaInset(edge: .bottom) {
-            if selecting { SPXBottomAction { VStack(spacing: 10) { Text("已选 \(selected.count)/50 件商品").font(.system(size: 13)).foregroundStyle(SPXColor.muted); Button(submitting ? "正在下架…" : "批量下架", role: .destructive) { batchConfirm = true }.disabled(selected.isEmpty || submitting) } } }
+            if selecting { SPXBottomAction { VStack(spacing: 10) { Text("已选 \(selected.count)/50 件商品").spxFont(13).foregroundStyle(SPXColor.muted); Button(submitting ? "正在下架…" : "批量下架", role: .destructive) { batchConfirm = true }.disabled(selected.isEmpty || submitting) } } }
         }.task { await load(reset: true); await loadCapacity() }.spxRefreshable { await load(reset: true); await loadCapacity() }
             .onReceive(NotificationCenter.default.publisher(for: .spxMerchantProductsUpdated)) { _ in Task { await load(reset: true); await loadCapacity() } }
             .confirmationDialog("确认下架已选的 \(selected.count) 件商品？", isPresented: $batchConfirm, titleVisibility: .visible) { Button("确认下架", role: .destructive) { batchOffline() } }
+            .confirmationDialog("确认重新上架？上架后买家即可下单。", isPresented: Binding(get: { online != nil }, set: { if !$0 { online = nil } }), titleVisibility: .visible) {
+                Button("上架") { if let product = online { relist(product) }; online = nil }
+            }
             .confirmationDialog("确认下架商品？", isPresented: Binding(get: { offline != nil }, set: { if !$0 { offline = nil } }), titleVisibility: .visible) {
                 Button("下架", role: .destructive) { if let product = offline { mutate(product, deleting: false) }; offline = nil }
             }
@@ -190,7 +210,21 @@ struct MerchantProductsView: View {
     }
     @ViewBuilder private func productAction(_ product: Record) -> some View {
         if product["status"].int == 1 { Button("下架", role: .destructive) { offline = product } }
-        else { Button("删除", role: .destructive) { deleting = product } }
+        else {
+            if product["review_status"].string == "approved" { Button("上架商品", systemImage: "arrow.up.circle") { online = product } }
+            Button("删除", role: .destructive) { deleting = product }
+        }
+    }
+    private func relist(_ product: Record) {
+        guard !submitting else { return }
+        submitting = true
+        Task {
+            defer { submitting = false }
+            do {
+                try await APIClient.shared.post("merchant.product.online", ["id": product["id"]])
+                NotificationCenter.default.post(name: .spxMerchantProductsUpdated, object: nil)
+            } catch { self.error = error.localizedDescription }
+        }
     }
     private func mutate(_ product: Record, deleting: Bool) {
         guard !submitting else { return }
@@ -249,11 +283,11 @@ struct MerchantProductCapacity: View {
         if capacity.fields.keys.contains("limit") && capacity["limit"].int >= 0 {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("已上架 \(capacity["listed"].int)/\(capacity["limit"].int)").font(.system(size: 14, weight: .semibold))
+                    Text("已上架 \(capacity["listed"].int)/\(capacity["limit"].int)").spxFont(14, weight: .semibold)
                     Spacer()
-                    Text("还可上架 \(capacity["remaining"].int) 款").font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+                    Text("还可上架 \(capacity["remaining"].int) 款").spxFont(12).foregroundStyle(SPXColor.muted)
                 }
-                Text(capacity["remaining"].int == 0 ? "已达到上架上限，下架或删除后可再次上架" : "下架或删除商品后释放上架名额").font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+                Text(capacity["remaining"].int == 0 ? "已达到上架上限，下架或删除后可再次上架" : "下架或删除商品后释放上架名额").spxFont(12).foregroundStyle(SPXColor.muted)
             }
         }
     }
@@ -270,10 +304,10 @@ struct MerchantDraftsView: View {
             ForEach(state.rows) { draft in
                 SPXCard { VStack(alignment: .leading, spacing: 14) {
                     NavigationLink { DraftLoader(id: draft.id) } label: {
-                        HStack(spacing: 12) { SPXIcon("doc").frame(width: 24, height: 24).foregroundStyle(SPXColor.commerce).frame(width: 48, height: 48).background(SPXColor.tint, in: RoundedRectangle(cornerRadius: 12)); VStack(alignment: .leading, spacing: 7) { Text(draft["title"].string.isEmpty ? "未命名商品" : draft["title"].string).font(.system(size: 16, weight: .semibold)).foregroundStyle(SPXColor.ink); Text("更新于 " + draft["updated_at"].string).font(.system(size: 12)).foregroundStyle(SPXColor.muted) }; Spacer(minLength: 4); SPXIcon("chevron").frame(width: 14, height: 14).foregroundStyle(SPXColor.muted) }
+                        HStack(spacing: 12) { SPXIcon("doc").frame(width: 24, height: 24).foregroundStyle(SPXColor.commerce).frame(width: 48, height: 48).background(SPXColor.tint, in: RoundedRectangle(cornerRadius: 12)); VStack(alignment: .leading, spacing: 7) { Text(draft["title"].string.isEmpty ? "未命名商品" : draft["title"].string).spxFont(16, weight: .semibold).foregroundStyle(SPXColor.ink); Text("更新于 " + draft["updated_at"].string).spxFont(12).foregroundStyle(SPXColor.muted) }; Spacer(minLength: 4); SPXIcon("chevron").frame(width: 14, height: 14).foregroundStyle(SPXColor.muted) }
                     }.buttonStyle(.plain).disabled(deleting)
                     Divider()
-                    HStack { NavigationLink("继续编辑") { DraftLoader(id: draft.id) }.disabled(deleting); Spacer(); Button("删除草稿", role: .destructive) { deletingDraft = draft }.disabled(deleting) }.font(.system(size: 14, weight: .medium)).frame(minHeight: 44).buttonStyle(.plain)
+                    HStack { NavigationLink("继续编辑") { DraftLoader(id: draft.id) }.disabled(deleting); Spacer(); Button("删除草稿", role: .destructive) { deletingDraft = draft }.disabled(deleting) }.spxFont(14, weight: .medium).frame(minHeight: 44).buttonStyle(.plain)
                 } }
             }
             if state.busy || deleting { ProgressView(deleting ? "正在删除…" : "正在读取草稿…").frame(maxWidth: .infinity).padding(20) }

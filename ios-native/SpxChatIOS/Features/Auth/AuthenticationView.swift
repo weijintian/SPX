@@ -52,7 +52,7 @@ struct AuthView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     Image(systemName: "bubble.left.and.bubble.right.fill")
-                        .font(.system(size: 52)).foregroundStyle(SPXColor.primary).padding(.top, 44)
+                        .spxFont(52).foregroundStyle(SPXColor.primary).padding(.top, 44)
                     VStack(alignment: .leading, spacing: 8) {
                         Text(register ? "创建你的账号" : "欢迎回来").font(.largeTitle.bold())
                         Text("让沟通与生活轻松连接").foregroundStyle(.secondary)
@@ -96,7 +96,7 @@ struct AuthView: View {
                         HStack(alignment: .top, spacing: 10) {
                             Button { acceptedTerms.toggle() } label: {
                                 Image(systemName: acceptedTerms ? "checkmark.square.fill" : "square")
-                                    .font(.system(size: 21)).foregroundStyle(acceptedTerms ? SPXColor.primary : .secondary)
+                                    .spxFont(21).foregroundStyle(acceptedTerms ? SPXColor.primary : .secondary)
                                     .frame(width: 44, height: 44)
                             }.buttonStyle(.plain).accessibilityLabel("同意服务协议与隐私政策")
                                 .accessibilityValue(acceptedTerms ? "已勾选" : "未勾选").disabled(session.loading || codeBusy)
@@ -188,7 +188,7 @@ struct PasswordResetView: View {
                         TextField("六位验证码", text: $code).keyboardType(.numberPad).textContentType(.oneTimeCode).focused($focused, equals: .code)
                             .onChange(of: code) { value in code = String(value.filter(\.isNumber).prefix(6)) }
                         Button(codeBusy ? "发送中…" : remaining > 0 ? "\(remaining)s后重发" : "获取验证码") { send() }
-                            .font(.system(size: 13, weight: .semibold)).frame(minHeight: 44)
+                            .spxFont(13, weight: .semibold).frame(minHeight: 44)
                             .disabled(busy || codeBusy || remaining > 0 || !AuthenticationInput.validEmail(email))
                     } }
                     SPXField("新密码") {

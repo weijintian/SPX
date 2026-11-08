@@ -10,7 +10,7 @@ struct WalletView: View {
     @State private var loaded = false
     @State private var loading = false
     @State private var error: String?
-    private var visibleAssets: [Record] { assets.filter { ["SPX001", "USDT", "FISS"].contains($0["symbol"].string) } }
+    private var visibleAssets: [Record] { assets.filter { ["SPX001", "USDT", "XKRS"].contains($0["symbol"].string) } }
     private var total: Decimal? {
         guard loaded else { return nil }
         var result = Decimal.zero
@@ -26,11 +26,11 @@ struct WalletView: View {
             VStack(alignment: .leading, spacing: 14) {
                 Button { hidden.toggle() } label: {
                     VStack(alignment: .leading, spacing: 10) {
-                        HStack { Text("总资产估值（USD）").font(.system(size: 13)); Spacer(); Image(systemName: hidden ? "eye.slash" : "eye").frame(width: 28, height: 28) }
+                        HStack { Text("总资产估值（USD）").spxFont(13); Spacer(); Image(systemName: hidden ? "eye.slash" : "eye").frame(width: 28, height: 28) }
                         Text(hidden ? "$ ••••" : total.map { "$ " + DisplayLabels.amount(NSDecimalNumber(decimal: $0).stringValue) } ?? "$ —")
-                            .font(.system(size: 34, weight: .bold)).lineLimit(1).minimumScaleFactor(0.5)
+                            .spxFont(34, weight: .bold).lineLimit(1).minimumScaleFactor(0.5)
                         Text("\(usd.isEmpty ? "行情暂未取得，估值可能暂不可用" : "估值随行情变化，以实际资产数量为准") · 轻触\(hidden ? "显示" : "隐藏")余额")
-                            .font(.system(size: 12)).foregroundStyle(.white.opacity(0.75))
+                            .spxFont(12).foregroundStyle(.white.opacity(0.75))
                     }.foregroundStyle(.white).padding(22).frame(maxWidth: .infinity, alignment: .leading)
                         .background(LinearGradient(colors: [SPXColor.hex(0x173A3F), SPXColor.hex(0x27645C)], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 18))
                 }.buttonStyle(.plain).accessibilityLabel(hidden ? "显示资产余额" : "隐藏资产余额")
@@ -44,12 +44,12 @@ struct WalletView: View {
                 ForEach(visibleAssets, id: \.fields) { asset in
                     NavigationLink { WalletTransactionsView() } label: {
                         HStack(spacing: 14) {
-                            Image(asset["symbol"].string == "FISS" ? "wallet_fiss" : (asset["symbol"].string == "USDT" ? "wallet_usdt" : "wallet_spx001")).resizable().scaledToFit().frame(width: 44, height: 44).clipShape(Circle())
-                            VStack(alignment: .leading, spacing: 5) { Text(asset["symbol"].string).font(.system(size: 16, weight: .semibold)); Text(asset["chain"].string.isEmpty ? "BSC" : asset["chain"].string).font(.system(size: 12)).foregroundStyle(SPXColor.muted) }
+                            Image(asset["symbol"].string == "XKRS" ? "wallet_fiss" : (asset["symbol"].string == "USDT" ? "wallet_usdt" : "wallet_spx001")).resizable().scaledToFit().frame(width: 44, height: 44).clipShape(Circle())
+                            VStack(alignment: .leading, spacing: 5) { Text(asset["symbol"].string).spxFont(16, weight: .semibold); Text(asset["chain"].string.isEmpty ? "BSC" : asset["chain"].string).spxFont(12).foregroundStyle(SPXColor.muted) }
                             Spacer()
                             VStack(alignment: .trailing, spacing: 6) {
-                                Text(hidden ? "••••" : DisplayLabels.amount(asset["balance"].string)).font(.system(size: 18, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.6)
-                                if ["SPX001", "FISS"].contains(asset["symbol"].string) { Text(hidden ? "可质押 ••••" : "可质押 " + DisplayLabels.amount(asset["stakeable_balance"].string)).font(.system(size: 11)).foregroundStyle(SPXColor.muted) }
+                                Text(hidden ? "••••" : DisplayLabels.amount(asset["balance"].string)).spxFont(18, weight: .semibold).lineLimit(1).minimumScaleFactor(0.6)
+                                if ["SPX001", "XKRS"].contains(asset["symbol"].string) { Text(hidden ? "可质押 ••••" : "可质押 " + DisplayLabels.amount(asset["stakeable_balance"].string)).spxFont(11).foregroundStyle(SPXColor.muted) }
                             }
                         }.foregroundStyle(SPXColor.ink).padding(16).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 16))
                     }
@@ -67,7 +67,7 @@ struct WalletView: View {
             }
     }
     private func walletLink<Destination: View>(_ title: String, _ icon: String, color: Color, @ViewBuilder destination: () -> Destination) -> some View {
-        NavigationLink(destination: destination()) { Label(title, systemImage: icon).font(.system(size: 16, weight: .semibold)).foregroundStyle(color).frame(maxWidth: .infinity, minHeight: 54).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14).stroke(SPXColor.line, lineWidth: 0.6)) }
+        NavigationLink(destination: destination()) { Label(title, systemImage: icon).spxFont(16, weight: .semibold).foregroundStyle(color).frame(maxWidth: .infinity, minHeight: 54).background(SPXColor.card, in: RoundedRectangle(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14).stroke(SPXColor.line, lineWidth: 0.6)) }
     }
     private func load() async {
         guard let owner = session.user?.id, owner > 0 else { return }
@@ -130,7 +130,7 @@ struct WalletTransferView: View {
         let raw = withdrawConfig["symbols"][symbol]["min_amount"].string
         return Decimal(string: raw, locale: Locale(identifier: "en_US_POSIX")) ?? 0
     }
-    /// 后台的 FISS 提现开关（充值不受影响）
+    /// 后台的 XKRS 提现开关（充值不受影响）
     private var fissWithdrawEnabled: Bool {
         !withdrawal || withdrawConfig["fiss_enabled"].flag
     }
@@ -166,20 +166,20 @@ struct WalletTransferView: View {
                 Picker("币种", selection: $symbol) {
                     Text("SPX001").tag("SPX001")
                     Text("USDT").tag("USDT")
-                    if fissWithdrawEnabled { Text("FISS").tag("FISS") }
+                    if fissWithdrawEnabled { Text("XKRS").tag("XKRS") }
                 }.pickerStyle(.segmented)
-                .onChange(of: symbol) { _ in if symbol == "FISS" && !fissWithdrawEnabled { symbol = "SPX001" } }
+                .onChange(of: symbol) { _ in if symbol == "XKRS" && !fissWithdrawEnabled { symbol = "SPX001" } }
                 InfoRow(title: "网络", value: "BSC")
                 InfoRow(title: withdrawal ? "提现至绑定地址" : "付款来源地址", value: info["bound_address"].string)
                 if !withdrawal {
-                    let addressKey = symbol == "USDT" ? "usdt_address" : (symbol == "FISS" ? "fiss_address" : "spx001_address")
+                    let addressKey = symbol == "USDT" ? "usdt_address" : (symbol == "XKRS" ? "fiss_address" : "spx001_address")
                 let destination = info[addressKey].string.isEmpty ? info["spx001_address"].string : info[addressKey].string
                     Text("平台充值地址").foregroundStyle(.secondary)
                     Text(destination).font(.system(.subheadline, design: .monospaced)).textSelection(.enabled)
                     Button("复制充值地址", systemImage: "doc.on.doc") { UIPasteboard.general.string = destination }
                     SPXField("链上交易哈希") { TextField("请输入交易哈希", text: $hash).textInputAutocapitalization(.never) }
                 }
-                SPXField(withdrawal ? "提现数量" : "转账数量") { TextField("请输入数量", text: $amount).keyboardType(.decimalPad).font(.system(size: 28, weight: .semibold, design: .rounded)) }
+                SPXField(withdrawal ? "提现数量" : "转账数量") { TextField("请输入数量", text: $amount).keyboardType(.decimalPad).spxFont(28, weight: .semibold, design: .rounded) }
                 if withdrawal, let total = withdrawTotal {
                     InfoRow(title: "手续费（\(feePercentText)%）", value: DisplayLabels.amount(Money.format(withdrawFee, scale: 18)) + " " + symbol)
                     InfoRow(title: "预计到账", value: DisplayLabels.amount(Money.format(total - withdrawFee, scale: 18)) + " " + symbol)
@@ -221,7 +221,7 @@ struct WalletTransferView: View {
             if withdrawal {
                 withdrawConfig = (try? await APIClient.shared.get("wallet.withdraw.config")) ?? .null
                 guard session.user?.id == owner else { return }
-                if symbol == "FISS" && !fissWithdrawEnabled { symbol = "SPX001" }
+                if symbol == "XKRS" && !fissWithdrawEnabled { symbol = "SPX001" }
             }
             if withdrawal, let saved = pending, !saved["client_request_id"].string.isEmpty {
                 let status = try await APIClient.shared.get("financial.request", ["operation": "wallet.withdraw", "client_request_id": saved["client_request_id"].string])
@@ -293,7 +293,7 @@ struct ExchangeView: View {
         SPXDetailPage {
             SPXPageHeading(title: "资产兑换", subtitle: "USDT 兑换 SPX001", icon: "arrow.left.arrow.right", color: SPXColor.success)
             SPXPanel("兑换数量与行情") {
-                SPXField("支付 USDT") { TextField("请输入兑换数量", text: $amount).keyboardType(.decimalPad).font(.system(size: 28, weight: .semibold, design: .rounded)) }.disabled(frozen || busy || !restored)
+                SPXField("支付 USDT") { TextField("请输入兑换数量", text: $amount).keyboardType(.decimalPad).spxFont(28, weight: .semibold, design: .rounded) }.disabled(frozen || busy || !restored)
                 InfoRow(title: "每 USDT 预计获得", value: DisplayLabels.amount(quote["spx_per_usdt"].string) + " SPX001")
                 InfoRow(title: "参考单价 USD", value: DisplayLabels.amount(quote["exchange_price_usd"].string))
                 InfoRow(title: "行情时间", value: quote["updated_at"].string)
@@ -356,7 +356,7 @@ struct WalletTransactionsView: View {
     @State private var cancel: Record?
     var body: some View {
         SPXDetailPage {
-            SPXFilterTabs(options: [("all", "全部"), ("SPX001", "SPX001"), ("USDT", "USDT"), ("FISS", "FISS")], selection: $filter)
+            SPXFilterTabs(options: [("all", "全部"), ("SPX001", "SPX001"), ("USDT", "USDT"), ("XKRS", "XKRS")], selection: $filter)
             ForEach(state.rows) { row in
                 SPXCard { DisclosureGroup {
                     ForEach(["id", "chain", "address", "tx_hash", "fee_amount", "created_at"], id: \.self) { key in if !row[key].string.isEmpty { InfoRow(title: ["id": "流水号", "chain": "网络", "address": "钱包地址", "tx_hash": "交易哈希", "fee_amount": "手续费", "created_at": "创建时间"][key] ?? key, value: key == "fee_amount" ? DisplayLabels.amount(row[key].string) : row[key].string) } }
@@ -397,7 +397,7 @@ struct StakingView: View {
     private var stakingSymbol: String {
         guard let plan = selectedPlan else { return "SPX001" }
         let value = plan["symbol"].string
-        return ["SPX001", "FISS"].contains(value) ? value : "SPX001"
+        return ["SPX001", "XKRS"].contains(value) ? value : "SPX001"
     }
     @State private var redeemID = 0
     @State private var busy = false
@@ -425,7 +425,7 @@ struct StakingView: View {
         SPXDetailPage {
             SPXPageHeading(title: "锁仓质押", subtitle: "质押 \(symbol) 积分，查看锁仓方案与生态分红", icon: "lock.shield", color: SPXColor.primary)
             HStack(spacing: 8) {
-                ForEach(["SPX001", "FISS"], id: \.self) { option in
+                ForEach(["SPX001", "XKRS"], id: \.self) { option in
                     Button {
                         guard symbol != option else { return }
                         symbol = option
@@ -434,7 +434,7 @@ struct StakingView: View {
                         Task { await load() }
                     } label: {
                         Text(option)
-                            .font(.system(size: 14, weight: .semibold))
+                            .spxFont(14, weight: .semibold)
                             .foregroundStyle(symbol == option ? Color.white : SPXColor.muted)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 9)
@@ -543,7 +543,7 @@ struct StakingView: View {
                 Text("可质押余额").font(.caption).foregroundStyle(SPXColor.muted)
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(StakingPresentation.amount(stakeable.map { NSDecimalNumber(decimal: $0).stringValue } ?? "0"))
-                        .font(.system(size: 32, weight: .bold)).monospacedDigit().foregroundStyle(SPXColor.ink)
+                        .spxFont(32, weight: .bold).monospacedDigit().foregroundStyle(SPXColor.ink)
                         .minimumScaleFactor(0.6).lineLimit(1)
                     Text(symbol).font(.footnote).foregroundStyle(SPXColor.muted)
                 }
@@ -571,13 +571,13 @@ struct StakingView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("总奖励额度").font(.caption).foregroundStyle(SPXColor.muted)
                         Text(compactStaking(phase["total_quota"].string))
-                            .font(.system(size: 26, weight: .bold)).monospacedDigit().minimumScaleFactor(0.6).lineLimit(1)
+                            .spxFont(26, weight: .bold).monospacedDigit().minimumScaleFactor(0.6).lineLimit(1)
                     }
                     Spacer(minLength: 8)
                     VStack(alignment: .trailing, spacing: 6) {
                         Text("剩余可用").font(.caption).foregroundStyle(SPXColor.muted)
                         Text(compactStaking(phase["remaining_quota"].string))
-                            .font(.system(size: 18, weight: .bold)).monospacedDigit().foregroundStyle(SPXColor.success)
+                            .spxFont(18, weight: .bold).monospacedDigit().foregroundStyle(SPXColor.success)
                             .minimumScaleFactor(0.6).lineLimit(1)
                     }
                 }
@@ -618,9 +618,9 @@ struct StakingView: View {
                                 .fill(active ? SPXColor.primary : SPXColor.card)
                                 .overlay(Circle().stroke(active ? Color.clear : SPXColor.muted.opacity(0.35), lineWidth: 1))
                                 .frame(width: active ? 14 : 11, height: active ? 14 : 11)
-                            Text(compactStaking(tier["threshold"].string)).font(.system(size: 10)).foregroundStyle(SPXColor.muted)
+                            Text(compactStaking(tier["threshold"].string)).spxFont(10).foregroundStyle(SPXColor.muted)
                             Text(compactStaking(tier["min_stake"].string))
-                                .font(.system(size: 12, weight: active ? .semibold : .regular))
+                                .spxFont(12, weight: active ? .semibold : .regular)
                                 .foregroundStyle(active ? SPXColor.ink : SPXColor.muted)
                         }.frame(maxWidth: .infinity)
                     }
@@ -672,7 +672,7 @@ struct StakingView: View {
                 }
             } else { Text("请选择下方方案，查看对应期限、年化和最低数量。").font(.subheadline).foregroundStyle(SPXColor.muted) }
             if symbol != "SPX001" {
-                Text(burnSummary).font(.system(size: 12)).foregroundStyle(SPXColor.muted)
+                Text(burnSummary).spxFont(12).foregroundStyle(SPXColor.muted)
             }
             Divider()
             Text("锁定期间不可提前赎回。服务端每 10 天结算分红，不足 10 天的尾期在到期时结算，本金由服务端到期结算返还。实际到账与处理时间请以交易记录为准；记录仍可赎回时，也可通过下方按钮核验处理。").font(.footnote).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
@@ -684,10 +684,10 @@ struct StakingView: View {
         let minText = StakingPresentation.minimum(plan).map { compactStaking(NSDecimalNumber(decimal: $0).stringValue) } ?? "—"
         return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                Text("\(days) 天").font(.system(size: 20, weight: .bold)).foregroundStyle(SPXColor.ink)
+                Text("\(days) 天").spxFont(20, weight: .bold).foregroundStyle(SPXColor.ink)
                 Spacer()
                 Text(StakingPresentation.rate(plan["apy"]))
-                    .font(.system(size: 22, weight: .bold)).foregroundStyle(SPXColor.primary).monospacedDigit()
+                    .spxFont(22, weight: .bold).foregroundStyle(SPXColor.primary).monospacedDigit()
             }
             HStack(alignment: .top) {
                 Text("每 10 天发息 · 共 \(periods) 期 · 到期还本").font(.caption).foregroundStyle(SPXColor.muted)
@@ -699,7 +699,7 @@ struct StakingView: View {
                 Spacer()
                 Button { selected = plan.id; amount = ""; stakeSheet = true } label: {
                     Text("立即质押")
-                        .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                        .spxFont(14, weight: .semibold).foregroundStyle(.white)
                         .padding(.horizontal, 18).padding(.vertical, 9)
                         .background(SPXColor.primary, in: RoundedRectangle(cornerRadius: 12))
                 }.buttonStyle(.plain).disabled(busy || uncertain || loading)
@@ -955,7 +955,7 @@ struct StakingRecordDetailView: View {
                     SPXStatusPill(title: active ? "进行中" : "已完成", color: active ? SPXColor.success : SPXColor.muted)
                 }
                 Text(StakingPresentation.amount(d["amount"].string) + " " + symbol)
-                    .font(.system(size: 30, weight: .bold)).monospacedDigit().minimumScaleFactor(0.6).lineLimit(1)
+                    .spxFont(30, weight: .bold).monospacedDigit().minimumScaleFactor(0.6).lineLimit(1)
                 Text("年化 \(StakingPresentation.rate(d["apy"])) · 锁定 \(d["plan_days"].string) 天")
                     .font(.caption).foregroundStyle(SPXColor.muted)
             }
@@ -1051,7 +1051,7 @@ extension StakingView {
                     amount = String(rounded)
                 } label: {
                     Text(label)
-                        .font(.system(size: 12, weight: .medium))
+                        .spxFont(12, weight: .medium)
                         .foregroundStyle(SPXColor.primary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)

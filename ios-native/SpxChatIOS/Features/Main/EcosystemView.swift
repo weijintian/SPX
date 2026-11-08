@@ -32,9 +32,9 @@ private struct EcosystemCard: View {
                 else { Image("reward_video").resizable().scaledToFill() }
             }.frame(width: 82, height: 82).clipShape(RoundedRectangle(cornerRadius: 16))
             VStack(alignment: .leading, spacing: 8) {
-                Text(title).font(.system(size: 19, weight: .semibold)).foregroundStyle(SPXColor.ink)
-                Text(detail).font(.system(size: 13)).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
-                Text(badge).font(.system(size: 12, weight: .medium)).foregroundStyle(color)
+                Text(title).spxFont(19, weight: .semibold).foregroundStyle(SPXColor.ink)
+                Text(detail).spxFont(13).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
+                Text(badge).spxFont(12, weight: .medium).foregroundStyle(color)
                     .padding(.horizontal, 9).padding(.vertical, 4).background(color.opacity(0.09), in: Capsule())
             }.frame(maxWidth: .infinity, alignment: .leading)
             SPXIcon("chevron").frame(width: 18, height: 18).foregroundStyle(SPXColor.muted.opacity(0.5))

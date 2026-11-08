@@ -1,5 +1,29 @@
 import SwiftUI
 import PhotosUI
+import CoreImage
+import UIKit
+
+private func spxQRImage(_ value: String, scale: CGFloat = 9) -> UIImage? {
+    guard !value.isEmpty, let data = value.data(using: .utf8) else { return nil }
+    let filter = CIFilter.qrCodeGenerator()
+    filter.message = data
+    filter.correctionLevel = "M"
+    guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: scale, y: scale)),
+          let cg = CIContext().createCGImage(output, from: output.extent) else { return nil }
+    return UIImage(cgImage: cg)
+}
+
+private func spxGroupCode(_ code: String) -> String {
+    guard code.count == 16, code.allSatisfy({ $0.isNumber }) else { return code }
+    var parts: [String] = []
+    var index = code.startIndex
+    for _ in 0..<4 {
+        let end = code.index(index, offsetBy: 4)
+        parts.append(String(code[index..<end]))
+        index = end
+    }
+    return parts.joined(separator: " ")
+}
 
 struct PendingCheckout: Codable, Equatable {
     let quoteID: String
@@ -21,6 +45,8 @@ struct CheckoutView: View {
     @State private var orderID = 0
     @State private var busy = false
     @State private var confirm = false
+    @State private var askPassword = false
+    @State private var payPassword = ""
     @State private var error: String?
     private var physical: Bool { product["product_type"].string == "physical" }
     private var variants: [JSON] { product["variants"].array.filter { $0["enabled"] == .null || $0["enabled"].flag } }
@@ -31,9 +57,43 @@ struct CheckoutView: View {
         SPXDetailPage {
             SPXPanel("商品信息") {
                 HStack(alignment: .top, spacing: 14) { CachedImage(source: product.image).frame(width: 76, height: 76).clipShape(RoundedRectangle(cornerRadius: 12)); VStack(alignment: .leading, spacing: 8) { Text(product.name).font(.headline); PriceLabel(cny: selectedPrice, estimate: nil, legacy: selectedVariant?["spx_price"].string ?? product["spx_price"].string) } }
-                if !variants.isEmpty { Picker("选择规格", selection: $variantID) { Text("请选择").tag(""); ForEach(variants, id: \.self) { value in Text("\(value["name"].string) · ¥\(DisplayLabels.amount(value["cny_price"].string))").tag(value["id"].string) } } }
-                Stepper("数量：\(quantity)", value: $quantity, in: 1...max(1, min(99, availableStock))).disabled(availableStock < 1)
-                Text("可购买库存：\(availableStock)").font(.caption).foregroundStyle(SPXColor.muted)
+                if !variants.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("选择规格").font(.subheadline).foregroundStyle(SPXColor.muted)
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 10)], spacing: 10) {
+                            ForEach(variants, id: \.self) { value in
+                                let picked = value["id"].string == variantID
+                                Button { variantID = value["id"].string } label: {
+                                    VStack(spacing: 3) {
+                                        Text(value["name"].string).font(.system(size: 13, weight: picked ? .semibold : .regular)).lineLimit(1)
+                                        Text("¥" + DisplayLabels.amount(value["cny_price"].string)).font(.system(size: 11)).foregroundStyle(SPXColor.muted)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 10)
+                                    .padding(.horizontal, 8)
+                                    .background(RoundedRectangle(cornerRadius: 12).fill(picked ? SPXColor.primary.opacity(0.12) : Color(.secondarySystemBackground)))
+                                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(picked ? SPXColor.primary : Color(.separator), lineWidth: 1))
+                                    .foregroundStyle(picked ? SPXColor.primary : Color.primary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        HStack(spacing: 12) {
+                            Text("数量").font(.subheadline).foregroundStyle(SPXColor.muted)
+                            Spacer()
+                            Button { if quantity > 1 { quantity -= 1 } } label: {
+                                Image(systemName: "minus").frame(width: 36, height: 34)
+                                    .background(RoundedRectangle(cornerRadius: 10).fill(Color(.secondarySystemBackground)))
+                            }.buttonStyle(.plain).disabled(quantity <= 1)
+                            Text("\(quantity)").frame(minWidth: 40)
+                            Button { if quantity < max(1, min(99, availableStock)) { quantity += 1 } } label: {
+                                Image(systemName: "plus").frame(width: 36, height: 34)
+                                    .background(RoundedRectangle(cornerRadius: 10).fill(Color(.secondarySystemBackground)))
+                            }.buttonStyle(.plain).disabled(quantity >= max(1, min(99, availableStock)))
+                        }
+                        Text(availableStock > 0 ? "可购买库存 \(availableStock)" : "暂时缺货").font(.caption).foregroundStyle(SPXColor.muted)
+                    }
+                }
             }.disabled(busy || pending != nil)
             if physical {
                 SPXPanel("收货地址") {
@@ -71,8 +131,31 @@ struct CheckoutView: View {
                 await loadAddresses()
             }
             .onReceive(NotificationCenter.default.publisher(for: .spxAddressChanged)) { _ in Task { await loadAddresses() } }
-            .confirmationDialog("确认支付 \(DisplayLabels.amount(quote["total_spx"].string)) SPX001？", isPresented: $confirm, titleVisibility: .visible) { Button("确认支付") { pay() }; Button("取消", role: .cancel) { } }
+            .confirmationDialog("确认支付 \(DisplayLabels.amount(quote["total_spx"].string)) SPX001？", isPresented: $confirm, titleVisibility: .visible) { Button("确认支付") { askPassword = true }; Button("取消", role: .cancel) { } }
             .spxNavigationDestination(isPresented: Binding(get: { orderID > 0 }, set: { if !$0 { orderID = 0 } })) { OrderDetailView(id: orderID) }
+            .sheet(isPresented: $askPassword) {
+                VStack(spacing: 16) {
+                    Text("支付验证").font(.headline)
+                    Text("支付 \(DisplayLabels.amount(quote["total_spx"].string)) SPX001").font(.subheadline).foregroundStyle(SPXColor.muted)
+                    SecureField("输入 6 位数字支付密码", text: $payPassword)
+                        .keyboardType(.numberPad)
+                        .textFieldStyle(.roundedBorder)
+                        .padding(.horizontal)
+                    HStack(spacing: 12) {
+                        Button("取消") { askPassword = false; payPassword = "" }.frame(maxWidth: .infinity)
+                        Button("确认支付") {
+                            let password = payPassword
+                            payPassword = ""
+                            askPassword = false
+                            pay(password: password)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .disabled(payPassword.count != 6 || !payPassword.allSatisfy({ $0.isNumber }))
+                    }
+                    .padding(.horizontal)
+                }
+                .padding(.vertical, 22)
+            }
     }
     private func loadAddresses() async { guard physical else { return }; do { addresses = try await APIClient.shared.get("wallet.address").list; if addressID == 0 { addressID = addresses.first(where: { $0["is_default"].flag })?.id ?? addresses.first?.id ?? 0 } } catch { self.error = error.localizedDescription } }
     private func prepare() {
@@ -80,7 +163,7 @@ struct CheckoutView: View {
         busy = true; error = nil
         Task { defer { busy = false }; do { let quoteStarted = Date(); quote = try await APIClient.shared.post("checkout.quote", ["product_id": .number(Decimal(product.id)), "variant_id": .string(variantID), "quantity": .number(Decimal(quantity)), "address_id": .number(Decimal(addressID)), "buyer_note": .string(note)]); guard quote["quote_id"].string.count == 32 else { throw APIError.invalidResponse }; quoteExpiresAt = quoteStarted.addingTimeInterval(TimeInterval(quote["expires_in"].int)); confirm = true } catch { self.error = error.localizedDescription } }
     }
-    private func pay() {
+    private func pay(password: String) {
         guard restored, !busy, pending == nil, let owner = session.user?.id, owner > 0 else { return }
         guard let quoteExpiresAt, quoteExpiresAt > Date() else { quote = .null; error = "报价已到期，请重新核对后支付。"; return }
         let transaction = PendingCheckout(quoteID: quote["quote_id"].string, requestID: UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())
@@ -88,7 +171,7 @@ struct CheckoutView: View {
         Task {
             defer { busy = false }
             do { try await LocalStore.shared.reservePending(transaction, key: "checkout-pending", userID: owner) } catch { pending = await LocalStore.shared.read("checkout-pending", userID: owner); self.error = "无法创建新的支付，请先核对上次结果或检查设备存储。"; return }
-            do { guard session.user?.id == owner else { throw APIError.staleSession }; let result = try await APIClient.shared.post("orders.redeem", ["quote_id": .string(transaction.quoteID), "client_request_id": .string(transaction.requestID)]); guard result["order_id"].int > 0 else { throw APIError.invalidResponse }; await complete(result["order_id"].int, owner: owner) }
+            do { guard session.user?.id == owner else { throw APIError.staleSession }; let result = try await APIClient.shared.post("orders.redeem", ["quote_id": .string(transaction.quoteID), "client_request_id": .string(transaction.requestID), "payment_password": .string(password)]); guard result["order_id"].int > 0 else { throw APIError.invalidResponse }; await complete(result["order_id"].int, owner: owner) }
             catch { self.error = "支付结果需要核对，请勿重复提交。\(error.localizedDescription)" }
         }
     }
@@ -140,19 +223,22 @@ struct OrdersView: View {
 struct OrderSummary: View {
     let order: Record
     var showDetail = true
+    /// Merchant-side summaries show who bought the order; buyer-side summaries leave it empty.
+    var buyerName = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack { Text("订单 #\(order.id)").font(.system(size: 12)).foregroundStyle(SPXColor.muted); Spacer(); SPXStatusPill(title: DisplayLabels.order(order["status"].string)) }
+            HStack { Text("订单 #\(order.id)").spxFont(12).foregroundStyle(SPXColor.muted); Spacer(); SPXStatusPill(title: DisplayLabels.order(order["status"].string)) }
             HStack(alignment: .top, spacing: 12) {
                 CachedImage(source: order.image).frame(width: 76, height: 76).clipShape(RoundedRectangle(cornerRadius: 12))
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(order.text("product_name", "name")).font(.system(size: 15, weight: .semibold)).foregroundStyle(SPXColor.ink).lineLimit(2)
-                    Text("\(order["variant_name"].string) × \(order["quantity"].string)").font(.system(size: 12)).foregroundStyle(SPXColor.muted)
-                    Text(DisplayLabels.amount(order["total_spx"].string) + " SPX001").font(.system(size: 17, weight: .semibold)).foregroundStyle(SPXColor.commerce)
+                    Text(order.text("product_name", "name")).spxFont(15, weight: .semibold).foregroundStyle(SPXColor.ink).lineLimit(2)
+                    Text("\(order["variant_name"].string) × \(order["quantity"].string)").spxFont(12).foregroundStyle(SPXColor.muted)
+                    Text(DisplayLabels.amount(order["total_spx"].string) + " SPX001").spxFont(17, weight: .semibold).foregroundStyle(SPXColor.commerce)
+                    if !buyerName.isEmpty { Text("买家：" + buyerName).spxFont(12).foregroundStyle(SPXColor.muted).lineLimit(1) }
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
             Divider().overlay(SPXColor.line)
-            HStack { Text(order["created_at"].string).font(.system(size: 12)).foregroundStyle(SPXColor.muted); Spacer(); if showDetail { Label("查看详情", systemImage: "chevron.right").font(.system(size: 12)).foregroundStyle(SPXColor.commerce) } }
+            HStack { Text(order["created_at"].string).spxFont(12).foregroundStyle(SPXColor.muted); Spacer(); if showDetail { Label("查看详情", systemImage: "chevron.right").spxFont(12).foregroundStyle(SPXColor.commerce) } }
         }
     }
 }
@@ -185,8 +271,8 @@ struct OrderDetailView: View {
                 if !order["address"].object.isEmpty {
                     SPXPanel("收货信息") {
                         let address = order["address"]
-                        Label("\(address["name"].string)  \(address["phone"].string)", systemImage: "mappin.and.ellipse").font(.system(size: 15, weight: .medium))
-                        Text(["province", "city", "district", "detail"].map { address[$0].string }.joined()).font(.system(size: 14)).foregroundStyle(SPXColor.muted)
+                        Label("\(address["name"].string)  \(address["phone"].string)", systemImage: "mappin.and.ellipse").spxFont(15, weight: .medium)
+                        Text(["province", "city", "district", "detail"].map { address[$0].string }.joined()).spxFont(14).foregroundStyle(SPXColor.muted)
                     }
                 }
                 if !order["carrier"].string.isEmpty {
@@ -196,10 +282,23 @@ struct OrderDetailView: View {
                         SPXShareLink(item: order["tracking_number"].string) { Label("分享物流单号", systemImage: "square.and.arrow.up") }.font(.subheadline)
                     }
                 }
-                if !order["fulfillment_note"].string.isEmpty { SPXPanel("交付内容") { Text(order["fulfillment_note"].string).font(.system(size: 15)).textSelection(.enabled) } }
+                if !order["fulfillment_note"].string.isEmpty { SPXPanel("交付内容") { Text(order["fulfillment_note"].string).spxFont(15).textSelection(.enabled) } }
                 if !order["redeem_code"].string.isEmpty {
-                    SPXPanel("到店核销码", footer: "接受服务时向商家出示，请勿提前转发。") {
-                        Text(order["redeem_code"].string).font(.system(size: 30, weight: .bold, design: .monospaced)).foregroundStyle(SPXColor.commerce).textSelection(.enabled).frame(maxWidth: .infinity).padding(.vertical, 12)
+                    SPXPanel("到店核销码", footer: "商家扫码核销，或手动输入这 16 位数字。核销后次日自动结算。") {
+                        if let image = spxQRImage(order["redeem_code"].string) {
+                            Image(uiImage: image)
+                                .interpolation(.none)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 190, height: 190)
+                                .frame(maxWidth: .infinity)
+                        }
+                        Text(spxGroupCode(order["redeem_code"].string))
+                            .spxFont(24, weight: .bold, design: .monospaced)
+                            .foregroundStyle(SPXColor.commerce)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 10)
                         if !order["service_expires_at"].string.isEmpty { InfoRow(title: "有效期至", value: order["service_expires_at"].string) }
                     }
                 }
@@ -332,7 +431,7 @@ struct ReviewEditor: View {
                 SPXPageHeading(title: "评价商品", subtitle: "分享真实的商品质量与服务体验。", icon: "star", color: SPXColor.commerce)
                 SPXPanel("商品评分") {
                     Text(order.text("product_name", "name")).font(.headline)
-                    HStack(spacing: 14) { ForEach(1...5, id: \.self) { value in Button { rating = value } label: { Image(systemName: value <= rating ? "star.fill" : "star").font(.system(size: 30)).foregroundStyle(.orange).frame(minWidth: 40, minHeight: 44) }.buttonStyle(.plain).accessibilityLabel("\(value) 星") } }.frame(maxWidth: .infinity)
+                    HStack(spacing: 14) { ForEach(1...5, id: \.self) { value in Button { rating = value } label: { Image(systemName: value <= rating ? "star.fill" : "star").spxFont(30).foregroundStyle(.orange).frame(minWidth: 40, minHeight: 44) }.buttonStyle(.plain).accessibilityLabel("\(value) 星") } }.frame(maxWidth: .infinity)
                     Text("\(rating) / 5 分").font(.caption).foregroundStyle(SPXColor.muted).frame(maxWidth: .infinity)
                 }
                 SPXPanel("购买体验") { TextField("商品质量、使用感受或商家服务…", text: $content).lineLimit(12) }

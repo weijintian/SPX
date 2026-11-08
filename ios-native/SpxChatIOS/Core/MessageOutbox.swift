@@ -54,7 +54,12 @@ final class UploadProgressGate: @unchecked Sendable {
 
 @MainActor final class Outbox: ObservableObject {
     static let shared = Outbox()
-    @Published private(set) var items: [PendingMessage] = []
+    @Published private(set) var items: [PendingMessage] = [] {
+        didSet { if oldValue != items { version &+= 1 } }
+    }
+    /// Bumped whenever the pending list changes, so the chat timeline can decide
+    /// whether to rebuild without comparing the whole pending array.
+    private(set) var version = 0
     @Published private(set) var acknowledgements: [String: Record] = [:]
     private var userID = 0
     private var epoch = UUID()

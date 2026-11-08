@@ -48,7 +48,25 @@ struct MessageText: View {
     let content: String
     var mine = false
     private static let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+    /// Link detection is an ICU regex pass and previously ran inside `body`, so every
+    /// keystroke and every scroll-driven redraw re-parsed every visible bubble.
+    private final class CacheEntry {
+        let value: AttributedString
+        init(_ value: AttributedString) { self.value = value }
+    }
+    private static let cache: NSCache<NSString, CacheEntry> = {
+        let cache = NSCache<NSString, CacheEntry>()
+        cache.countLimit = 400
+        return cache
+    }()
     private var attributed: AttributedString {
+        let key = "\(mine ? 1 : 0)|\(content)" as NSString
+        if let hit = Self.cache.object(forKey: key) { return hit.value }
+        let value = Self.build(content, mine: mine)
+        Self.cache.setObject(CacheEntry(value), forKey: key)
+        return value
+    }
+    private static func build(_ content: String, mine: Bool) -> AttributedString {
         var text = AttributedString(content)
         guard let detector = Self.detector else { return text }
         let source = content as NSString

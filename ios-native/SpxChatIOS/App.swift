@@ -42,6 +42,45 @@ import UIKit
         }
     }
 
+    // MARK: - 隐私遮罩
+    // 切到后台或多任务界面时，整个窗口（含弹出的 sheet）都会被系统截图，
+    // 这里盖一层毛玻璃，避免聊天内容出现在应用切换器缩略图里。
+    private static var privacyShield: UIView?
+
+    func applicationWillResignActive(_ application: UIApplication) { Self.showPrivacyShield() }
+    func applicationDidBecomeActive(_ application: UIApplication) { Self.hidePrivacyShield() }
+
+    private static func showPrivacyShield() {
+        guard privacyShield == nil else { return }
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        guard let window = scene?.windows.first(where: { $0.isKeyWindow }) ?? scene?.windows.first else { return }
+        let shield = UIView(frame: window.bounds)
+        shield.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        shield.backgroundColor = .clear
+        let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemThickMaterial))
+        blur.frame = shield.bounds
+        blur.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        shield.addSubview(blur)
+        let label = UILabel()
+        label.text = "SPX CHAT"
+        label.font = .systemFont(ofSize: 18, weight: .semibold)
+        label.textColor = UIColor(SPXColor.muted)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        shield.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: shield.centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: shield.centerYAnchor),
+        ])
+        shield.accessibilityLabel = "隐私保护已开启"
+        window.addSubview(shield)
+        privacyShield = shield
+    }
+
+    private static func hidePrivacyShield() {
+        privacyShield?.removeFromSuperview()
+        privacyShield = nil
+    }
+
     private static func completeBackgroundEventsIfReady() {
         guard backgroundEventsReady, let handler = backgroundEventHandler else { return }
         backgroundEventsReady = false
