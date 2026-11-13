@@ -392,6 +392,7 @@ struct StakingView: View {
     @State private var amount = ""
     @State private var phase: JSON = .null
     @State private var burnInfo: JSON = .null
+    @State private var stakingOpen = true
     @State private var confirm: String?
     @State private var stakeSheet = false
     private var stakingSymbol: String {
@@ -457,7 +458,6 @@ struct StakingView: View {
                 balanceHero
                 personalOverview
                 quotaCard
-                if symbol != "SPX001" { burnLadderCard }
                 rulesOverview
             }
             if uncertain {
@@ -472,9 +472,18 @@ struct StakingView: View {
                 }
             }
             if loaded {
+                if !stakingOpen {
+                    SPXCard { VStack(alignment: .leading, spacing: 8) {
+                        Text("质押已满额").font(.headline).foregroundStyle(SPXColor.hex(0xBC7A16))
+                        Text("本期额度已用完，暂不开放新的质押；已质押订单照常计息，到期自动结算。")
+                            .font(.footnote).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
+                    } }
+                }
                 SPXSectionTitle(title: "选择质押方案")
                 if plans.isEmpty {
-                    EmptyState(title: "暂无可用方案", description: "方案由平台配置，可稍后下拉刷新。", icon: "lock.shield")
+                    EmptyState(title: stakingOpen ? "暂无可用方案" : "本期额度已用完",
+                               description: stakingOpen ? "方案由平台配置，可稍后下拉刷新。" : "开放时间请留意公告，已质押订单不受影响。",
+                               icon: "lock.shield")
                 }
                 ForEach(plans) { plan in planCard(plan) }
                 if !plans.isEmpty { amountForm }
@@ -595,49 +604,6 @@ struct StakingView: View {
             }
         }
     }
-    private var burnLadderCard: some View {
-        let tiers = burnInfo["tiers"].list
-        let current = burnInfo["tier_min"].string
-        let nextMin = burnInfo["next_min"].string
-        return SPXCard {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text("起押门槛").font(.subheadline.weight(.semibold))
-                    Spacer()
-                    Text("当前 \(compactStaking(current)) 起")
-                        .font(.caption).foregroundStyle(SPXColor.hex(0xBC7A16))
-                        .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(SPXColor.hex(0xFFF6E7), in: Capsule())
-                }
-                HStack(alignment: .top, spacing: 0) {
-                    ForEach(Array(tiers.enumerated()), id: \.offset) { pair in
-                    let tier = pair.element
-                        let active = tier["min_stake"].string == current
-                        VStack(spacing: 6) {
-                            Circle()
-                                .fill(active ? SPXColor.primary : SPXColor.card)
-                                .overlay(Circle().stroke(active ? Color.clear : SPXColor.muted.opacity(0.35), lineWidth: 1))
-                                .frame(width: active ? 14 : 11, height: active ? 14 : 11)
-                            Text(compactStaking(tier["threshold"].string)).spxFont(10).foregroundStyle(SPXColor.muted)
-                            Text(compactStaking(tier["min_stake"].string))
-                                .spxFont(12, weight: active ? .semibold : .regular)
-                                .foregroundStyle(active ? SPXColor.ink : SPXColor.muted)
-                        }.frame(maxWidth: .infinity)
-                    }
-                }
-                Divider()
-                HStack {
-                    Text("累计新增销毁 \(compactStaking(burnInfo["amount"].string))")
-                        .font(.caption2).foregroundStyle(SPXColor.muted)
-                    Spacer()
-                    Text(nextMin.isEmpty || nextMin == "null"
-                         ? "已是最高档"
-                         : "再销毁 \(compactStaking(burnInfo["remaining_to_next"].string)) → \(compactStaking(nextMin)) 起")
-                        .font(.caption2).foregroundStyle(SPXColor.primary)
-                }
-            }
-        }
-    }
     private var personalOverview: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("我的质押总额", systemImage: "lock.shield.fill").font(.subheadline.weight(.medium))
@@ -648,16 +614,6 @@ struct StakingView: View {
         }.foregroundStyle(.white).padding(22).frame(maxWidth: .infinity, alignment: .leading)
             .background(LinearGradient(colors: [SPXColor.hex(0x405BFA), SPXColor.hex(0x7342ED)], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 22))
     }
-    private var burnSummary: String {
-        let burned = StakingPresentation.amount(burnInfo["amount"].string)
-        let nextMin = burnInfo["next_min"].string
-        let remain = burnInfo["remaining_to_next"].string
-        if nextMin.isEmpty || nextMin == "null" {
-            return "累计新增销毁 \(burned) \(symbol) · 已是最高档"
-        }
-        return "累计新增销毁 \(burned) \(symbol) · 再销毁 \(StakingPresentation.amount(remain)) 可降至 \(StakingPresentation.amount(nextMin)) 起押"
-    }
-
     private var rulesOverview: some View {
         SPXPanel("质押规则") {
             if let plan = selectedPlan {
@@ -671,9 +627,6 @@ struct StakingView: View {
                     detail("单人生效本金上限", value: StakingPresentation.amount(NSDecimalNumber(decimal: maxValue).stringValue) + " \(symbol)")
                 }
             } else { Text("请选择下方方案，查看对应期限、年化和最低数量。").font(.subheadline).foregroundStyle(SPXColor.muted) }
-            if symbol != "SPX001" {
-                Text(burnSummary).spxFont(12).foregroundStyle(SPXColor.muted)
-            }
             Divider()
             Text("锁定期间不可提前赎回。服务端每 10 天结算分红，不足 10 天的尾期在到期时结算，本金由服务端到期结算返还。实际到账与处理时间请以交易记录为准；记录仍可赎回时，也可通过下方按钮核验处理。").font(.footnote).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
         }
@@ -786,6 +739,7 @@ struct StakingView: View {
             let (data, updatedRecords, updatedAssets) = try await (planData, recordData, walletData)
             guard loadID == requestID, session.user?.id == owner, !Task.isCancelled else { return }
             plans = data["plans"].list; phase = data["phase"]; burnInfo = data["burn"]; records = updatedRecords.list; assets = updatedAssets.list
+            stakingOpen = data["open"].int == 1 || data["open"].string.lowercased() == "true"
             if !uncertain, !plans.contains(where: { $0.id == selected }) { selected = plans.first?.id ?? 0 }
             loaded = true; snapshotFresh = true
         } catch is CancellationError { }

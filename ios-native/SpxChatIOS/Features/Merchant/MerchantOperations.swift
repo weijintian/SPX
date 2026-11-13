@@ -433,7 +433,9 @@ struct MerchantScanRedeemView: View {
         Task {
             defer { busy = false }
             do {
-                _ = try await APIClient.shared.post("merchant.order.redeem", ["order_id": .int(0), "redeem_code": .string(trimmed)])
+                // The redeem endpoint resolves the order from the buyer-presented code
+                // when order_id is zero; JSON numbers use the .number constructor.
+                _ = try await APIClient.shared.post("merchant.order.redeem", ["order_id": .number(0), "redeem_code": .string(trimmed)])
                 confirmed = trimmed
                 code = ""
             } catch { self.error = error.localizedDescription }

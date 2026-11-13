@@ -169,7 +169,7 @@ import UIKit
         if value, let token, let user, user.id > 0, !restoring { RealtimeClient.shared.start(token: token) }
         else { RealtimeClient.shared.stop() }
         if value, token != nil, let user, user.id > 0, !restoring {startPresence()}
-        else {presence?.cancel();presence = nil; VoicePlayback.shared.stop(); if token != nil { Task { guard presenceEpoch == self.presenceEpoch, !self.active else { return }; try? await APIClient.shared.post("presence.update", ["device_id": .string(Keychain.deviceID), "online": false]) } }}
+        else {presence?.cancel();presence = nil; VoicePlayback.shared.stop(); if token != nil { Task { guard presenceEpoch == self.presenceEpoch, !self.active else { return }; _ = try? await APIClient.shared.post("presence.update", ["device_id": .string(Keychain.deviceID), "online": false]) } }}
         if value { scheduleRecovery(immediate: true) }
         else { recoveryID = UUID(); recovery?.cancel(); recovery = nil }
     }

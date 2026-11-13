@@ -77,7 +77,7 @@ enum VoiceMessageMetadata {
             guard epoch == generation else { return }; download = nil
             guard CallCoordinator.shared.call == nil else { stop(); return }
             let audio = AVAudioSession.sharedInstance()
-            try audio.setCategory(.playAndRecord, mode: .default, options: [.allowBluetooth, .allowBluetoothA2DP])
+            try audio.setCategory(.playAndRecord, mode: .default, options: [.allowBluetoothHFP, .allowBluetoothA2DP])
             try audio.setActive(true); ownsAudioSession = true
             UIDevice.current.isProximityMonitoringEnabled = true; try applyRoute()
             let next: AVAudioPlayer

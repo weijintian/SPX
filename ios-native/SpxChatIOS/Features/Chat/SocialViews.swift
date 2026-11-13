@@ -424,7 +424,7 @@ struct ScheduledMessageView: View {
     }
 }
 
-@MainActor final class LocationProvider: NSObject, ObservableObject, CLLocationManagerDelegate {
+@MainActor final class LocationProvider: NSObject, ObservableObject, @preconcurrency CLLocationManagerDelegate {
     @Published var coordinate: CLLocationCoordinate2D?
     @Published var error: String?
     private let manager = CLLocationManager()
