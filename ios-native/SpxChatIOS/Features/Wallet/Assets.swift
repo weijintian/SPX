@@ -392,6 +392,7 @@ struct StakingView: View {
     @State private var amount = ""
     @State private var phase: JSON = .null
     @State private var burnInfo: JSON = .null
+    @State private var stakingOpen = true
     @State private var confirm: String?
     @State private var stakeSheet = false
     private var stakingSymbol: String {
@@ -473,8 +474,17 @@ struct StakingView: View {
             }
             if loaded {
                 SPXSectionTitle(title: "选择质押方案")
+                if !stakingOpen {
+                    SPXCard { VStack(alignment: .leading, spacing: 8) {
+                        Text("质押已满额").font(.headline).foregroundStyle(SPXColor.hex(0xBC7A16))
+                        Text("本期额度已用完，暂不开放新的质押；已质押订单照常计息，到期自动结算。")
+                            .font(.footnote).foregroundStyle(SPXColor.muted).fixedSize(horizontal: false, vertical: true)
+                    } }
+                }
                 if plans.isEmpty {
-                    EmptyState(title: "暂无可用方案", description: "方案由平台配置，可稍后下拉刷新。", icon: "lock.shield")
+                    EmptyState(title: stakingOpen ? "暂无可用方案" : "本期额度已用完",
+                               description: stakingOpen ? "方案由平台配置，可稍后下拉刷新。" : "开放时间请留意公告，已质押订单不受影响。",
+                               icon: "lock.shield")
                 }
                 ForEach(plans) { plan in planCard(plan) }
                 if !plans.isEmpty { amountForm }
@@ -786,6 +796,7 @@ struct StakingView: View {
             let (data, updatedRecords, updatedAssets) = try await (planData, recordData, walletData)
             guard loadID == requestID, session.user?.id == owner, !Task.isCancelled else { return }
             plans = data["plans"].list; phase = data["phase"]; burnInfo = data["burn"]; records = updatedRecords.list; assets = updatedAssets.list
+            stakingOpen = data["open"].int == 1 || data["open"].string.lowercased() == "true"
             if !uncertain, !plans.contains(where: { $0.id == selected }) { selected = plans.first?.id ?? 0 }
             loaded = true; snapshotFresh = true
         } catch is CancellationError { }
