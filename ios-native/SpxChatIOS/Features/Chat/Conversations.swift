@@ -1201,6 +1201,16 @@ struct MessageBubble: View {
     private var greeting: String { MessageContent.redPacketGreeting(message) }
     private var packetMode: String { MessageContent.redPacketMode(message) }
     private var packetSymbol: String { MessageContent.redPacketSymbol(message) }
+    @ObservedObject private var packetStatus = RedPacketStatus.shared
+    private var packetID: String {
+        let direct = message["packet_id"].string
+        if !direct.isEmpty { return direct }
+        let content = message.text("content", "last_message")
+        guard let data = content.data(using: .utf8),
+              let parsed = try? JSONDecoder().decode(JSON.self, from: data) else { return "" }
+        return parsed["packet_id"].string
+    }
+    private var isPacketDim: Bool { packetStatus.isDim(packetID, mine: mine) }
     var body: some View {
         if let call = CallRecordPresentation(message: message, isGroup: isGroup) {
             CallRecordMessageBubble(message: message, currentUserID: currentUserID, call: call, open: open, mention: mention)
@@ -1224,24 +1234,31 @@ struct MessageBubble: View {
                             HStack(spacing: 10) {
                                 Image(systemName: "gift.fill")
                                     .spxFont(22, weight: .semibold)
-                                    .foregroundStyle(Color(red: 1, green: 0.82, blue: 0.52))
+                                    .foregroundStyle(RedPacketPalette.gold(dim: isPacketDim))
                                     .frame(width: 34, height: 34)
-                                Text(greeting).spxFont(16, weight: .semibold).lineLimit(2)
+                                Text(greeting)
+                                    .spxFont(16, weight: .semibold)
+                                    .lineLimit(2)
+                                    .foregroundStyle(RedPacketPalette.gold(dim: isPacketDim))
                             }
-                            Text("轻触打开红包").font(.caption).foregroundStyle(.white.opacity(0.86))
-                            Rectangle().fill(.white.opacity(0.22)).frame(height: 1)
+                            Text(packetStatus.reason(packetID, mine: mine))
+                                .font(.caption)
+                                .foregroundStyle(RedPacketPalette.sub(dim: isPacketDim))
+                            Rectangle().fill(.white.opacity(isPacketDim ? 0.14 : 0.22)).frame(height: 1)
                             Text((packetMode == "random" ? "拼手气红包" : "普通红包") + " · \(packetSymbol)")
-                                .spxFont(11).foregroundStyle(.white.opacity(0.86))
+                                .spxFont(11)
+                                .foregroundStyle(RedPacketPalette.sub(dim: isPacketDim))
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 12)
                         .frame(minWidth: 220, maxWidth: 250, alignment: .leading)
+                        .onAppear { packetStatus.request(packetID) }
                     case "call": Label(message["content"].string, systemImage: "phone.fill")
                     default: MessageText(content: message["content"].string, mine: mine)
                     } }
                 }.spxFont(16).padding(isMedia ? 0 : 12).foregroundStyle(mine ? .white : SPXColor.ink)
                     .contentShape(Rectangle())
-                    .background(isMedia ? Color.clear : (type == "red_packet" ? Color(red: 0.82, green: 0.19, blue: 0.14) : (mine ? SPXColor.primary : SPXColor.card)), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(isMedia ? Color.clear : (type == "red_packet" ? RedPacketPalette.fill(dim: packetStatus.isDim(packetID, mine: mine)) : (mine ? SPXColor.primary : SPXColor.card)), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay { if !mine, !isMedia { RoundedRectangle(cornerRadius: 12).stroke(SPXColor.line, lineWidth: 0.5) } }
             }.buttonStyle(.plain)
             }
