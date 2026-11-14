@@ -276,7 +276,13 @@ struct PublishProductView: View {
             SPXPhotosPicker(selection: $detailPicker, maxSelectionCount: max(1, 20 - detailImages.count), matching: .images) { Label("批量添加详情图", systemImage: "photo.stack") }.disabled(detailImages.count >= 20)
             imageStrip($detailImages)
             failedImageRows(failedDetailImages, detail: true)
-            field("video_url", "商品视频 URL（选填）")
+            if (values["video_url"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("从手机相册或拍摄上传视频，系统会自动转码，所有手机都能播放。")
+                    .spxFont(12).foregroundStyle(SPXColor.muted)
+            } else {
+                Label("已上传商品视频", systemImage: "checkmark.circle.fill")
+                    .font(.subheadline).foregroundStyle(SPXColor.hex(0x238B69))
+            }
             SPXPhotosPicker(selection: $videoPicker, matching: .videos) { Label("从相册选择商品视频", systemImage: "video.badge.plus") }.disabled(pendingVideo != nil)
             if let pendingVideo {
                 Label("有未完成的商品视频上传", systemImage: "arrow.triangle.2.circlepath").font(.subheadline)
