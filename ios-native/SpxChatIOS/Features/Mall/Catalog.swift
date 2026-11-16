@@ -96,7 +96,15 @@ struct ProductCard: View {
         VStack(alignment: .leading, spacing: 10) {
             CachedImage(source: product.image).aspectRatio(1, contentMode: .fit).frame(maxWidth: .infinity).background(.white).clipped()
             VStack(alignment: .leading, spacing: 6) {
-                Text(product.name).font(.subheadline.weight(.medium)).lineLimit(2).frame(minHeight: 38, alignment: .topLeading)
+                HStack(alignment: .top, spacing: 6) {
+                    Text(product.name).font(.subheadline.weight(.medium)).lineLimit(2)
+                    if product["self_operated"].flag {
+                        Text("官方自营").font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(SPXColor.primary.opacity(0.12), in: Capsule())
+                            .foregroundStyle(SPXColor.primary).fixedSize()
+                    }
+                }.frame(minHeight: 38, alignment: .topLeading)
                 PriceLabel(cny: product["cny_price"].string, estimate: Money.estimate(cny: product["cny_price"].string, usd: usd), legacy: product["spx_price"].string)
             }.padding(.horizontal, 12).padding(.bottom, 14)
         }.background(SPXColor.card, in: RoundedRectangle(cornerRadius: 18)).clipShape(RoundedRectangle(cornerRadius: 18))

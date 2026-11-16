@@ -388,6 +388,9 @@ struct RedPacketPopup: View {
                 let receipt = try await APIClient.shared.post("redpackets.claim", ["id": .string(packetID)])
                 guard session.user?.id == owner, receipt["id"].string == packetID else { throw APIError.staleSession }
                 packet = receipt
+                RedPacketStatus.shared.remember(id: packetID,
+                                                status: receipt["status"].string.isEmpty ? "active" : receipt["status"].string,
+                                                myAmount: receipt["my_amount"].string)
                 claimRequestConfirmed = true
                 claimCompleted = true
                 error = nil

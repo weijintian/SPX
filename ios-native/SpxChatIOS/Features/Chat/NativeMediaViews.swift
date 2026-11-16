@@ -398,6 +398,7 @@ struct MediaPage: View {
             let resource = try await VideoAssetSource.make(source: message["media_url"].string, userID: session.user?.id ?? 0)
             guard !Task.isCancelled, videoLoadID == loadID else { resource.loader?.cancelAllRequests(); return }
             let item = AVPlayerItem(asset: resource.asset)
+            VideoCacheWarmer.warm(source: message["media_url"].string, userID: session.user?.id ?? 0)
             VoicePlayback.shared.stop()
             let audio = AVAudioSession.sharedInstance()
             try audio.setCategory(.playback, mode: .moviePlayback)
