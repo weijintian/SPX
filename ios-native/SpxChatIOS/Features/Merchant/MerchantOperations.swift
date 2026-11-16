@@ -267,13 +267,20 @@ struct MerchantFulfillmentView: View {
                     }
                 }.disabled(!verified || loading)
             }
+            if order["status"].string == "pending", !activeAfterSale, order["order_type"].string != "local" {
+                SPXPanel("退款") {
+                    Text("未发货订单可直接退款给买家：款项原路退回买家余额，库存自动回补。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("同意退款", role: .destructive) { confirmation = "merchant.order.refund" }
+                }.disabled(!verified || loading)
+            }
             if activeAfterSale {
                 SPXPanel("售后协商") {
                     InfoRow(title: "申请类型", value: DisplayLabels.afterSaleType(order["after_sale_type"].string))
                     Text(order["after_sale_reason"].string)
                     TextField("给买家的回复", text: $reply).lineLimit(10)
                     Button("回复售后") { confirmation = "merchant.order.reply" }.disabled(reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    Text("退款审核按平台流程处理。").font(.caption).foregroundStyle(.secondary)
+                    Text("未发货订单可直接在下方「退款」面板处理；已发货订单按平台售后退货流程。").font(.caption).foregroundStyle(.secondary)
                 }.disabled(!verified || loading)
             }
             if let error { SPXPanel("加载提示") { ErrorBanner(message: error); Button("重新读取订单") { Task { await load() } }.disabled(loading) } }
@@ -433,8 +440,6 @@ struct MerchantScanRedeemView: View {
         Task {
             defer { busy = false }
             do {
-                // The redeem endpoint resolves the order from the buyer-presented code
-                // when order_id is zero; JSON numbers use the .number constructor.
                 _ = try await APIClient.shared.post("merchant.order.redeem", ["order_id": .number(0), "redeem_code": .string(trimmed)])
                 confirmed = trimmed
                 code = ""

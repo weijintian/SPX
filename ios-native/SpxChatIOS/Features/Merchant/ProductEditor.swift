@@ -235,7 +235,7 @@ struct PublishProductView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) { saveSection }
     }
     private var basicSection: some View {
-        SPXPanel("基本信息", footer: "人民币售价固定，SPX001 数量按实时行情换算。已发布商品库存请通过库存管理调整。") {
+        SPXPanel("基本信息", footer: "人民币售价固定，SPX001 数量按实时行情换算。规格与库存可直接在这里修改，保存后立即生效。") {
             Picker("商品类型", selection: $type) { Text("实物商品").tag("physical"); Text("数字商品").tag("digital"); Text("本地服务").tag("local") }.disabled(editing)
             field("name", "商品名称（最多 150 字）")
             field("description", "商品简介", multiline: true)
@@ -262,12 +262,12 @@ struct PublishProductView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     TextField("规格名称，例如 黑色 / L", text: $variant.name)
                     TextField("CNY 售价", text: $variant.cny).keyboardType(.decimalPad)
-                    TextField("库存", text: $variant.stock).keyboardType(.numberPad).disabled(editing)
+                    TextField("库存", text: $variant.stock).keyboardType(.numberPad)
                     Toggle("启用该规格", isOn: $variant.enabled)
-                    if !editing { Button("删除此规格", role: .destructive) { let id = variant.id; variants.removeAll { $0.id == id } } }
+                    Button("删除此规格", role: .destructive) { let id = variant.id; variants.removeAll { $0.id == id } }
                 }.padding(.vertical, 6)
             }
-            if variants.count < 50, !editing || !product["variants"].array.isEmpty { Button("添加规格", systemImage: "plus.circle") { variants.append(ProductVariant()) } }
+            if variants.count < 50 { Button("添加规格", systemImage: "plus.circle") { variants.append(ProductVariant()) } }
         }.textFieldStyle(SPXInputStyle())
     }
     private var detailSection: some View {
@@ -276,7 +276,13 @@ struct PublishProductView: View {
             SPXPhotosPicker(selection: $detailPicker, maxSelectionCount: max(1, 20 - detailImages.count), matching: .images) { Label("批量添加详情图", systemImage: "photo.stack") }.disabled(detailImages.count >= 20)
             imageStrip($detailImages)
             failedImageRows(failedDetailImages, detail: true)
-            field("video_url", "商品视频 URL（选填）")
+            if (values["video_url"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("从手机相册或拍摄上传视频，系统会自动转码，所有手机都能播放。")
+                    .spxFont(12).foregroundStyle(SPXColor.muted)
+            } else {
+                Label("已上传商品视频", systemImage: "checkmark.circle.fill")
+                    .font(.subheadline).foregroundStyle(SPXColor.hex(0x238B69))
+            }
             SPXPhotosPicker(selection: $videoPicker, matching: .videos) { Label("从相册选择商品视频", systemImage: "video.badge.plus") }.disabled(pendingVideo != nil)
             if let pendingVideo {
                 Label("有未完成的商品视频上传", systemImage: "arrow.triangle.2.circlepath").font(.subheadline)
