@@ -25,7 +25,7 @@ function redPacketRefundLocked(PDO $pdo,array $p): array
     $units=(int)$p['remaining_units'];
     if ($units>0) {
         $amount=redPacketAmount($units);
-        $symbol = in_array((string)($p['symbol'] ?? ''), ['SPX001', 'FISS'], true) ? (string)$p['symbol'] : 'SPX001';
+        $symbol = in_array((string)($p['symbol'] ?? ''), ['SPX001', 'XKRS'], true) ? (string)$p['symbol'] : 'SPX001';
         walletCreditSplit($pdo,(int)$p['sender_id'],$symbol,'BSC',$amount,(string)$p['remaining_stakeable']);
         chatQuery($pdo,'INSERT INTO wallet_transactions(user_id,symbol,chain,type,amount,stakeable_amount,status) VALUES (?,?,?,?,?,?,"completed")',[$p['sender_id'],$symbol,'BSC','red_packet_refund',$amount,$p['remaining_stakeable']]);
     }
@@ -47,7 +47,7 @@ function redPacketView(PDO $pdo,array $p,int $uid): array
     $eligible=(bool)chatQuery($pdo,'SELECT 1 FROM chat_red_packet_eligible WHERE packet_id=? AND user_id=?',[$p['id'],$uid])->fetchColumn();
     $member=$p['scope']!=='group'||(bool)chatQuery($pdo,'SELECT 1 FROM chat_group_members WHERE group_id=? AND user_id=?',[$p['target_id'],$uid])->fetchColumn();
     $canClaim=$p['status']==='active' && $own===false && $eligible && $member;
-    $symbol = in_array((string)($p['symbol'] ?? ''), ['SPX001', 'FISS'], true) ? (string)$p['symbol'] : 'SPX001';
+    $symbol = in_array((string)($p['symbol'] ?? ''), ['SPX001', 'XKRS'], true) ? (string)$p['symbol'] : 'SPX001';
     $result=['id'=>$p['id'],'sender_id'=>(int)$p['sender_id'],'sender_name'=>$sender,'scope'=>$p['scope'],'mode'=>$p['mode'],'greeting'=>$p['greeting'],'symbol'=>$symbol,'chain'=>'BSC','status'=>$p['status'],'total_count'=>(int)$p['total_count'],'claimed_count'=>(int)$p['claimed_count'],'expires_at'=>$p['expires_at'],'my_amount'=>$own===false?null:(string)$own,'can_claim'=>$canClaim];
     $result['claim_disabled_reason']=$own!==false?'已领取，心意已到账':($p['status']==='completed'?'手慢了，红包已领完':($p['status']==='expired'?'红包已过期':(!$member?'你已不在该群中':(!$eligible?'你不在这个红包的领取范围内':''))));
     // Do not reveal the random allocations before the viewer has opened the packet.
@@ -64,7 +64,7 @@ function redPacketCreate(PDO $pdo,int $uid,array $body): array
     $mode=(string)($body['mode']??'ordinary');$count=filter_var($body['count']??1,FILTER_VALIDATE_INT);
     if(!in_array($scope,['chat','group'],true)||!$target||!in_array($mode,['ordinary','random'],true)||!$count||$count<1||$count>100||($scope==='chat'&&$count!==1))throw new InvalidArgumentException('红包类型、会话或个数不正确（每次最多 100 个）');
     $symbol=(string)($body['symbol']??'SPX001'); $chain=(string)($body['chain']??'BSC');
-    if(!in_array($symbol,['SPX001','FISS'],true)||$chain!=='BSC')throw new InvalidArgumentException('红包币种不受支持');
+    if(!in_array($symbol,['SPX001','XKRS'],true)||$chain!=='BSC')throw new InvalidArgumentException('红包币种不受支持');
     $units=redPacketUnits($body['amount']??null);
     if($units<$count)throw new InvalidArgumentException('每个红包至少 0.000001 '.$symbol);
     if($mode==='ordinary'&&$units%$count!==0)throw new InvalidArgumentException('普通红包总额须能按 6 位小数均分');
@@ -151,7 +151,7 @@ function redPacketOpen(PDO $pdo,int $uid,string $id,bool $claim): array
             $units=$left===1?$remaining:($p['mode']==='ordinary'?intdiv((int)$p['total_units'],(int)$p['total_count']):random_int(1,min($remaining-($left-1),max(1,intdiv(2*$remaining,$left)))));
             $amount=redPacketAmount($units);
             $stake=(string)chatQuery($pdo,'SELECT LEAST(CAST(? AS DECIMAL(36,18)),CAST(? AS DECIMAL(36,18)))',[$p['remaining_stakeable'],$amount])->fetchColumn();
-            $symbol = in_array((string)($p['symbol'] ?? ''), ['SPX001', 'FISS'], true) ? (string)$p['symbol'] : 'SPX001';
+            $symbol = in_array((string)($p['symbol'] ?? ''), ['SPX001', 'XKRS'], true) ? (string)$p['symbol'] : 'SPX001';
             walletCreditSplit($pdo,$uid,$symbol,'BSC',$amount,$stake);
             chatQuery($pdo,'INSERT INTO chat_red_packet_claims(packet_id,user_id,amount,stakeable_amount) VALUES (?,?,?,?)',[$id,$uid,$amount,$stake]);
             chatQuery($pdo,'INSERT INTO wallet_transactions(user_id,symbol,chain,type,amount,stakeable_amount,status) VALUES (?,?,?,?,?,?,"completed")',[$uid,$symbol,'BSC','red_packet_receive',$amount,$stake]);
@@ -166,10 +166,10 @@ function redPacketOpen(PDO $pdo,int $uid,string $id,bool $claim): array
 }
 function redPacketApi(string $action,string $method,array $body): void
 {
-    if(!in_array($action,['redpackets.create','redpackets.detail','redpackets.claim','redpackets.mine','redpackets.request'],true))return;
+    if(!in_array($action,['redpackets.create','redpackets.detail','redpackets.claim','redpackets.mine','redpackets.request','redpackets.states'],true))return;
     $uid=(int)currentUser()['id'];$pdo=db();
     try{
-        $read=in_array($action,['redpackets.detail','redpackets.mine','redpackets.request'],true);if($method!==($read?'GET':'POST'))throw new DomainException('请求方式不正确',405);
+        $read=in_array($action,['redpackets.detail','redpackets.mine','redpackets.request','redpackets.states'],true);if($method!==($read?'GET':'POST'))throw new DomainException('请求方式不正确',405);
         if($action==='redpackets.request'){
             $request=(string)($_GET['request_id']??'');if(!preg_match('/^[a-zA-Z0-9_-]{8,36}$/D',$request))throw new InvalidArgumentException('请求标识无效');
             // Same lock as creation: a missing result cannot race a still-committing send.
@@ -180,6 +180,18 @@ function redPacketApi(string $action,string $method,array $body): void
             // Password-backed sends are rate-limited per account and source IP.
             enforceApiRateLimit('red_packet_send_user_'.$uid,30);
             $r=redPacketCreate($pdo,$uid,$body);jsonResponse($r,'红包已发送',$r['duplicate']?200:201);
+        }
+        if($action==='redpackets.states'){
+            $ids=array_slice(array_values(array_unique(array_filter(array_map('trim',explode(',',(string)($_GET['ids']??''))),static fn($v)=>preg_match('/^[a-f0-9]{32}$/i',$v)===1))),0,50);
+            $out=[];
+            if($ids){
+                $ph=implode(',',array_fill(0,count($ids),'?'));
+                $rows=chatQuery($pdo,"SELECT id,status,claimed_count,total_count FROM chat_red_packets WHERE id IN ($ph)",$ids)->fetchAll();
+                $claims=chatQuery($pdo,"SELECT packet_id,amount FROM chat_red_packet_claims WHERE user_id=? AND packet_id IN ($ph)",array_merge([$uid],$ids))->fetchAll();
+                $mine=[];foreach($claims as $row)$mine[(string)$row['packet_id']]=(string)$row['amount'];
+                foreach($rows as $row){$key=(string)$row['id'];$out[$key]=['status'=>(string)$row['status'],'claimed_count'=>(int)$row['claimed_count'],'total_count'=>(int)$row['total_count'],'my_amount'=>$mine[$key]??null];}
+            }
+            jsonResponse($out);
         }
         if($action==='redpackets.mine'){
             redPacketSweep($pdo,200,$uid);
