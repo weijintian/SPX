@@ -1,5 +1,5 @@
 {
-  "source": "Literal API actions verified against local backend on 2026-11-04; isolated API tests are separate",
+  "source": "Literal API actions verified against local backend on 2026-11-04; redpackets.states added 2026-11-16 (红包状态批量查询)",
   "actions": [
     "app.download.config",
     "app.update.history",
@@ -99,6 +99,7 @@
     "redpackets.detail",
     "redpackets.mine",
     "redpackets.request",
+    "redpackets.states",
     "referrals",
     "shop",
     "shops",
